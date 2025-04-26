@@ -5,7 +5,6 @@ services:
     image: devopsfaith/krakend:watch
     volumes:
       - ./config/krakend:/etc/krakend
-      - ./data/jwk/symmetric.json:/opt/krakend/jwk-symmetric.json
     ports:
       - "1234:1234"
       - "8080:8080"
@@ -21,7 +20,6 @@ services:
       - "./config/grafana/datasources/all.yml:/etc/grafana/provisioning/datasources/all.yml"
       - "./config/grafana/dashboards/all.yml:/etc/grafana/provisioning/dashboards/all.yml"
       - "./config/grafana/krakend:/var/lib/grafana/dashboards/krakend"
-      - "./data/jwk/symmetric.json:/opt/krakend/jwk-symmetric.json"
   influxdb:
     image: influxdb:1.8.10
     environment:
@@ -101,17 +99,32 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-#  revoker:
-#    image: minilot/revoker:latest
-#    build:
-#      context: ./
-#      dockerfile: ./services/cmd/revoker/Dockerfile
-#    depends_on:
-#      postgres-db:
-#        condition: service_healthy
-#      krakend_ce:
-#        condition: service_started
-#    ports:
-#      - "8180:8080"
-#    environment:
-#      DATABASE_URL: postgres://postgres:postgres@postgres-db:5432/revoker?sslmode=disable&search_path=revoker
+  redis:
+    image: 'redis:latest'
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: 'redis-cli ping || exit 1'
+      interval: 5s
+      timeout: 5s
+      retries: 3
+  wallet:
+    image: wish/wallet:latest
+    build:
+      context: ./
+      dockerfile: ./services/cmd/wallet/Dockerfile
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    #    healthcheck:
+    #      test: [ "CMD-SHELL", "grep -q :$(printf '%04X' 52051) /proc/net/tcp6" ]
+    #      interval: 3s
+    #      timeout: 2s
+    #      retries: 15
+    ports:
+      - "52051:52051"
+      - "8181:8081"
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres-db:5432/wish?sslmode=disable&search_path=wallet

@@ -1,0 +1,65 @@
+//edition = "2023";
+syntax = "proto3";
+
+option go_package = "middleware/wallet";
+
+package wallet;
+
+enum ClassStatus {
+  CLASS_NONE = 0;
+  CLASS_DRAFT = 1;
+  CLASS_PUBLISHED = 2;
+  CLASS_ARCHIVED = 3;
+}
+
+message Class {
+  string name = 1;
+  string title = 2;
+  ClassStatus status = 3;
+  uint32 version = 4;
+}
+
+message ClassRequest {
+  optional string name_filter = 1;
+  optional ClassStatus status = 2;
+  optional uint32 version = 3;
+}
+
+message ClassReply {
+  repeated Class classes = 1;
+}
+
+enum ClassElementStatus {
+  ITEM_NONE = 0;
+  ITEM_DRAFT = 1;
+  ITEM_PUBLISHED = 2;
+  ITEM_SKIP = 3;
+}
+
+message ClassElement {
+  string key = 1;
+  string value = 2;
+  uint32 version = 3;
+  ClassElementStatus status = 4;
+}
+
+message ClassElementRequest {
+  string name = 1;
+  optional uint32 version = 2;
+  optional ClassElementStatus status = 3;
+  optional uint32 offset = 4;
+  optional uint32 limit = 5;
+}
+
+message ClassElementReply {
+  string name = 1;
+  repeated ClassElement elements = 2;
+  uint32 next_offset = 3;
+  bool eof = 4;
+}
+
+
+service Service {
+  rpc Classes(ClassRequest) returns (ClassReply);
+  rpc Elements(ClassElementRequest) returns(ClassElementReply);
+}
