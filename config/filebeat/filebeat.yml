@@ -1,0 +1,17 @@
+filebeat.inputs:
+- type: filestream
+  enabled: true
+  paths:
+    - /logs/user-service/*.log
+  fields:
+    service: "user-service"
+
+- type: filestream
+  enabled: true
+  paths:
+    - /logs/wallet/*.log
+  fields:
+    service: "wallet"
+
+output.logstash:
+  hosts: ["logstash:5044"]

@@ -1,3 +1,4 @@
 .idea
 .pg
 .bin/wallet
+.logs
