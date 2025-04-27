@@ -23,7 +23,7 @@ func DefineLogging() *slog.Logger {
 	var handler slog.Handler = slog.NewTextHandler(os.Stdout, opts)
 	if LogFile != "" {
 		file, err := os.OpenFile(LogFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
-		if err != nil {
+		if err == nil {
 			handler = slog.NewJSONHandler(file, opts)
 		} else {
 			log.Fatal(err)

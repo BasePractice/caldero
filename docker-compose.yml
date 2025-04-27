@@ -1,8 +1,6 @@
 services:
-  krakend_ce:
-    # The :watch image restarts the service automatically when the configuration files change.
-    # Do not use this image in production, it's meant to speed up your testing and development.
-    image: devopsfaith/krakend:watch
+  krakend:
+    image: krakend:latest
     volumes:
       - ./config/krakend:/etc/krakend
     ports:
@@ -12,6 +10,8 @@ services:
     command: [ "run", "-d", "-c", "/etc/krakend/krakend.json" ]
     depends_on:
       - jaeger
+      - influxdb
+      - elasticsearch
   grafana:
     image: grafana/grafana:9.1.2
     ports:
@@ -48,8 +48,12 @@ services:
       - "9300:9300"
   kibana:
     image: kibana:8.4.1
+    depends_on:
+      - elasticsearch
     ports:
       - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
   logstash:
     image: logstash:8.18.0
     ports:
@@ -61,15 +65,15 @@ services:
       - ./config/logstash/logstash.conf:/usr/share/logstash/pipeline/logstash.conf
     command: [ "-f", "/usr/share/logstash/pipeline/logstash.conf" ]
   filebeat:
-    image: filebeat:latest
+    image: elastic/filebeat:8.17.5
     depends_on:
       logstash:
         condition: service_started
     volumes:
       - ./config/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml
-      - ./logs:/logs
+      - ./.logs:/logs
   keycloak:
-    image: quay.io/keycloak/keycloak:26.0
+    image: keycloak/keycloak:26.0
     depends_on:
       postgres-db:
         condition: service_healthy
