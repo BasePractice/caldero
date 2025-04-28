@@ -136,10 +136,11 @@ services:
     #      timeout: 2s
     #      retries: 15
     ports:
-      - "52051:52051"
+      - "51051:51051"
       - "8181:8081"
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres-db:5432/wish?sslmode=disable&search_path=wallet
+      REDIS_URL: redis://redis:6379/10?protocol=3
       LOG_FILE: /logs/wallet.log
     volumes:
       - ./.logs/wallet:/logs

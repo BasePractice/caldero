@@ -46,8 +46,7 @@ func main() {
 	}
 	grpcServer := grpc.NewServer()
 	cache, _ := services.NewDefaultCache(ctx)
-	db := NewDatabaseClass()
-	_ = db.CreateClass("main", "Main")
+	db := NewDatabaseWallet()
 	server := &service{db: db, cache: cache}
 	wallet.RegisterServiceServer(grpcServer, server)
 	slog.Info("Starting server", slog.String("addr", listen.Addr().String()))

@@ -23,134 +23,125 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type ClassStatus int32
+type WalletType int32
 
 const (
-	ClassStatus_CLASS_NONE      ClassStatus = 0
-	ClassStatus_CLASS_DRAFT     ClassStatus = 1
-	ClassStatus_CLASS_PUBLISHED ClassStatus = 2
-	ClassStatus_CLASS_ARCHIVED  ClassStatus = 3
+	WalletType_USER   WalletType = 0
+	WalletType_COMMON WalletType = 1
 )
 
-// Enum value maps for ClassStatus.
+// Enum value maps for WalletType.
 var (
-	ClassStatus_name = map[int32]string{
-		0: "CLASS_NONE",
-		1: "CLASS_DRAFT",
-		2: "CLASS_PUBLISHED",
-		3: "CLASS_ARCHIVED",
+	WalletType_name = map[int32]string{
+		0: "USER",
+		1: "COMMON",
 	}
-	ClassStatus_value = map[string]int32{
-		"CLASS_NONE":      0,
-		"CLASS_DRAFT":     1,
-		"CLASS_PUBLISHED": 2,
-		"CLASS_ARCHIVED":  3,
+	WalletType_value = map[string]int32{
+		"USER":   0,
+		"COMMON": 1,
 	}
 )
 
-func (x ClassStatus) Enum() *ClassStatus {
-	p := new(ClassStatus)
+func (x WalletType) Enum() *WalletType {
+	p := new(WalletType)
 	*p = x
 	return p
 }
 
-func (x ClassStatus) String() string {
+func (x WalletType) String() string {
 	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
 }
 
-func (ClassStatus) Descriptor() protoreflect.EnumDescriptor {
+func (WalletType) Descriptor() protoreflect.EnumDescriptor {
 	return file_middleware_wallet_proto_enumTypes[0].Descriptor()
 }
 
-func (ClassStatus) Type() protoreflect.EnumType {
+func (WalletType) Type() protoreflect.EnumType {
 	return &file_middleware_wallet_proto_enumTypes[0]
 }
 
-func (x ClassStatus) Number() protoreflect.EnumNumber {
+func (x WalletType) Number() protoreflect.EnumNumber {
 	return protoreflect.EnumNumber(x)
 }
 
-// Deprecated: Use ClassStatus.Descriptor instead.
-func (ClassStatus) EnumDescriptor() ([]byte, []int) {
+// Deprecated: Use WalletType.Descriptor instead.
+func (WalletType) EnumDescriptor() ([]byte, []int) {
 	return file_middleware_wallet_proto_rawDescGZIP(), []int{0}
 }
 
-type ClassElementStatus int32
+type WalletState int32
 
 const (
-	ClassElementStatus_ITEM_NONE      ClassElementStatus = 0
-	ClassElementStatus_ITEM_DRAFT     ClassElementStatus = 1
-	ClassElementStatus_ITEM_PUBLISHED ClassElementStatus = 2
-	ClassElementStatus_ITEM_SKIP      ClassElementStatus = 3
+	WalletState_ACTIVE  WalletState = 0
+	WalletState_BLOCKED WalletState = 1
+	WalletState_DELETED WalletState = 2
+	WalletState_CLOSED  WalletState = 3
 )
 
-// Enum value maps for ClassElementStatus.
+// Enum value maps for WalletState.
 var (
-	ClassElementStatus_name = map[int32]string{
-		0: "ITEM_NONE",
-		1: "ITEM_DRAFT",
-		2: "ITEM_PUBLISHED",
-		3: "ITEM_SKIP",
+	WalletState_name = map[int32]string{
+		0: "ACTIVE",
+		1: "BLOCKED",
+		2: "DELETED",
+		3: "CLOSED",
 	}
-	ClassElementStatus_value = map[string]int32{
-		"ITEM_NONE":      0,
-		"ITEM_DRAFT":     1,
-		"ITEM_PUBLISHED": 2,
-		"ITEM_SKIP":      3,
+	WalletState_value = map[string]int32{
+		"ACTIVE":  0,
+		"BLOCKED": 1,
+		"DELETED": 2,
+		"CLOSED":  3,
 	}
 )
 
-func (x ClassElementStatus) Enum() *ClassElementStatus {
-	p := new(ClassElementStatus)
+func (x WalletState) Enum() *WalletState {
+	p := new(WalletState)
 	*p = x
 	return p
 }
 
-func (x ClassElementStatus) String() string {
+func (x WalletState) String() string {
 	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
 }
 
-func (ClassElementStatus) Descriptor() protoreflect.EnumDescriptor {
+func (WalletState) Descriptor() protoreflect.EnumDescriptor {
 	return file_middleware_wallet_proto_enumTypes[1].Descriptor()
 }
 
-func (ClassElementStatus) Type() protoreflect.EnumType {
+func (WalletState) Type() protoreflect.EnumType {
 	return &file_middleware_wallet_proto_enumTypes[1]
 }
 
-func (x ClassElementStatus) Number() protoreflect.EnumNumber {
+func (x WalletState) Number() protoreflect.EnumNumber {
 	return protoreflect.EnumNumber(x)
 }
 
-// Deprecated: Use ClassElementStatus.Descriptor instead.
-func (ClassElementStatus) EnumDescriptor() ([]byte, []int) {
+// Deprecated: Use WalletState.Descriptor instead.
+func (WalletState) EnumDescriptor() ([]byte, []int) {
 	return file_middleware_wallet_proto_rawDescGZIP(), []int{1}
 }
 
-type Class struct {
+type InformationRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
-	Status        ClassStatus            `protobuf:"varint,3,opt,name=status,proto3,enum=wallet.ClassStatus" json:"status,omitempty"`
-	Version       uint32                 `protobuf:"varint,4,opt,name=version,proto3" json:"version,omitempty"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *Class) Reset() {
-	*x = Class{}
+func (x *InformationRequest) Reset() {
+	*x = InformationRequest{}
 	mi := &file_middleware_wallet_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *Class) String() string {
+func (x *InformationRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*Class) ProtoMessage() {}
+func (*InformationRequest) ProtoMessage() {}
 
-func (x *Class) ProtoReflect() protoreflect.Message {
+func (x *InformationRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_middleware_wallet_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -162,62 +153,45 @@ func (x *Class) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use Class.ProtoReflect.Descriptor instead.
-func (*Class) Descriptor() ([]byte, []int) {
+// Deprecated: Use InformationRequest.ProtoReflect.Descriptor instead.
+func (*InformationRequest) Descriptor() ([]byte, []int) {
 	return file_middleware_wallet_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *Class) GetName() string {
+func (x *InformationRequest) GetUserId() string {
 	if x != nil {
-		return x.Name
+		return x.UserId
 	}
 	return ""
 }
 
-func (x *Class) GetTitle() string {
-	if x != nil {
-		return x.Title
-	}
-	return ""
+type InformationReply struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Balance        int64                  `protobuf:"varint,2,opt,name=balance,proto3" json:"balance,omitempty"`
+	ReservedDebit  int64                  `protobuf:"varint,3,opt,name=reserved_debit,json=reservedDebit,proto3" json:"reserved_debit,omitempty"`
+	ReservedCredit int64                  `protobuf:"varint,4,opt,name=reserved_credit,json=reservedCredit,proto3" json:"reserved_credit,omitempty"`
+	Type           WalletType             `protobuf:"varint,14,opt,name=type,proto3,enum=wallet.WalletType" json:"type,omitempty"`
+	State          WalletState            `protobuf:"varint,15,opt,name=state,proto3,enum=wallet.WalletState" json:"state,omitempty"`
+	Transactions   int64                  `protobuf:"varint,16,opt,name=transactions,proto3" json:"transactions,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
-func (x *Class) GetStatus() ClassStatus {
-	if x != nil {
-		return x.Status
-	}
-	return ClassStatus_CLASS_NONE
-}
-
-func (x *Class) GetVersion() uint32 {
-	if x != nil {
-		return x.Version
-	}
-	return 0
-}
-
-type ClassRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	NameFilter    *string                `protobuf:"bytes,1,opt,name=name_filter,json=nameFilter,proto3,oneof" json:"name_filter,omitempty"`
-	Status        *ClassStatus           `protobuf:"varint,2,opt,name=status,proto3,enum=wallet.ClassStatus,oneof" json:"status,omitempty"`
-	Version       *uint32                `protobuf:"varint,3,opt,name=version,proto3,oneof" json:"version,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ClassRequest) Reset() {
-	*x = ClassRequest{}
+func (x *InformationReply) Reset() {
+	*x = InformationReply{}
 	mi := &file_middleware_wallet_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ClassRequest) String() string {
+func (x *InformationReply) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ClassRequest) ProtoMessage() {}
+func (*InformationReply) ProtoMessage() {}
 
-func (x *ClassRequest) ProtoReflect() protoreflect.Message {
+func (x *InformationReply) ProtoReflect() protoreflect.Message {
 	mi := &file_middleware_wallet_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -229,347 +203,90 @@ func (x *ClassRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ClassRequest.ProtoReflect.Descriptor instead.
-func (*ClassRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use InformationReply.ProtoReflect.Descriptor instead.
+func (*InformationReply) Descriptor() ([]byte, []int) {
 	return file_middleware_wallet_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *ClassRequest) GetNameFilter() string {
-	if x != nil && x.NameFilter != nil {
-		return *x.NameFilter
+func (x *InformationReply) GetId() string {
+	if x != nil {
+		return x.Id
 	}
 	return ""
 }
 
-func (x *ClassRequest) GetStatus() ClassStatus {
-	if x != nil && x.Status != nil {
-		return *x.Status
-	}
-	return ClassStatus_CLASS_NONE
-}
-
-func (x *ClassRequest) GetVersion() uint32 {
-	if x != nil && x.Version != nil {
-		return *x.Version
+func (x *InformationReply) GetBalance() int64 {
+	if x != nil {
+		return x.Balance
 	}
 	return 0
 }
 
-type ClassReply struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Classes       []*Class               `protobuf:"bytes,1,rep,name=classes,proto3" json:"classes,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ClassReply) Reset() {
-	*x = ClassReply{}
-	mi := &file_middleware_wallet_proto_msgTypes[2]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ClassReply) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ClassReply) ProtoMessage() {}
-
-func (x *ClassReply) ProtoReflect() protoreflect.Message {
-	mi := &file_middleware_wallet_proto_msgTypes[2]
+func (x *InformationReply) GetReservedDebit() int64 {
 	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ClassReply.ProtoReflect.Descriptor instead.
-func (*ClassReply) Descriptor() ([]byte, []int) {
-	return file_middleware_wallet_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *ClassReply) GetClasses() []*Class {
-	if x != nil {
-		return x.Classes
-	}
-	return nil
-}
-
-type ClassElement struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
-	Value         string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
-	Version       uint32                 `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"`
-	Status        ClassElementStatus     `protobuf:"varint,4,opt,name=status,proto3,enum=wallet.ClassElementStatus" json:"status,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ClassElement) Reset() {
-	*x = ClassElement{}
-	mi := &file_middleware_wallet_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ClassElement) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ClassElement) ProtoMessage() {}
-
-func (x *ClassElement) ProtoReflect() protoreflect.Message {
-	mi := &file_middleware_wallet_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ClassElement.ProtoReflect.Descriptor instead.
-func (*ClassElement) Descriptor() ([]byte, []int) {
-	return file_middleware_wallet_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *ClassElement) GetKey() string {
-	if x != nil {
-		return x.Key
-	}
-	return ""
-}
-
-func (x *ClassElement) GetValue() string {
-	if x != nil {
-		return x.Value
-	}
-	return ""
-}
-
-func (x *ClassElement) GetVersion() uint32 {
-	if x != nil {
-		return x.Version
+		return x.ReservedDebit
 	}
 	return 0
 }
 
-func (x *ClassElement) GetStatus() ClassElementStatus {
+func (x *InformationReply) GetReservedCredit() int64 {
 	if x != nil {
-		return x.Status
-	}
-	return ClassElementStatus_ITEM_NONE
-}
-
-type ClassElementRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Version       *uint32                `protobuf:"varint,2,opt,name=version,proto3,oneof" json:"version,omitempty"`
-	Status        *ClassElementStatus    `protobuf:"varint,3,opt,name=status,proto3,enum=wallet.ClassElementStatus,oneof" json:"status,omitempty"`
-	Offset        *uint32                `protobuf:"varint,4,opt,name=offset,proto3,oneof" json:"offset,omitempty"`
-	Limit         *uint32                `protobuf:"varint,5,opt,name=limit,proto3,oneof" json:"limit,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ClassElementRequest) Reset() {
-	*x = ClassElementRequest{}
-	mi := &file_middleware_wallet_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ClassElementRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ClassElementRequest) ProtoMessage() {}
-
-func (x *ClassElementRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_middleware_wallet_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ClassElementRequest.ProtoReflect.Descriptor instead.
-func (*ClassElementRequest) Descriptor() ([]byte, []int) {
-	return file_middleware_wallet_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *ClassElementRequest) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *ClassElementRequest) GetVersion() uint32 {
-	if x != nil && x.Version != nil {
-		return *x.Version
+		return x.ReservedCredit
 	}
 	return 0
 }
 
-func (x *ClassElementRequest) GetStatus() ClassElementStatus {
-	if x != nil && x.Status != nil {
-		return *x.Status
+func (x *InformationReply) GetType() WalletType {
+	if x != nil {
+		return x.Type
 	}
-	return ClassElementStatus_ITEM_NONE
+	return WalletType_USER
 }
 
-func (x *ClassElementRequest) GetOffset() uint32 {
-	if x != nil && x.Offset != nil {
-		return *x.Offset
+func (x *InformationReply) GetState() WalletState {
+	if x != nil {
+		return x.State
+	}
+	return WalletState_ACTIVE
+}
+
+func (x *InformationReply) GetTransactions() int64 {
+	if x != nil {
+		return x.Transactions
 	}
 	return 0
-}
-
-func (x *ClassElementRequest) GetLimit() uint32 {
-	if x != nil && x.Limit != nil {
-		return *x.Limit
-	}
-	return 0
-}
-
-type ClassElementReply struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Elements      []*ClassElement        `protobuf:"bytes,2,rep,name=elements,proto3" json:"elements,omitempty"`
-	NextOffset    uint32                 `protobuf:"varint,3,opt,name=next_offset,json=nextOffset,proto3" json:"next_offset,omitempty"`
-	Eof           bool                   `protobuf:"varint,4,opt,name=eof,proto3" json:"eof,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ClassElementReply) Reset() {
-	*x = ClassElementReply{}
-	mi := &file_middleware_wallet_proto_msgTypes[5]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ClassElementReply) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ClassElementReply) ProtoMessage() {}
-
-func (x *ClassElementReply) ProtoReflect() protoreflect.Message {
-	mi := &file_middleware_wallet_proto_msgTypes[5]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ClassElementReply.ProtoReflect.Descriptor instead.
-func (*ClassElementReply) Descriptor() ([]byte, []int) {
-	return file_middleware_wallet_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *ClassElementReply) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *ClassElementReply) GetElements() []*ClassElement {
-	if x != nil {
-		return x.Elements
-	}
-	return nil
-}
-
-func (x *ClassElementReply) GetNextOffset() uint32 {
-	if x != nil {
-		return x.NextOffset
-	}
-	return 0
-}
-
-func (x *ClassElementReply) GetEof() bool {
-	if x != nil {
-		return x.Eof
-	}
-	return false
 }
 
 var File_middleware_wallet_proto protoreflect.FileDescriptor
 
 const file_middleware_wallet_proto_rawDesc = "" +
 	"\n" +
-	"\x17middleware/wallet.proto\x12\x06wallet\"x\n" +
-	"\x05Class\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
-	"\x05title\x18\x02 \x01(\tR\x05title\x12+\n" +
-	"\x06status\x18\x03 \x01(\x0e2\x13.wallet.ClassStatusR\x06status\x12\x18\n" +
-	"\aversion\x18\x04 \x01(\rR\aversion\"\xac\x01\n" +
-	"\fClassRequest\x12$\n" +
-	"\vname_filter\x18\x01 \x01(\tH\x00R\n" +
-	"nameFilter\x88\x01\x01\x120\n" +
-	"\x06status\x18\x02 \x01(\x0e2\x13.wallet.ClassStatusH\x01R\x06status\x88\x01\x01\x12\x1d\n" +
-	"\aversion\x18\x03 \x01(\rH\x02R\aversion\x88\x01\x01B\x0e\n" +
-	"\f_name_filterB\t\n" +
-	"\a_statusB\n" +
+	"\x17middleware/wallet.proto\x12\x06wallet\"-\n" +
+	"\x12InformationRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\"\x89\x02\n" +
+	"\x10InformationReply\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
+	"\abalance\x18\x02 \x01(\x03R\abalance\x12%\n" +
+	"\x0ereserved_debit\x18\x03 \x01(\x03R\rreservedDebit\x12'\n" +
+	"\x0freserved_credit\x18\x04 \x01(\x03R\x0ereservedCredit\x12&\n" +
+	"\x04type\x18\x0e \x01(\x0e2\x12.wallet.WalletTypeR\x04type\x12)\n" +
+	"\x05state\x18\x0f \x01(\x0e2\x13.wallet.WalletStateR\x05state\x12\"\n" +
+	"\ftransactions\x18\x10 \x01(\x03R\ftransactionsJ\x04\b\n" +
+	"\x10\v*\"\n" +
 	"\n" +
-	"\b_version\"5\n" +
+	"WalletType\x12\b\n" +
+	"\x04USER\x10\x00\x12\n" +
 	"\n" +
-	"ClassReply\x12'\n" +
-	"\aclasses\x18\x01 \x03(\v2\r.wallet.ClassR\aclasses\"\x84\x01\n" +
-	"\fClassElement\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value\x12\x18\n" +
-	"\aversion\x18\x03 \x01(\rR\aversion\x122\n" +
-	"\x06status\x18\x04 \x01(\x0e2\x1a.wallet.ClassElementStatusR\x06status\"\xe5\x01\n" +
-	"\x13ClassElementRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1d\n" +
-	"\aversion\x18\x02 \x01(\rH\x00R\aversion\x88\x01\x01\x127\n" +
-	"\x06status\x18\x03 \x01(\x0e2\x1a.wallet.ClassElementStatusH\x01R\x06status\x88\x01\x01\x12\x1b\n" +
-	"\x06offset\x18\x04 \x01(\rH\x02R\x06offset\x88\x01\x01\x12\x19\n" +
-	"\x05limit\x18\x05 \x01(\rH\x03R\x05limit\x88\x01\x01B\n" +
+	"\x06COMMON\x10\x01*?\n" +
+	"\vWalletState\x12\n" +
 	"\n" +
-	"\b_versionB\t\n" +
-	"\a_statusB\t\n" +
-	"\a_offsetB\b\n" +
-	"\x06_limit\"\x8c\x01\n" +
-	"\x11ClassElementReply\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x120\n" +
-	"\belements\x18\x02 \x03(\v2\x14.wallet.ClassElementR\belements\x12\x1f\n" +
-	"\vnext_offset\x18\x03 \x01(\rR\n" +
-	"nextOffset\x12\x10\n" +
-	"\x03eof\x18\x04 \x01(\bR\x03eof*W\n" +
-	"\vClassStatus\x12\x0e\n" +
+	"\x06ACTIVE\x10\x00\x12\v\n" +
+	"\aBLOCKED\x10\x01\x12\v\n" +
+	"\aDELETED\x10\x02\x12\n" +
 	"\n" +
-	"CLASS_NONE\x10\x00\x12\x0f\n" +
-	"\vCLASS_DRAFT\x10\x01\x12\x13\n" +
-	"\x0fCLASS_PUBLISHED\x10\x02\x12\x12\n" +
-	"\x0eCLASS_ARCHIVED\x10\x03*V\n" +
-	"\x12ClassElementStatus\x12\r\n" +
-	"\tITEM_NONE\x10\x00\x12\x0e\n" +
-	"\n" +
-	"ITEM_DRAFT\x10\x01\x12\x12\n" +
-	"\x0eITEM_PUBLISHED\x10\x02\x12\r\n" +
-	"\tITEM_SKIP\x10\x032\x82\x01\n" +
-	"\aService\x123\n" +
-	"\aClasses\x12\x14.wallet.ClassRequest\x1a\x12.wallet.ClassReply\x12B\n" +
-	"\bElements\x12\x1b.wallet.ClassElementRequest\x1a\x19.wallet.ClassElementReplyB\x13Z\x11middleware/walletb\x06proto3"
+	"\x06CLOSED\x10\x032P\n" +
+	"\aService\x12E\n" +
+	"\vInformation\x12\x1a.wallet.InformationRequest\x1a\x18.wallet.InformationReply0\x01B\x13Z\x11middleware/walletb\x06proto3"
 
 var (
 	file_middleware_wallet_proto_rawDescOnce sync.Once
@@ -584,33 +301,23 @@ func file_middleware_wallet_proto_rawDescGZIP() []byte {
 }
 
 var file_middleware_wallet_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_middleware_wallet_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_middleware_wallet_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_middleware_wallet_proto_goTypes = []any{
-	(ClassStatus)(0),            // 0: wallet.ClassStatus
-	(ClassElementStatus)(0),     // 1: wallet.ClassElementStatus
-	(*Class)(nil),               // 2: wallet.Class
-	(*ClassRequest)(nil),        // 3: wallet.ClassRequest
-	(*ClassReply)(nil),          // 4: wallet.ClassReply
-	(*ClassElement)(nil),        // 5: wallet.ClassElement
-	(*ClassElementRequest)(nil), // 6: wallet.ClassElementRequest
-	(*ClassElementReply)(nil),   // 7: wallet.ClassElementReply
+	(WalletType)(0),            // 0: wallet.WalletType
+	(WalletState)(0),           // 1: wallet.WalletState
+	(*InformationRequest)(nil), // 2: wallet.InformationRequest
+	(*InformationReply)(nil),   // 3: wallet.InformationReply
 }
 var file_middleware_wallet_proto_depIdxs = []int32{
-	0, // 0: wallet.Class.status:type_name -> wallet.ClassStatus
-	0, // 1: wallet.ClassRequest.status:type_name -> wallet.ClassStatus
-	2, // 2: wallet.ClassReply.classes:type_name -> wallet.Class
-	1, // 3: wallet.ClassElement.status:type_name -> wallet.ClassElementStatus
-	1, // 4: wallet.ClassElementRequest.status:type_name -> wallet.ClassElementStatus
-	5, // 5: wallet.ClassElementReply.elements:type_name -> wallet.ClassElement
-	3, // 6: wallet.Service.Classes:input_type -> wallet.ClassRequest
-	6, // 7: wallet.Service.Elements:input_type -> wallet.ClassElementRequest
-	4, // 8: wallet.Service.Classes:output_type -> wallet.ClassReply
-	7, // 9: wallet.Service.Elements:output_type -> wallet.ClassElementReply
-	8, // [8:10] is the sub-list for method output_type
-	6, // [6:8] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	0, // 0: wallet.InformationReply.type:type_name -> wallet.WalletType
+	1, // 1: wallet.InformationReply.state:type_name -> wallet.WalletState
+	2, // 2: wallet.Service.Information:input_type -> wallet.InformationRequest
+	3, // 3: wallet.Service.Information:output_type -> wallet.InformationReply
+	3, // [3:4] is the sub-list for method output_type
+	2, // [2:3] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_middleware_wallet_proto_init() }
@@ -618,15 +325,13 @@ func file_middleware_wallet_proto_init() {
 	if File_middleware_wallet_proto != nil {
 		return
 	}
-	file_middleware_wallet_proto_msgTypes[1].OneofWrappers = []any{}
-	file_middleware_wallet_proto_msgTypes[4].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_middleware_wallet_proto_rawDesc), len(file_middleware_wallet_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   6,
+			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

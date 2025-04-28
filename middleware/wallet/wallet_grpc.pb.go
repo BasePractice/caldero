@@ -21,16 +21,14 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Service_Classes_FullMethodName  = "/wallet.Service/Classes"
-	Service_Elements_FullMethodName = "/wallet.Service/Elements"
+	Service_Information_FullMethodName = "/wallet.Service/Information"
 )
 
 // ServiceClient is the client API for Service service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ServiceClient interface {
-	Classes(ctx context.Context, in *ClassRequest, opts ...grpc.CallOption) (*ClassReply, error)
-	Elements(ctx context.Context, in *ClassElementRequest, opts ...grpc.CallOption) (*ClassElementReply, error)
+	Information(ctx context.Context, in *InformationRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[InformationReply], error)
 }
 
 type serviceClient struct {
@@ -41,32 +39,30 @@ func NewServiceClient(cc grpc.ClientConnInterface) ServiceClient {
 	return &serviceClient{cc}
 }
 
-func (c *serviceClient) Classes(ctx context.Context, in *ClassRequest, opts ...grpc.CallOption) (*ClassReply, error) {
+func (c *serviceClient) Information(ctx context.Context, in *InformationRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[InformationReply], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ClassReply)
-	err := c.cc.Invoke(ctx, Service_Classes_FullMethodName, in, out, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Service_ServiceDesc.Streams[0], Service_Information_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	x := &grpc.GenericClientStream[InformationRequest, InformationReply]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
 }
 
-func (c *serviceClient) Elements(ctx context.Context, in *ClassElementRequest, opts ...grpc.CallOption) (*ClassElementReply, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ClassElementReply)
-	err := c.cc.Invoke(ctx, Service_Elements_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Service_InformationClient = grpc.ServerStreamingClient[InformationReply]
 
 // ServiceServer is the server API for Service service.
 // All implementations must embed UnimplementedServiceServer
 // for forward compatibility.
 type ServiceServer interface {
-	Classes(context.Context, *ClassRequest) (*ClassReply, error)
-	Elements(context.Context, *ClassElementRequest) (*ClassElementReply, error)
+	Information(*InformationRequest, grpc.ServerStreamingServer[InformationReply]) error
 	mustEmbedUnimplementedServiceServer()
 }
 
@@ -77,11 +73,8 @@ type ServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedServiceServer struct{}
 
-func (UnimplementedServiceServer) Classes(context.Context, *ClassRequest) (*ClassReply, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Classes not implemented")
-}
-func (UnimplementedServiceServer) Elements(context.Context, *ClassElementRequest) (*ClassElementReply, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Elements not implemented")
+func (UnimplementedServiceServer) Information(*InformationRequest, grpc.ServerStreamingServer[InformationReply]) error {
+	return status.Errorf(codes.Unimplemented, "method Information not implemented")
 }
 func (UnimplementedServiceServer) mustEmbedUnimplementedServiceServer() {}
 func (UnimplementedServiceServer) testEmbeddedByValue()                 {}
@@ -104,41 +97,16 @@ func RegisterServiceServer(s grpc.ServiceRegistrar, srv ServiceServer) {
 	s.RegisterService(&Service_ServiceDesc, srv)
 }
 
-func _Service_Classes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ClassRequest)
-	if err := dec(in); err != nil {
-		return nil, err
+func _Service_Information_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(InformationRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
 	}
-	if interceptor == nil {
-		return srv.(ServiceServer).Classes(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Service_Classes_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ServiceServer).Classes(ctx, req.(*ClassRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+	return srv.(ServiceServer).Information(m, &grpc.GenericServerStream[InformationRequest, InformationReply]{ServerStream: stream})
 }
 
-func _Service_Elements_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ClassElementRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ServiceServer).Elements(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Service_Elements_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ServiceServer).Elements(ctx, req.(*ClassElementRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Service_InformationServer = grpc.ServerStreamingServer[InformationReply]
 
 // Service_ServiceDesc is the grpc.ServiceDesc for Service service.
 // It's only intended for direct use with grpc.RegisterService,
@@ -146,16 +114,13 @@ func _Service_Elements_Handler(srv interface{}, ctx context.Context, dec func(in
 var Service_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "wallet.Service",
 	HandlerType: (*ServiceServer)(nil),
-	Methods: []grpc.MethodDesc{
+	Methods:     []grpc.MethodDesc{},
+	Streams: []grpc.StreamDesc{
 		{
-			MethodName: "Classes",
-			Handler:    _Service_Classes_Handler,
-		},
-		{
-			MethodName: "Elements",
-			Handler:    _Service_Elements_Handler,
+			StreamName:    "Information",
+			Handler:       _Service_Information_Handler,
+			ServerStreams: true,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
 	Metadata: "middleware/wallet.proto",
 }

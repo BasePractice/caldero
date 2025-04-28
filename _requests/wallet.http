@@ -1,0 +1,7 @@
+### Information
+GRPC {{wallet.url}}/wallet.Service/Information
+
+{
+  "user_id": "{{user_id}}"
+}
+###
