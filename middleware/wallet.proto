@@ -6,19 +6,21 @@ option go_package = "middleware/wallet";
 package wallet;
 
 enum WalletType {
-  USER = 0;
-  COMMON = 1;
+  UNKNOWN_TYPE = 0;
+  USER = 1;
+  COMMON = 2;
 }
 
 enum WalletState {
-  ACTIVE = 0;
-  BLOCKED = 1;
-  DELETED = 2;
-  CLOSED = 3;
+  UNKNOWN_STATE = 0;
+  ACTIVE = 1;
+  BLOCKED = 2;
+  DELETED = 3;
+  CLOSED = 4;
 }
 
 message InformationRequest {
-  string user_id = 1;
+  optional string user_id = 1;
 }
 
 message InformationReply {
@@ -26,12 +28,16 @@ message InformationReply {
   int64 balance = 2;
   int64 reserved_debit = 3;
   int64 reserved_credit = 4;
-  reserved 10;
+  reserved 5, 6, 7, 8, 9, 10, 11, 12, 13;
   WalletType type = 14;
   WalletState state = 15;
   int64 transactions = 16;
 }
 
+message InformationReplyList {
+  repeated InformationReply replies = 1;
+}
+
 service Service {
-  rpc Information(InformationRequest) returns (stream InformationReply);
+  rpc Information(InformationRequest) returns (InformationReplyList);
 }

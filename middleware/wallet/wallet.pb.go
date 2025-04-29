@@ -26,19 +26,22 @@ const (
 type WalletType int32
 
 const (
-	WalletType_USER   WalletType = 0
-	WalletType_COMMON WalletType = 1
+	WalletType_UNKNOWN_TYPE WalletType = 0
+	WalletType_USER         WalletType = 1
+	WalletType_COMMON       WalletType = 2
 )
 
 // Enum value maps for WalletType.
 var (
 	WalletType_name = map[int32]string{
-		0: "USER",
-		1: "COMMON",
+		0: "UNKNOWN_TYPE",
+		1: "USER",
+		2: "COMMON",
 	}
 	WalletType_value = map[string]int32{
-		"USER":   0,
-		"COMMON": 1,
+		"UNKNOWN_TYPE": 0,
+		"USER":         1,
+		"COMMON":       2,
 	}
 )
 
@@ -72,25 +75,28 @@ func (WalletType) EnumDescriptor() ([]byte, []int) {
 type WalletState int32
 
 const (
-	WalletState_ACTIVE  WalletState = 0
-	WalletState_BLOCKED WalletState = 1
-	WalletState_DELETED WalletState = 2
-	WalletState_CLOSED  WalletState = 3
+	WalletState_UNKNOWN_STATE WalletState = 0
+	WalletState_ACTIVE        WalletState = 1
+	WalletState_BLOCKED       WalletState = 2
+	WalletState_DELETED       WalletState = 3
+	WalletState_CLOSED        WalletState = 4
 )
 
 // Enum value maps for WalletState.
 var (
 	WalletState_name = map[int32]string{
-		0: "ACTIVE",
-		1: "BLOCKED",
-		2: "DELETED",
-		3: "CLOSED",
+		0: "UNKNOWN_STATE",
+		1: "ACTIVE",
+		2: "BLOCKED",
+		3: "DELETED",
+		4: "CLOSED",
 	}
 	WalletState_value = map[string]int32{
-		"ACTIVE":  0,
-		"BLOCKED": 1,
-		"DELETED": 2,
-		"CLOSED":  3,
+		"UNKNOWN_STATE": 0,
+		"ACTIVE":        1,
+		"BLOCKED":       2,
+		"DELETED":       3,
+		"CLOSED":        4,
 	}
 )
 
@@ -123,7 +129,7 @@ func (WalletState) EnumDescriptor() ([]byte, []int) {
 
 type InformationRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	UserId        *string                `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3,oneof" json:"user_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -159,8 +165,8 @@ func (*InformationRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *InformationRequest) GetUserId() string {
-	if x != nil {
-		return x.UserId
+	if x != nil && x.UserId != nil {
+		return *x.UserId
 	}
 	return ""
 }
@@ -240,14 +246,14 @@ func (x *InformationReply) GetType() WalletType {
 	if x != nil {
 		return x.Type
 	}
-	return WalletType_USER
+	return WalletType_UNKNOWN_TYPE
 }
 
 func (x *InformationReply) GetState() WalletState {
 	if x != nil {
 		return x.State
 	}
-	return WalletState_ACTIVE
+	return WalletState_UNKNOWN_STATE
 }
 
 func (x *InformationReply) GetTransactions() int64 {
@@ -257,13 +263,59 @@ func (x *InformationReply) GetTransactions() int64 {
 	return 0
 }
 
+type InformationReplyList struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Replies       []*InformationReply    `protobuf:"bytes,1,rep,name=replies,proto3" json:"replies,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InformationReplyList) Reset() {
+	*x = InformationReplyList{}
+	mi := &file_middleware_wallet_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InformationReplyList) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InformationReplyList) ProtoMessage() {}
+
+func (x *InformationReplyList) ProtoReflect() protoreflect.Message {
+	mi := &file_middleware_wallet_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InformationReplyList.ProtoReflect.Descriptor instead.
+func (*InformationReplyList) Descriptor() ([]byte, []int) {
+	return file_middleware_wallet_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *InformationReplyList) GetReplies() []*InformationReply {
+	if x != nil {
+		return x.Replies
+	}
+	return nil
+}
+
 var File_middleware_wallet_proto protoreflect.FileDescriptor
 
 const file_middleware_wallet_proto_rawDesc = "" +
 	"\n" +
-	"\x17middleware/wallet.proto\x12\x06wallet\"-\n" +
-	"\x12InformationRequest\x12\x17\n" +
-	"\auser_id\x18\x01 \x01(\tR\x06userId\"\x89\x02\n" +
+	"\x17middleware/wallet.proto\x12\x06wallet\">\n" +
+	"\x12InformationRequest\x12\x1c\n" +
+	"\auser_id\x18\x01 \x01(\tH\x00R\x06userId\x88\x01\x01B\n" +
+	"\n" +
+	"\b_user_id\"\xb9\x02\n" +
 	"\x10InformationReply\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\abalance\x18\x02 \x01(\x03R\abalance\x12%\n" +
@@ -271,22 +323,27 @@ const file_middleware_wallet_proto_rawDesc = "" +
 	"\x0freserved_credit\x18\x04 \x01(\x03R\x0ereservedCredit\x12&\n" +
 	"\x04type\x18\x0e \x01(\x0e2\x12.wallet.WalletTypeR\x04type\x12)\n" +
 	"\x05state\x18\x0f \x01(\x0e2\x13.wallet.WalletStateR\x05state\x12\"\n" +
-	"\ftransactions\x18\x10 \x01(\x03R\ftransactionsJ\x04\b\n" +
-	"\x10\v*\"\n" +
+	"\ftransactions\x18\x10 \x01(\x03R\ftransactionsJ\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\a\x10\bJ\x04\b\b\x10\tJ\x04\b\t\x10\n" +
+	"J\x04\b\n" +
+	"\x10\vJ\x04\b\v\x10\fJ\x04\b\f\x10\rJ\x04\b\r\x10\x0e\"J\n" +
+	"\x14InformationReplyList\x122\n" +
+	"\areplies\x18\x01 \x03(\v2\x18.wallet.InformationReplyR\areplies*4\n" +
 	"\n" +
-	"WalletType\x12\b\n" +
-	"\x04USER\x10\x00\x12\n" +
+	"WalletType\x12\x10\n" +
+	"\fUNKNOWN_TYPE\x10\x00\x12\b\n" +
+	"\x04USER\x10\x01\x12\n" +
 	"\n" +
-	"\x06COMMON\x10\x01*?\n" +
-	"\vWalletState\x12\n" +
+	"\x06COMMON\x10\x02*R\n" +
+	"\vWalletState\x12\x11\n" +
+	"\rUNKNOWN_STATE\x10\x00\x12\n" +
 	"\n" +
-	"\x06ACTIVE\x10\x00\x12\v\n" +
-	"\aBLOCKED\x10\x01\x12\v\n" +
-	"\aDELETED\x10\x02\x12\n" +
+	"\x06ACTIVE\x10\x01\x12\v\n" +
+	"\aBLOCKED\x10\x02\x12\v\n" +
+	"\aDELETED\x10\x03\x12\n" +
 	"\n" +
-	"\x06CLOSED\x10\x032P\n" +
-	"\aService\x12E\n" +
-	"\vInformation\x12\x1a.wallet.InformationRequest\x1a\x18.wallet.InformationReply0\x01B\x13Z\x11middleware/walletb\x06proto3"
+	"\x06CLOSED\x10\x042R\n" +
+	"\aService\x12G\n" +
+	"\vInformation\x12\x1a.wallet.InformationRequest\x1a\x1c.wallet.InformationReplyListB\x13Z\x11middleware/walletb\x06proto3"
 
 var (
 	file_middleware_wallet_proto_rawDescOnce sync.Once
@@ -301,23 +358,25 @@ func file_middleware_wallet_proto_rawDescGZIP() []byte {
 }
 
 var file_middleware_wallet_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_middleware_wallet_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_middleware_wallet_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_middleware_wallet_proto_goTypes = []any{
-	(WalletType)(0),            // 0: wallet.WalletType
-	(WalletState)(0),           // 1: wallet.WalletState
-	(*InformationRequest)(nil), // 2: wallet.InformationRequest
-	(*InformationReply)(nil),   // 3: wallet.InformationReply
+	(WalletType)(0),              // 0: wallet.WalletType
+	(WalletState)(0),             // 1: wallet.WalletState
+	(*InformationRequest)(nil),   // 2: wallet.InformationRequest
+	(*InformationReply)(nil),     // 3: wallet.InformationReply
+	(*InformationReplyList)(nil), // 4: wallet.InformationReplyList
 }
 var file_middleware_wallet_proto_depIdxs = []int32{
 	0, // 0: wallet.InformationReply.type:type_name -> wallet.WalletType
 	1, // 1: wallet.InformationReply.state:type_name -> wallet.WalletState
-	2, // 2: wallet.Service.Information:input_type -> wallet.InformationRequest
-	3, // 3: wallet.Service.Information:output_type -> wallet.InformationReply
-	3, // [3:4] is the sub-list for method output_type
-	2, // [2:3] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	3, // 2: wallet.InformationReplyList.replies:type_name -> wallet.InformationReply
+	2, // 3: wallet.Service.Information:input_type -> wallet.InformationRequest
+	4, // 4: wallet.Service.Information:output_type -> wallet.InformationReplyList
+	4, // [4:5] is the sub-list for method output_type
+	3, // [3:4] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_middleware_wallet_proto_init() }
@@ -325,13 +384,14 @@ func file_middleware_wallet_proto_init() {
 	if File_middleware_wallet_proto != nil {
 		return
 	}
+	file_middleware_wallet_proto_msgTypes[0].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_middleware_wallet_proto_rawDesc), len(file_middleware_wallet_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   2,
+			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

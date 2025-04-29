@@ -4,4 +4,9 @@ GRPC {{wallet.url}}/wallet.Service/Information
 {
   "user_id": "{{user_id}}"
 }
+### Information
+GRPC {{wallet.url}}/wallet.Service/Information
+X-User-Id: {{user_id}}
+
+{}
 ###

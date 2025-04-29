@@ -28,7 +28,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ServiceClient interface {
-	Information(ctx context.Context, in *InformationRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[InformationReply], error)
+	Information(ctx context.Context, in *InformationRequest, opts ...grpc.CallOption) (*InformationReplyList, error)
 }
 
 type serviceClient struct {
@@ -39,30 +39,21 @@ func NewServiceClient(cc grpc.ClientConnInterface) ServiceClient {
 	return &serviceClient{cc}
 }
 
-func (c *serviceClient) Information(ctx context.Context, in *InformationRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[InformationReply], error) {
+func (c *serviceClient) Information(ctx context.Context, in *InformationRequest, opts ...grpc.CallOption) (*InformationReplyList, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Service_ServiceDesc.Streams[0], Service_Information_FullMethodName, cOpts...)
+	out := new(InformationReplyList)
+	err := c.cc.Invoke(ctx, Service_Information_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &grpc.GenericClientStream[InformationRequest, InformationReply]{ClientStream: stream}
-	if err := x.ClientStream.SendMsg(in); err != nil {
-		return nil, err
-	}
-	if err := x.ClientStream.CloseSend(); err != nil {
-		return nil, err
-	}
-	return x, nil
+	return out, nil
 }
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type Service_InformationClient = grpc.ServerStreamingClient[InformationReply]
 
 // ServiceServer is the server API for Service service.
 // All implementations must embed UnimplementedServiceServer
 // for forward compatibility.
 type ServiceServer interface {
-	Information(*InformationRequest, grpc.ServerStreamingServer[InformationReply]) error
+	Information(context.Context, *InformationRequest) (*InformationReplyList, error)
 	mustEmbedUnimplementedServiceServer()
 }
 
@@ -73,8 +64,8 @@ type ServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedServiceServer struct{}
 
-func (UnimplementedServiceServer) Information(*InformationRequest, grpc.ServerStreamingServer[InformationReply]) error {
-	return status.Errorf(codes.Unimplemented, "method Information not implemented")
+func (UnimplementedServiceServer) Information(context.Context, *InformationRequest) (*InformationReplyList, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Information not implemented")
 }
 func (UnimplementedServiceServer) mustEmbedUnimplementedServiceServer() {}
 func (UnimplementedServiceServer) testEmbeddedByValue()                 {}
@@ -97,16 +88,23 @@ func RegisterServiceServer(s grpc.ServiceRegistrar, srv ServiceServer) {
 	s.RegisterService(&Service_ServiceDesc, srv)
 }
 
-func _Service_Information_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(InformationRequest)
-	if err := stream.RecvMsg(m); err != nil {
-		return err
+func _Service_Information_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InformationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
 	}
-	return srv.(ServiceServer).Information(m, &grpc.GenericServerStream[InformationRequest, InformationReply]{ServerStream: stream})
+	if interceptor == nil {
+		return srv.(ServiceServer).Information(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Service_Information_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ServiceServer).Information(ctx, req.(*InformationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type Service_InformationServer = grpc.ServerStreamingServer[InformationReply]
 
 // Service_ServiceDesc is the grpc.ServiceDesc for Service service.
 // It's only intended for direct use with grpc.RegisterService,
@@ -114,13 +112,12 @@ type Service_InformationServer = grpc.ServerStreamingServer[InformationReply]
 var Service_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "wallet.Service",
 	HandlerType: (*ServiceServer)(nil),
-	Methods:     []grpc.MethodDesc{},
-	Streams: []grpc.StreamDesc{
+	Methods: []grpc.MethodDesc{
 		{
-			StreamName:    "Information",
-			Handler:       _Service_Information_Handler,
-			ServerStreams: true,
+			MethodName: "Information",
+			Handler:    _Service_Information_Handler,
 		},
 	},
+	Streams:  []grpc.StreamDesc{},
 	Metadata: "middleware/wallet.proto",
 }

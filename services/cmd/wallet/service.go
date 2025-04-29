@@ -1,9 +1,9 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"github.com/google/uuid"
-	"google.golang.org/grpc"
-	"log/slog"
 	"wish/middleware/wallet"
 	"wish/services"
 )
@@ -14,16 +14,33 @@ type service struct {
 	cache services.Cache
 }
 
-func (s service) Information(request *wallet.InformationRequest, response grpc.ServerStreamingServer[wallet.InformationReply]) error {
-	userId, err := uuid.Parse(request.UserId)
-	if err != nil {
-		return err
-	}
-	return s.db.Information(userId, func(reply *wallet.InformationReply) {
-		err = response.Send(reply)
-		if err != nil {
-			slog.Error("Failed to send reply",
-				slog.String("user_id", userId.String()), slog.String("reason", err.Error()))
+func (s service) Information(ctx context.Context, request *wallet.InformationRequest) (*wallet.InformationReplyList, error) {
+	services.PrintMetadata(ctx)
+	var err error
+	var userId uuid.UUID
+	if request.UserId == nil {
+		id := services.GetUserId(ctx)
+		if id != nil {
+			userId, err = uuid.Parse(*id)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, errors.New("user id not found")
 		}
+	} else {
+		userId, err = uuid.Parse(*request.UserId)
+		if err != nil {
+			return nil, err
+		}
+	}
+	var replies = make([]*wallet.InformationReply, 0)
+
+	err = s.db.Information(userId, func(reply *wallet.InformationReply) {
+		replies = append(replies, reply)
 	})
+	if err != nil {
+		return nil, err
+	}
+	return &wallet.InformationReplyList{Replies: replies}, nil
 }
