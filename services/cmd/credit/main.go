@@ -24,7 +24,7 @@ func main() {
 				slog.String("err", fmt.Sprintf("%v", err)))
 		}
 	}()
-	_ = services.ExitHandle(func(context.Context) {
+	ctx := services.ExitHandle(func(context.Context) {
 		slog.Info("Service exit")
 		os.Exit(0)
 	})
@@ -36,8 +36,8 @@ func main() {
 		slog.Warn("Warning loading .env file", slog.String("err", err.Error()))
 	}
 	db := NewDatabaseCredit()
-	registerHttpHandlers(db)
-	err = http.ListenAndServe(fmt.Sprintf(":%d", *port), nil)
+	handler := registerHttpHandlers(ctx, db)
+	err = http.ListenAndServe(fmt.Sprintf(":%d", *port), handler)
 	if err != nil {
 		panic(err)
 	}
