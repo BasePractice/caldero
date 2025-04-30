@@ -144,3 +144,27 @@ services:
       LOG_FILE: /logs/wallet.log
     volumes:
       - ./.logs/wallet:/logs
+  credit:
+    image: wish/credit:latest
+    build:
+      context: ./
+      dockerfile: ./services/cmd/credit/Dockerfile
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    #    healthcheck:
+    #      test: [ "CMD-SHELL", "grep -q :$(printf '%04X' 52051) /proc/net/tcp6" ]
+    #      interval: 3s
+    #      timeout: 2s
+    #      retries: 15
+    ports:
+      - "51052:51052"
+      - "8281:8081"
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres-db:5432/wish?sslmode=disable&search_path=credit
+      REDIS_URL: redis://redis:6379/10?protocol=3
+      LOG_FILE: /logs/credit.log
+    volumes:
+      - ./.logs/credit:/logs

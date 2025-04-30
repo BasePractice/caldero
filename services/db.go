@@ -21,7 +21,7 @@ func migrationScheme(db *sql.DB, migrations embed.FS) {
 		slog.Error("Can't create postgres instance", slog.String("err", err.Error()))
 		return
 	}
-	instance, err := migrate.NewWithInstance("iofs", d, "pet", driver)
+	instance, err := migrate.NewWithInstance("iofs", d, "wish", driver)
 	if err != nil {
 		slog.Error("Can't create migration", slog.String("err", err.Error()))
 		return

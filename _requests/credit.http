@@ -1,0 +1,10 @@
+### Create credit
+POST {{credit.url}}/credit
+Content-Type: application/json
+
+{
+  "user_id": "{{user_id}}",
+  "percent": 24,
+  "balance": 1200000000,
+  "type": "SIMPLE"
+}
