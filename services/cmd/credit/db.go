@@ -14,17 +14,17 @@ import (
 var migrations embed.FS
 
 type DatabaseCredit interface {
-	CreateCredit(ctx context.Context, credit CreateCredit) (int64, error)
+	CreateCredit(ctx context.Context, credit CreateCredit, operator *services.AuthorizedUser) (int64, error)
 }
 
 type ds struct {
 	db *sql.DB
 }
 
-func (d ds) CreateCredit(ctx context.Context, credit CreateCredit) (int64, error) {
+func (d ds) CreateCredit(ctx context.Context, credit CreateCredit, operator *services.AuthorizedUser) (int64, error) {
 	var id int64
-	if err := d.db.QueryRowContext(ctx, "INSERT INTO credit (user_id, type, percent, balance) VALUES ($1, $2, $3, $4) RETURNING id",
-		credit.UserId, credit.Type, credit.Percent, credit.Balance).Scan(&id); err != nil {
+	if err := d.db.QueryRowContext(ctx, "INSERT INTO credit (user_id, creator_id, type, percent, balance) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+		credit.UserId, operator.Id, credit.Type, credit.Percent, credit.Balance).Scan(&id); err != nil {
 		return 0, fmt.Errorf("failed to create credit: %w", err)
 	}
 	return id, nil

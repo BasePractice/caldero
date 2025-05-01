@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"wish/services"
 )
 
 func registerHttpHandlers(ctx context.Context, db DatabaseCredit) http.Handler {
@@ -22,6 +23,11 @@ func registerHttpHandlers(ctx context.Context, db DatabaseCredit) http.Handler {
 }
 
 func createCredit(ctx context.Context, db DatabaseCredit, w http.ResponseWriter, r *http.Request) {
+	operator, err := services.HttpAuthorized(r)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
 	switch r.Method {
 	case http.MethodPost:
 		var credit CreateCredit
@@ -35,7 +41,7 @@ func createCredit(ctx context.Context, db DatabaseCredit, w http.ResponseWriter,
 				slog.String("credit", credit.String()))
 			w.WriteHeader(http.StatusBadRequest)
 		}
-		id, err := db.CreateCredit(ctx, credit)
+		id, err := db.CreateCredit(ctx, credit, operator)
 		if err != nil {
 			slog.Error("Failed to create credit",
 				slog.String("credit", credit.String()),

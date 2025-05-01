@@ -3,6 +3,7 @@ CREATE TABLE credit
 (
     id         SERIAL    NOT NULL PRIMARY KEY,
     user_id    UUID      NOT NULL,
+    creator_id UUID      NOT NULL,
     type       VARCHAR   NOT NULL DEFAULT 'SIMPLE' CHECK ( type IN ('SIMPLE', 'MICRO', 'IPOT') ),
     percent    INTEGER   NOT NULL DEFAULT 10,
     state      VARCHAR   NOT NULL DEFAULT 'PREPARED' CHECK ( state IN ('PREPARED', 'CONFIRM', 'REJECTED', 'STARTED', 'COMPLETED')),

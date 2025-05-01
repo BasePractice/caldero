@@ -1,6 +1,7 @@
 ### Create credit
 POST {{credit.url}}/credit
 Content-Type: application/json
+X-Authorized-Id: {{credit.operator}}
 
 {
   "user_id": "{{user_id}}",
@@ -12,6 +13,7 @@ Content-Type: application/json
 ### Create credit
 POST {{credit.url}}/credit
 Content-Type: application/json
+X-Authorized-Id: {{credit.operator}}
 
 {
   "user_id": "{{user_id}}",
