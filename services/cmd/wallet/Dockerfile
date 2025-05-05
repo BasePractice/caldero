@@ -13,6 +13,5 @@ FROM scratch
 COPY --from=builder /wallet /wallet
 
 EXPOSE 51051
-EXPOSE 8081
 
 CMD ["/wallet"]

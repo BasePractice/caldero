@@ -1,0 +1,4 @@
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS oauth_clients;
+DROP TABLE IF EXISTS keys;
+DROP TABLE IF EXISTS oauth_tokens;

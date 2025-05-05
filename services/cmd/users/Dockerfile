@@ -7,11 +7,11 @@ COPY go.sum ./
 RUN go mod download
 RUN go mod tidy
 COPY . .
-RUN CGO_ENABLED=0 go build -o /credit -ldflags '-extldflags "-static"' wish/services/cmd/credit
+RUN CGO_ENABLED=0 go build -o /users -ldflags '-extldflags "-static"' wish/services/cmd/users
 
 FROM scratch
-COPY --from=builder /credit /credit
+COPY --from=builder /users /users
 
-EXPOSE 51052
+EXPOSE 51053
 
-CMD ["/credit"]
+CMD ["/users"]

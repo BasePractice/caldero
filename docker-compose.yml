@@ -130,14 +130,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    #    healthcheck:
-    #      test: [ "CMD-SHELL", "grep -q :$(printf '%04X' 52051) /proc/net/tcp6" ]
-    #      interval: 3s
-    #      timeout: 2s
-    #      retries: 15
     ports:
       - "51051:51051"
-      - "8181:8081"
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres-db:5432/wish?sslmode=disable&search_path=wallet
       REDIS_URL: redis://redis:6379/10?protocol=3
@@ -154,17 +148,29 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    #    healthcheck:
-    #      test: [ "CMD-SHELL", "grep -q :$(printf '%04X' 52051) /proc/net/tcp6" ]
-    #      interval: 3s
-    #      timeout: 2s
-    #      retries: 15
     ports:
       - "51052:51052"
-      - "8281:8081"
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres-db:5432/wish?sslmode=disable&search_path=credit
       REDIS_URL: redis://redis:6379/10?protocol=3
       LOG_FILE: /logs/credit.log
     volumes:
       - ./.logs/credit:/logs
+  users:
+    image: wish/users:latest
+    build:
+      context: ./
+      dockerfile: ./services/cmd/users/Dockerfile
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "51053:51053"
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres-db:5432/wish?sslmode=disable&search_path=users
+      REDIS_URL: redis://redis:6379/10?protocol=3
+      LOG_FILE: /logs/users.log
+    volumes:
+      - ./.logs/users:/logs
