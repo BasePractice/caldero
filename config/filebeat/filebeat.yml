@@ -2,9 +2,9 @@ filebeat.inputs:
 - type: filestream
   enabled: true
   paths:
-    - /logs/user-service/*.log
+    - /logs/credit/*.log
   fields:
-    service: "user-service"
+    service: "credit"
 
 - type: filestream
   enabled: true
@@ -12,6 +12,12 @@ filebeat.inputs:
     - /logs/wallet/*.log
   fields:
     service: "wallet"
+- type: filestream
+  enabled: true
+  paths:
+    - /logs/users/*.log
+  fields:
+    service: "users"
 
 output.logstash:
   hosts: ["logstash:5044"]

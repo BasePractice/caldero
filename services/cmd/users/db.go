@@ -17,24 +17,25 @@ import (
 	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 	"github.com/ory/fosite"
+	"github.com/ory/fosite/handler/oauth2"
 )
 
 //go:embed migrations/*.sql
 var migrations embed.FS
 
 type DatabaseUsers interface {
+	oauth2.CoreStorage
 	GetClient(ctx context.Context, id string) (fosite.Client, error)
 	CreateAccessTokenSession(ctx context.Context, signature string, request fosite.Requester) error
 	GetAccessTokenSession(ctx context.Context, signature string, session fosite.Session) (fosite.Requester, error)
 	DeleteAccessTokenSession(ctx context.Context, signature string) error
-	CreateRefreshTokenSession(ctx context.Context, signature string, request fosite.Requester) error
 	GetRefreshTokenSession(ctx context.Context, signature string, session fosite.Session) (fosite.Requester, error)
 	DeleteRefreshTokenSession(ctx context.Context, signature string) error
 	RevokeRefreshToken(ctx context.Context, requestID string) error
 	RevokeAccessToken(ctx context.Context, requestID string) error
 
 	CreateUser(ctx context.Context, username, passwordHash string) (*User, error)
-	GetUser(ctx context.Context, username, passwordHash string) (*User, error)
+	GetUser(ctx context.Context, username string) (*User, error)
 
 	GetLastKey(ctx context.Context) (string, error)
 	GetKey(ctx context.Context, id string) ([]byte, error)
@@ -48,6 +49,26 @@ type DatabaseUsers interface {
 
 type ds struct {
 	db *sql.DB
+}
+
+func (s *ds) CreateAuthorizeCodeSession(ctx context.Context, code string, request fosite.Requester) (err error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (s *ds) GetAuthorizeCodeSession(ctx context.Context, code string, session fosite.Session) (request fosite.Requester, err error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (s *ds) InvalidateAuthorizeCodeSession(ctx context.Context, code string) (err error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (s *ds) RotateRefreshToken(ctx context.Context, requestID string, refreshTokenSignature string) (err error) {
+	//TODO implement me
+	panic("implement me")
 }
 
 func (s *ds) CreateClient(ctx context.Context, clientId, clientSecret, redirectUri, scopes, responseType, grantTypes string) {
@@ -114,9 +135,9 @@ func (s *ds) GetLastKey(ctx context.Context) (string, error) {
 	return keyId, nil
 }
 
-func (s *ds) GetUser(ctx context.Context, username, passwordHash string) (*User, error) {
-	var u = User{Username: username, PasswordHash: passwordHash}
-	err := s.db.QueryRowContext(ctx, "SELECT id FROM users WHERE username = $1 AND password_hash = $2", username, passwordHash).Scan(&u.Id)
+func (s *ds) GetUser(ctx context.Context, username string) (*User, error) {
+	var u = User{Username: username}
+	err := s.db.QueryRowContext(ctx, "SELECT user_id, password_hash FROM users WHERE username = $1", username).Scan(&u.Id, &u.PasswordHash)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +147,7 @@ func (s *ds) GetUser(ctx context.Context, username, passwordHash string) (*User,
 func (s *ds) CreateUser(ctx context.Context, username, passwordHash string) (*User, error) {
 	var id uuid.UUID
 	err := s.db.QueryRowContext(ctx,
-		"INSERT INTO users (username, password_hash) VALUES ($1, $2) RETURNING id",
+		"INSERT INTO users (username, password_hash) VALUES ($1, $2) RETURNING user_id",
 		username, passwordHash,
 	).Scan(&id)
 	if err != nil {
@@ -177,7 +198,7 @@ func (s *ds) DeleteAccessTokenSession(ctx context.Context, signature string) err
 	return s.deleteTokenSession("access", signature)
 }
 
-func (s *ds) CreateRefreshTokenSession(ctx context.Context, signature string, request fosite.Requester) error {
+func (s *ds) CreateRefreshTokenSession(ctx context.Context, signature string, accessSignature string, request fosite.Requester) (err error) {
 	return s.createTokenSession("refresh", signature, request)
 }
 
@@ -258,11 +279,19 @@ func (s *ds) RevokeAccessToken(ctx context.Context, requestId string) error {
 }
 
 func (s *ds) IsUniqueConstraintError(err error) bool {
-	var pgError pq.PGError
-	if errors.As(err, &pgError) {
-		return pgError.Error() == "23000"
+	var pge *pq.Error
+	if errors.As(err, &pge) {
+		return pge.Code == "23505"
 	}
 	return false
+}
+
+func (s *ds) ClientAssertionJWTValid(ctx context.Context, jti string) error {
+	return nil
+}
+
+func (s *ds) SetClientAssertionJWT(ctx context.Context, jti string, exp time.Time) error {
+	return nil
 }
 
 func splitCSV(input string) []string {

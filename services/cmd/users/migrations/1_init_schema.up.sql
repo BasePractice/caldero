@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS users
 
 CREATE TABLE IF NOT EXISTS oauth_clients
 (
-    client_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id      VARCHAR NOT NULL PRIMARY KEY,
     client_secret  VARCHAR NOT NULL,
     redirect_uris  VARCHAR NOT NULL,
     grant_types    VARCHAR NOT NULL,
@@ -16,6 +16,10 @@ CREATE TABLE IF NOT EXISTS oauth_clients
     scopes         VARCHAR NOT NULL,
     created_at     TIMESTAMP        DEFAULT CURRENT_TIMESTAMP
 );
+INSERT INTO oauth_clients(client_id, client_secret, redirect_uris, grant_types, response_types, scopes)
+VALUES ('test-client', 'test-secret', 'http://localhost:0001/callback', 'authorization_code,refresh_token,password',
+        'code', 'openid,read,write');
+
 
 CREATE TABLE IF NOT EXISTS keys
 (

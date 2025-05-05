@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/x509"
 	"encoding/json"
 	"errors"
@@ -26,21 +27,28 @@ type Service struct {
 }
 
 func newService(ctx context.Context) *Service {
+	var secret = make([]byte, 32)
+	_, _ = rand.Read(secret)
 	var oauth2Config = &fosite.Config{
 		AccessTokenLifespan:        time.Hour,
 		RefreshTokenLifespan:       time.Hour * 24 * 30,
 		IDTokenLifespan:            time.Hour,
 		SendDebugMessagesToClients: true,
+		GlobalSecret:               secret,
 	}
 	db := NewDatabaseUsers()
 	keyManager, _ := NewKeyManager(ctx, db)
 	var oauth2Provider = compose.Compose(
 		oauth2Config,
 		db,
-		keyManager,
+		&compose.CommonStrategy{
+			CoreStrategy:               compose.NewOAuth2HMACStrategy(oauth2Config),
+			OpenIDConnectTokenStrategy: compose.NewOpenIDConnectStrategy(keyManager.GetPrivateKey, oauth2Config),
+			Signer:                     &jwt.DefaultSigner{GetPrivateKey: keyManager.GetPrivateKey},
+		},
 		compose.OAuth2AuthorizeExplicitFactory,
 		compose.OAuth2RefreshTokenGrantFactory,
-		compose.OpenIDConnectExplicitFactory,
+		//compose.OpenIDConnectExplicitFactory,
 		compose.OAuth2TokenIntrospectionFactory,
 		compose.OAuth2TokenRevocationFactory,
 	)
@@ -87,6 +95,7 @@ func (s *Service) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
+		slog.Error("Failed to hashing password", slog.String("err", err.Error()))
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -94,14 +103,16 @@ func (s *Service) handleRegister(w http.ResponseWriter, r *http.Request) {
 	user, err := s.db.CreateUser(r.Context(), username, string(hashedPassword))
 	if err != nil {
 		if s.db.IsUniqueConstraintError(err) {
+			slog.Error("User already exists", slog.String("username", username), slog.String("err", err.Error()))
 			http.Error(w, "Username already exists", http.StatusConflict)
 			return
 		}
+		slog.Error("Failed to create user", slog.String("err", err.Error()))
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusCreated)
 	w.Header().Set("X-User-Id", user.Id.String())
+	w.WriteHeader(http.StatusCreated)
 }
 
 func (s *Service) handleAuthorization(w http.ResponseWriter, r *http.Request) {
@@ -242,7 +253,7 @@ func (s *Service) authenticateUser(r *http.Request) (*User, error) {
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 
-	user, err := s.db.GetUser(r.Context(), username, password)
+	user, err := s.db.GetUser(r.Context(), username)
 	if err != nil {
 		return nil, err
 	}

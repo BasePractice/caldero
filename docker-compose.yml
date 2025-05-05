@@ -64,14 +64,14 @@ services:
     volumes:
       - ./config/logstash/logstash.conf:/usr/share/logstash/pipeline/logstash.conf
     command: [ "-f", "/usr/share/logstash/pipeline/logstash.conf" ]
-  filebeat:
-    image: elastic/filebeat:8.17.5
-    depends_on:
-      logstash:
-        condition: service_started
-    volumes:
-      - ./config/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml
-      - ./.logs:/logs
+#  filebeat:
+#    image: elastic/filebeat:8.17.5
+#    depends_on:
+#      logstash:
+#        condition: service_started
+#    volumes:
+#      - ./config/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml
+#      - ./.logs:/logs
   keycloak:
     image: keycloak/keycloak:26.0
     depends_on:
@@ -135,7 +135,7 @@ services:
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres-db:5432/wish?sslmode=disable&search_path=wallet
       REDIS_URL: redis://redis:6379/10?protocol=3
-      LOG_FILE: /logs/wallet.log
+#      LOG_FILE: /logs/wallet.log
     volumes:
       - ./.logs/wallet:/logs
   credit:
@@ -153,7 +153,7 @@ services:
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres-db:5432/wish?sslmode=disable&search_path=credit
       REDIS_URL: redis://redis:6379/10?protocol=3
-      LOG_FILE: /logs/credit.log
+#      LOG_FILE: /logs/credit.log
     volumes:
       - ./.logs/credit:/logs
   users:
@@ -171,6 +171,6 @@ services:
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres-db:5432/wish?sslmode=disable&search_path=users
       REDIS_URL: redis://redis:6379/10?protocol=3
-      LOG_FILE: /logs/users.log
+#      LOG_FILE: /logs/users.log
     volumes:
       - ./.logs/users:/logs

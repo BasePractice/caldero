@@ -1,0 +1,38 @@
+### Keys
+GET {{users.url}}/.well-known/jwks.json
+
+> {%
+    client.assert(response.status === 200, "Ключи не созданы")
+    client.assert(response.body.keys.length > 0, "Нет ни одного ключа")
+    client.assert(response.body.keys[0].kty === "RSA", "Почему-то не RSA алгоритм")
+%}
+
+### Create user
+POST {{users.url}}/register
+Content-Type: application/x-www-form-urlencoded
+
+username = {{users.simple.username}} &
+password = {{users.simple.password}}
+
+> {%
+    client.assert(response.status === 201 || response.status === 409, "Не удалось создать пользователя")
+    let user_id = response.headers.valueOf('X-User-Id')
+    client.global.set("user_id", user_id)
+    client.log("Пользователь", user_id, "создан")
+%}
+
+### Authenticate user
+// @no-redirect
+POST {{users.url}}/auth
+Content-Type: application/x-www-form-urlencoded
+
+username = {{users.simple.username}} &
+password = {{users.simple.password}} &
+state = {{$random.uuid}} &
+client_id = {{users.client_id}} &
+client_secret = {{users.client_secret}} &
+response_type = {{users.response_type}} &
+redirect_uri = {{users.redirect_uri}} &
+grant_type = {{users.grant_type}} &
+scopes = {{users.scopes}}
+
