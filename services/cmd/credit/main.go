@@ -4,12 +4,14 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/joho/godotenv"
 	"log/slog"
 	"net/http"
 	"os"
 	"runtime/debug"
+
 	"wish/services"
+
+	"github.com/joho/godotenv"
 )
 
 var (

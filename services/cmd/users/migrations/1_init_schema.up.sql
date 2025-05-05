@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS oauth_clients
     grant_types    VARCHAR NOT NULL,
     response_types VARCHAR NOT NULL,
     scopes         VARCHAR NOT NULL,
-    created_at     TIMESTAMP        DEFAULT CURRENT_TIMESTAMP
+    created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 INSERT INTO oauth_clients(client_id, client_secret, redirect_uris, grant_types, response_types, scopes)
 VALUES ('test-client', 'test-secret', 'http://localhost:0001/callback', 'authorization_code,refresh_token,password',

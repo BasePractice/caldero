@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
+
 	"wish/services"
 )
 
@@ -14,10 +16,29 @@ func registerHttpHandlers(ctx context.Context, db DatabaseCredit) http.Handler {
 	mux.HandleFunc("POST /credit", func(w http.ResponseWriter, r *http.Request) {
 		createCredit(ctx, db, w, r)
 	})
-	mux.HandleFunc("GET /credit/{id}", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /credit/{id}/need_payments", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
+		idInt, err := strconv.ParseUint(id, 10, 64)
+		if err != nil {
+			slog.Error("Invalid id", slog.String("id", id), slog.String("err", err.Error()))
+			http.Error(w, "Invalid id", http.StatusBadRequest)
+			return
+		}
+		credit, err := db.GetCredit(ctx, idInt)
+		if err != nil {
+			slog.Error("Get credit", slog.String("id", id), slog.String("err", err.Error()))
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+		payments := mothPaymentCalculation(*credit)
 		w.Header().Set("X-Credit-Id", id)
-		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type", "application/json")
+		err = json.NewEncoder(w).Encode(payments)
+		if err != nil {
+			slog.Error("Encode json", slog.String("id", id), slog.String("err", err.Error()))
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	})
 	return mux
 }

@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+
 	"github.com/google/uuid"
 	"google.golang.org/grpc/metadata"
-	"net/http"
 )
 
 type AuthorizedUser struct {

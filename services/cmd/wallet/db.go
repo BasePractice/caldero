@@ -3,9 +3,11 @@ package main
 import (
 	"database/sql"
 	"embed"
-	"github.com/google/uuid"
+
 	"wish/middleware/wallet"
 	"wish/services"
+
+	"github.com/google/uuid"
 
 	_ "github.com/lib/pq"
 )

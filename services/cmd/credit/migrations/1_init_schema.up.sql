@@ -1,16 +1,20 @@
 -- Все деньги с копейками + два порядка 00
 CREATE TABLE credit
 (
-    id         SERIAL    NOT NULL PRIMARY KEY,
-    user_id    UUID      NOT NULL,
-    creator_id UUID      NOT NULL,
-    type       VARCHAR   NOT NULL DEFAULT 'SIMPLE' CHECK ( type IN ('SIMPLE', 'MICRO', 'IPOT') ),
-    percent    INTEGER   NOT NULL DEFAULT 10,
-    state      VARCHAR   NOT NULL DEFAULT 'PREPARED' CHECK ( state IN ('PREPARED', 'CONFIRM', 'REJECTED', 'STARTED', 'COMPLETED')),
-    balance    BIGINT    NOT NULL,
-    started_at TIMESTAMP          DEFAULT NULL, -- время предоставления кредита
-    created_at TIMESTAMP NOT NULL DEFAULT current_timestamp,
-    updated_at TIMESTAMP NOT NULL DEFAULT current_timestamp,
+    id            SERIAL    NOT NULL PRIMARY KEY,
+    user_id       UUID      NOT NULL,
+    creator_id    UUID      NOT NULL,
+    type          VARCHAR   NOT NULL DEFAULT 'SIMPLE' CHECK ( type IN ('SIMPLE', 'MICRO', 'IPOT') ),
+    kind          VARCHAR   NOT NULL DEFAULT 'ANN' CHECK ( kind IN ('ANN', 'DYN') ),
+    percent       INTEGER   NOT NULL DEFAULT 10,
+    state         VARCHAR   NOT NULL DEFAULT 'PREPARED' CHECK ( state IN ('PREPARED', 'CONFIRM', 'REJECTED', 'STARTED', 'COMPLETED')),
+    balance       BIGINT    NOT NULL,
+    already_payed INTEGER   NOT NULL DEFAULT 0,
+    month         INTEGER   NOT NULL DEFAULT 6,
+    started_at    TIMESTAMP          DEFAULT NULL, -- время предоставления кредита
+    created_at    TIMESTAMP NOT NULL DEFAULT current_timestamp,
+    updated_at    TIMESTAMP NOT NULL DEFAULT current_timestamp,
+    last_payed_at TIMESTAMP          DEFAULT NULL,
     UNIQUE (user_id, type)
 );
 

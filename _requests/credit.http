@@ -7,8 +7,22 @@ X-Authorized-Id: {{credit.operator}}
   "user_id": "{{user_id}}",
   "percent": 24,
   "balance": 1200000000,
-  "type": "SIMPLE"
+  "kind": "ANN",
+  "type": "SIMPLE",
+  "month": 360
 }
+
+> {%
+    client.global.set("credit_id", response.headers.valueOf("X-Credit-Id"))
+%}
+
+### Get month payments
+< {%
+    request.variables.set("credit_id", client.global.get("credit_id"))
+    client.log(client.global)
+%}
+GET {{credit.url}}/credit/{{credit_id}}/need_payments
+Accept: application/json
 
 ### Create credit
 POST {{credit.url}}/credit
@@ -19,5 +33,7 @@ X-Authorized-Id: {{credit.operator}}
   "user_id": "{{user_id}}",
   "percent": 24,
   "balance": 1200000,
-  "type": "MICRO"
+  "kind": "ANN",
+  "type": "MICRO",
+  "month": 360
 }

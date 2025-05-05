@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
-	"github.com/google/uuid"
+
 	"wish/middleware/wallet"
 	"wish/services"
+
+	"github.com/google/uuid"
 )
 
 type service struct {
