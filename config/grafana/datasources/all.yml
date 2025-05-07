@@ -12,3 +12,12 @@ datasources:
    user: krakend-dev
    password: pas5w0rd
    database: krakend
+-  access: 'proxy'
+   editable: true
+   is_default: false
+   name: 'prometheus'
+   org_id: 1
+   type: 'prometheus'
+   url: 'http://prometheus:9090'
+   version: 1
+   database: prometheus

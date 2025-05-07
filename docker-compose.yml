@@ -20,6 +20,7 @@ services:
       - "./config/grafana/datasources/all.yml:/etc/grafana/provisioning/datasources/all.yml"
       - "./config/grafana/dashboards/all.yml:/etc/grafana/provisioning/dashboards/all.yml"
       - "./config/grafana/krakend:/var/lib/grafana/dashboards/krakend"
+      - "./config/grafana/prometheus:/var/lib/grafana/dashboards/prometheus"
   influxdb:
     image: influxdb:1.8.10
     environment:
@@ -72,6 +73,20 @@ services:
 #    volumes:
 #      - ./config/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml
 #      - ./.logs:/logs
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - ./config/prometheus/:/etc/prometheus/
+      - ./.prometheus:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-admin-api'
+    ports:
+      - "9098:9090"
+    restart: always
   keycloak:
     image: keycloak/keycloak:26.0
     depends_on:

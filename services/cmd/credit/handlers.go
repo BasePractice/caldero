@@ -9,11 +9,22 @@ import (
 	"strconv"
 
 	"wish/services"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+)
+
+var (
+	creditCreateCounter = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "credit_create_counter",
+		Help: "Number of Create calls",
+	})
 )
 
 func registerHttpHandlers(ctx context.Context, db DatabaseCredit) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /credit", func(w http.ResponseWriter, r *http.Request) {
+		creditCreateCounter.Inc()
 		createCredit(ctx, db, w, r)
 	})
 	mux.HandleFunc("GET /credit/{id}/need_payments", func(w http.ResponseWriter, r *http.Request) {
@@ -40,6 +51,8 @@ func registerHttpHandlers(ctx context.Context, db DatabaseCredit) http.Handler {
 			return
 		}
 	})
+	prometheus.MustRegister(creditCreateCounter)
+	mux.HandleFunc("GET /metrics", promhttp.Handler().ServeHTTP)
 	return mux
 }
 

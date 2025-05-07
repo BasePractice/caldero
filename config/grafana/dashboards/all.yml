@@ -8,4 +8,5 @@ providers:
   disableDeletion: false
   updateIntervalSeconds: 60
   options:
-    path: /var/lib/grafana/dashboards/krakend
+    - path: /var/lib/grafana/dashboards/krakend
+    - path: /var/lib/grafana/dashboards/prometheus

@@ -1,4 +1,5 @@
 .idea
 .pg
+.prometheus
 .bin/wallet
 .logs
