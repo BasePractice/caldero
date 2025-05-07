@@ -1,0 +1,13 @@
+### Create account
+POST {{account.url}}/account
+Content-Type: application/json
+X-Authorized-Id: {{account.operator}}
+
+{
+  "user_id": "{{user_id}}",
+  "type": "DEBIT"
+}
+
+> {%
+    client.global.set("account_id", response.headers.valueOf("X-Account-Id"))
+%}

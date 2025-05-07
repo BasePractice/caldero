@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"wish/services"
+	"wish/services/shared/credit"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -21,13 +22,13 @@ var (
 	})
 )
 
-func registerHttpHandlers(ctx context.Context, db DatabaseCredit) http.Handler {
+func registerHttpHandlers(ctx context.Context, db credit.Database) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /credit", func(w http.ResponseWriter, r *http.Request) {
 		creditCreateCounter.Inc()
 		createCredit(ctx, db, w, r)
 	})
-	mux.HandleFunc("GET /credit/{id}/need_payments", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /credits/{id}/schedule", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
 		idInt, err := strconv.ParseUint(id, 10, 64)
 		if err != nil {
@@ -35,13 +36,13 @@ func registerHttpHandlers(ctx context.Context, db DatabaseCredit) http.Handler {
 			http.Error(w, "Invalid id", http.StatusBadRequest)
 			return
 		}
-		credit, err := db.GetCredit(ctx, idInt)
+		c, err := db.Get(ctx, idInt)
 		if err != nil {
 			slog.Error("Get credit", slog.String("id", id), slog.String("err", err.Error()))
 			http.Error(w, "Not found", http.StatusNotFound)
 			return
 		}
-		payments := mothPaymentCalculation(*credit)
+		payments := mothPaymentCalculation(*c)
 		w.Header().Set("X-Credit-Id", id)
 		w.Header().Set("Content-Type", "application/json")
 		err = json.NewEncoder(w).Encode(payments)
@@ -56,7 +57,7 @@ func registerHttpHandlers(ctx context.Context, db DatabaseCredit) http.Handler {
 	return mux
 }
 
-func createCredit(ctx context.Context, db DatabaseCredit, w http.ResponseWriter, r *http.Request) {
+func createCredit(ctx context.Context, db credit.Database, w http.ResponseWriter, r *http.Request) {
 	operator, err := services.HttpAuthorized(r)
 	if err != nil {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -64,21 +65,21 @@ func createCredit(ctx context.Context, db DatabaseCredit, w http.ResponseWriter,
 	}
 	switch r.Method {
 	case http.MethodPost:
-		var credit CreateCredit
-		err := json.NewDecoder(r.Body).Decode(&credit)
+		var c credit.InputCredit
+		err := json.NewDecoder(r.Body).Decode(&c)
 		if err != nil {
 			slog.Error("Failed decoding credit",
 				slog.String("error", err.Error()))
 			w.WriteHeader(http.StatusBadRequest)
-		} else if !credit.Validate() {
+		} else if !c.Validate() {
 			slog.Error("Credit validation failed",
-				slog.String("credit", credit.String()))
+				slog.String("credit", c.String()))
 			w.WriteHeader(http.StatusBadRequest)
 		}
-		id, err := db.CreateCredit(ctx, credit, operator)
+		id, err := db.Create(ctx, c, operator)
 		if err != nil {
 			slog.Error("Failed to create credit",
-				slog.String("credit", credit.String()),
+				slog.String("credit", c.String()),
 				slog.String("error", err.Error()))
 			w.WriteHeader(http.StatusInternalServerError)
 		} else {

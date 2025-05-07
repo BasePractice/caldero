@@ -10,13 +10,13 @@ import (
 	"runtime/debug"
 
 	"wish/services"
-	db "wish/services/shared/credit"
+	account "wish/services/shared/account"
 
 	"github.com/joho/godotenv"
 )
 
 var (
-	port = flag.Int("port", 51052, "The service port")
+	port = flag.Int("port", 51054, "The service port")
 )
 
 func main() {
@@ -38,7 +38,7 @@ func main() {
 	if err != nil {
 		slog.Warn("Warning loading .env file", slog.String("err", err.Error()))
 	}
-	cdb := db.NewDatabase()
+	cdb := account.NewDatabase()
 	handler := registerHttpHandlers(ctx, cdb)
 	err = http.ListenAndServe(fmt.Sprintf(":%d", *port), handler)
 	if err != nil {

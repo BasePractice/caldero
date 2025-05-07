@@ -32,3 +32,10 @@ scrape_configs:
       - targets: ['credit:51052']
         labels:
           app: "credit"
+  - job_name: "account"
+    metrics_path: /metrics
+    scrape_interval: 1s
+    static_configs:
+      - targets: ['account:51054']
+        labels:
+          app: "account"

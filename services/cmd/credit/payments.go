@@ -4,6 +4,8 @@ import (
 	"log/slog"
 	"math"
 	"time"
+
+	"wish/services/shared/credit"
 )
 
 // MonthPayment FIXME: Сделать расчет оставшихся средств по кредиту и по процентам
@@ -15,7 +17,7 @@ type MonthPayment struct {
 	Percent     uint      `json:"percent"`
 }
 
-func mothPaymentCalculation(credit Credit) []MonthPayment {
+func mothPaymentCalculation(credit credit.Credit) []MonthPayment {
 	if credit.Kind == "ANN" {
 		var summ = float64(credit.Balance - credit.AlreadyPayed)
 		var alreadyPaidMonth uint

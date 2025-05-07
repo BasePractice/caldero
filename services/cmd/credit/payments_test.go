@@ -3,10 +3,12 @@ package main
 import (
 	"testing"
 	"time"
+
+	"wish/services/shared/credit"
 )
 
 func TestPaymentCalculation_Success(t *testing.T) {
-	var credit = Credit{
+	var c = credit.Credit{
 		Kind:         "ANN",
 		Type:         "SIMPLE",
 		Month:        60,
@@ -18,7 +20,7 @@ func TestPaymentCalculation_Success(t *testing.T) {
 	}
 
 	t.Run("Расчет аннуитентного кредита на 5 лет", func(t *testing.T) {
-		payments := mothPaymentCalculation(credit)
+		payments := mothPaymentCalculation(c)
 		if len(payments) != 60 {
 			t.Fatalf("Не правильное количество месяцев для платежа. Расчетное количество %d", len(payments))
 		}
@@ -27,13 +29,13 @@ func TestPaymentCalculation_Success(t *testing.T) {
 		}
 	})
 	t.Run("Расчет аннуитентного кредита с оплатой", func(t *testing.T) {
-		payments := mothPaymentCalculation(credit)
-		credit.CreatedAt = time.Now().AddDate(0, -2, 0)
-		credit.AlreadyPayed = payments[0].Value
-		credit.LastPayedAt = &payments[0].ExpiredAt
-		credit.AlreadyPayed += payments[1].Value
-		credit.LastPayedAt = &payments[1].ExpiredAt
-		payments = mothPaymentCalculation(credit)
+		payments := mothPaymentCalculation(c)
+		c.CreatedAt = time.Now().AddDate(0, -2, 0)
+		c.AlreadyPayed = payments[0].Value
+		c.LastPayedAt = &payments[0].ExpiredAt
+		c.AlreadyPayed += payments[1].Value
+		c.LastPayedAt = &payments[1].ExpiredAt
+		payments = mothPaymentCalculation(c)
 		if len(payments) != 57 {
 			t.Fatalf("Не правильное количество месяцев для платежа. Расчетное количество %d", len(payments))
 		}

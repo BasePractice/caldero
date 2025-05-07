@@ -7,4 +7,5 @@ CREATE DATABASE wish WITH ENCODING = "UTF-8";
 \c wish;
 CREATE SCHEMA wallet;
 CREATE SCHEMA credit;
+CREATE SCHEMA account;
 CREATE SCHEMA users;
