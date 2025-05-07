@@ -16,7 +16,7 @@ import (
 var migrations embed.FS
 
 type Database interface {
-	Create(ctx context.Context, credit credit.InputCredit, operator *services.AuthorizedUser) (int64, error)
+	Create(ctx context.Context, credit credit.CreateCredit, operator *services.AuthorizedUser) (int64, error)
 	Get(ctx context.Context, id uint64) (*credit.Credit, error)
 }
 
@@ -36,7 +36,7 @@ func (d ds) Get(ctx context.Context, id uint64) (*credit.Credit, error) {
 	return &c, err
 }
 
-func (d ds) Create(ctx context.Context, c credit.InputCredit, operator *services.AuthorizedUser) (int64, error) {
+func (d ds) Create(ctx context.Context, c credit.CreateCredit, operator *services.AuthorizedUser) (int64, error) {
 	var id int64
 	if err := d.db.QueryRowContext(ctx, `
 		INSERT INTO credit (user_id, creator_id, type, percent, balance, kind, month) 

@@ -40,7 +40,7 @@ func createAccount(ctx context.Context, db Database, w http.ResponseWriter, r *h
 	}
 	switch r.Method {
 	case http.MethodPost:
-		var a account.InputAccount
+		var a account.CreateAccount
 		err := json.NewDecoder(r.Body).Decode(&a)
 		if err != nil {
 			slog.Error("Failed decoding account",

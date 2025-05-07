@@ -65,7 +65,7 @@ func createCredit(ctx context.Context, db Database, w http.ResponseWriter, r *ht
 	}
 	switch r.Method {
 	case http.MethodPost:
-		var c credit.InputCredit
+		var c credit.CreateCredit
 		err := json.NewDecoder(r.Body).Decode(&c)
 		if err != nil {
 			slog.Error("Failed decoding credit",

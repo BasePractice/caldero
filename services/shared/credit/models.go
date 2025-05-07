@@ -30,7 +30,7 @@ type Credit struct {
 	LastPayedAt  *time.Time
 }
 
-type InputCredit struct {
+type CreateCredit struct {
 	UserId       uuid.UUID  `json:"user_id"`
 	Type         string     `json:"type" default:"SIMPLE"`
 	Kind         string     `json:"kind" default:"ANN"`
@@ -42,10 +42,10 @@ type InputCredit struct {
 	LastPayedAt  *time.Time `json:"last_payed_at"`
 }
 
-func (c InputCredit) Validate() bool {
+func (c CreateCredit) Validate() bool {
 	return c.UserId != uuid.Nil && c.Percent >= 10 && c.Balance > 100 && c.Month > 1
 }
 
-func (c InputCredit) String() string {
+func (c CreateCredit) String() string {
 	return fmt.Sprintf("{UserId: %s, Type: %s}", c.UserId, c.Type)
 }

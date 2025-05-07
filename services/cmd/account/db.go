@@ -16,7 +16,7 @@ import (
 var migrations embed.FS
 
 type Database interface {
-	Create(ctx context.Context, account account.InputAccount, operator *services.AuthorizedUser) (*uuid.UUID, error)
+	Create(ctx context.Context, account account.CreateAccount, operator *services.AuthorizedUser) (*uuid.UUID, error)
 	Get(ctx context.Context, id uuid.UUID) (*account.Account, error)
 }
 
@@ -24,7 +24,7 @@ type ds struct {
 	db *sql.DB
 }
 
-func (d ds) Create(ctx context.Context, account account.InputAccount, operator *services.AuthorizedUser) (*uuid.UUID, error) {
+func (d ds) Create(ctx context.Context, account account.CreateAccount, operator *services.AuthorizedUser) (*uuid.UUID, error) {
 	//TODO implement me
 	panic("implement me")
 }
