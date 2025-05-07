@@ -1,4 +1,4 @@
-package credit
+package main
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"wish/services"
+	"wish/services/shared/credit"
 
 	_ "github.com/lib/pq"
 )
@@ -15,16 +16,16 @@ import (
 var migrations embed.FS
 
 type Database interface {
-	Create(ctx context.Context, credit InputCredit, operator *services.AuthorizedUser) (int64, error)
-	Get(ctx context.Context, id uint64) (*Credit, error)
+	Create(ctx context.Context, credit credit.InputCredit, operator *services.AuthorizedUser) (int64, error)
+	Get(ctx context.Context, id uint64) (*credit.Credit, error)
 }
 
 type ds struct {
 	db *sql.DB
 }
 
-func (d ds) Get(ctx context.Context, id uint64) (*Credit, error) {
-	var c Credit
+func (d ds) Get(ctx context.Context, id uint64) (*credit.Credit, error) {
+	var c credit.Credit
 
 	err := d.db.QueryRowContext(ctx, `SELECT 
     user_id, creator_id, type, percent, balance, kind, month FROM credit WHERE id = $1`,
@@ -35,7 +36,7 @@ func (d ds) Get(ctx context.Context, id uint64) (*Credit, error) {
 	return &c, err
 }
 
-func (d ds) Create(ctx context.Context, c InputCredit, operator *services.AuthorizedUser) (int64, error) {
+func (d ds) Create(ctx context.Context, c credit.InputCredit, operator *services.AuthorizedUser) (int64, error) {
 	var id int64
 	if err := d.db.QueryRowContext(ctx, `
 		INSERT INTO credit (user_id, creator_id, type, percent, balance, kind, month) 

@@ -1,4 +1,4 @@
-package account
+package main
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"embed"
 
 	"wish/services"
+	"wish/services/shared/account"
 
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
@@ -15,20 +16,20 @@ import (
 var migrations embed.FS
 
 type Database interface {
-	Create(ctx context.Context, account InputAccount, operator *services.AuthorizedUser) (*uuid.UUID, error)
-	Get(ctx context.Context, id uuid.UUID) (*Account, error)
+	Create(ctx context.Context, account account.InputAccount, operator *services.AuthorizedUser) (*uuid.UUID, error)
+	Get(ctx context.Context, id uuid.UUID) (*account.Account, error)
 }
 
 type ds struct {
 	db *sql.DB
 }
 
-func (d ds) Create(ctx context.Context, account InputAccount, operator *services.AuthorizedUser) (*uuid.UUID, error) {
+func (d ds) Create(ctx context.Context, account account.InputAccount, operator *services.AuthorizedUser) (*uuid.UUID, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (d ds) Get(ctx context.Context, id uuid.UUID) (*Account, error) {
+func (d ds) Get(ctx context.Context, id uuid.UUID) (*account.Account, error) {
 	//TODO implement me
 	panic("implement me")
 }

@@ -21,7 +21,7 @@ var (
 	})
 )
 
-func registerHttpHandlers(ctx context.Context, db account.Database) http.Handler {
+func registerHttpHandlers(ctx context.Context, db Database) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /account", func(w http.ResponseWriter, r *http.Request) {
 		accountCreateCounter.Inc()
@@ -32,7 +32,7 @@ func registerHttpHandlers(ctx context.Context, db account.Database) http.Handler
 	return mux
 }
 
-func createAccount(ctx context.Context, db account.Database, w http.ResponseWriter, r *http.Request) {
+func createAccount(ctx context.Context, db Database, w http.ResponseWriter, r *http.Request) {
 	operator, err := services.HttpAuthorized(r)
 	if err != nil {
 		w.WriteHeader(http.StatusUnauthorized)

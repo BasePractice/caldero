@@ -22,7 +22,7 @@ var (
 	})
 )
 
-func registerHttpHandlers(ctx context.Context, db credit.Database) http.Handler {
+func registerHttpHandlers(ctx context.Context, db Database) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /credit", func(w http.ResponseWriter, r *http.Request) {
 		creditCreateCounter.Inc()
@@ -57,7 +57,7 @@ func registerHttpHandlers(ctx context.Context, db credit.Database) http.Handler 
 	return mux
 }
 
-func createCredit(ctx context.Context, db credit.Database, w http.ResponseWriter, r *http.Request) {
+func createCredit(ctx context.Context, db Database, w http.ResponseWriter, r *http.Request) {
 	operator, err := services.HttpAuthorized(r)
 	if err != nil {
 		w.WriteHeader(http.StatusUnauthorized)

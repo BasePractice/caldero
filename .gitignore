@@ -1,5 +1,5 @@
 .idea
 .pg
 .prometheus
-.bin/wallet
+.bin/*
 .logs
