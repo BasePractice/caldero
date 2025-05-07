@@ -13,7 +13,7 @@ services:
       - influxdb
       - elasticsearch
   grafana:
-    image: grafana/grafana:9.1.2
+    image: grafana/grafana
     ports:
       - "4000:3000"
     volumes:
@@ -22,7 +22,7 @@ services:
       - "./config/grafana/krakend:/var/lib/grafana/dashboards/krakend"
       - "./config/grafana/prometheus:/var/lib/grafana/dashboards/prometheus"
   influxdb:
-    image: influxdb:1.8.10
+    image: influxdb
     environment:
       - "INFLUXDB_DB=krakend"
       - "INFLUXDB_USER=krakend-dev"
@@ -37,7 +37,7 @@ services:
       - "16686:16686"
       - "14268:14268"
   elasticsearch:
-    image: elasticsearch:8.4.1
+    image: elasticsearch:8.18.0
     environment:
       - "discovery.type=single-node"
       - "xpack.security.enabled=false"
@@ -48,7 +48,7 @@ services:
       - "19200:9200"
       - "9300:9300"
   kibana:
-    image: kibana:8.4.1
+    image: kibana:8.18.0
     depends_on:
       - elasticsearch
     ports:
@@ -85,7 +85,7 @@ services:
       - '--web.console.templates=/usr/share/prometheus/consoles'
       - '--web.enable-admin-api'
     ports:
-      - "9098:9090"
+      - "9099:9090"
     restart: always
   keycloak:
     image: keycloak/keycloak:26.0
