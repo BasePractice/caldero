@@ -19,6 +19,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/ory/fosite"
 	"github.com/ory/fosite/handler/oauth2"
+	"golang.org/x/crypto/bcrypt"
 )
 
 //go:embed migrations/*.sql
@@ -37,6 +38,7 @@ type DatabaseUsers interface {
 
 	CreateUser(ctx context.Context, username, passwordHash string) (*User, error)
 	GetUser(ctx context.Context, username string) (*User, error)
+	Authenticate(ctx context.Context, username, secret string) (string, error)
 
 	GetLastKey(ctx context.Context) (string, error)
 	GetKey(ctx context.Context, id string) ([]byte, error)
@@ -155,6 +157,22 @@ func (s *ds) GetUser(ctx context.Context, username string) (*User, error) {
 		return nil, err
 	}
 	return &u, nil
+}
+
+// Authenticate требуется password-грантом. Неизвестный пользователь и неверный
+// пароль дают один и тот же ответ: различие позволило бы перебирать логины.
+func (s *ds) Authenticate(ctx context.Context, username, secret string) (string, error) {
+	user, err := s.GetUser(ctx, username)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", fosite.ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("loading user %q: %w", username, err)
+	}
+	if err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(secret)); err != nil {
+		return "", fosite.ErrNotFound
+	}
+	return user.Id.String(), nil
 }
 
 func (s *ds) CreateUser(ctx context.Context, username, passwordHash string) (*User, error) {

@@ -20,7 +20,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/ory/fosite"
 	"github.com/ory/fosite/compose"
-	"github.com/ory/fosite/handler/openid"
+	"github.com/ory/fosite/handler/oauth2"
 	"github.com/ory/fosite/token/jwt"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -85,12 +85,16 @@ func newService(ctx context.Context, cfg services.Config) (*Service, error) {
 		oauth2Config,
 		db,
 		&compose.CommonStrategy{
-			CoreStrategy:               compose.NewOAuth2HMACStrategy(oauth2Config),
+			// Access-токен подписывается RS256 поверх HMAC-стратегии: шлюз
+			// проверяет подпись по JWKS, а непрозрачную HMAC-строку
+			// проверить нечем.
+			CoreStrategy:               compose.NewOAuth2JWTStrategy(keyManager.GetPrivateKey, compose.NewOAuth2HMACStrategy(oauth2Config), oauth2Config),
 			OpenIDConnectTokenStrategy: compose.NewOpenIDConnectStrategy(keyManager.GetPrivateKey, oauth2Config),
 			Signer:                     &jwt.DefaultSigner{GetPrivateKey: keyManager.GetPrivateKey},
 		},
 		// OAuth2AuthorizeExplicitFactory отключена: хранилище кодов авторизации
 		// не реализовано, и с ней любой запрос к /auth заканчивался паникой.
+		compose.OAuth2ResourceOwnerPasswordCredentialsFactory,
 		compose.OAuth2RefreshTokenGrantFactory,
 		compose.OAuth2TokenIntrospectionFactory,
 		compose.OAuth2TokenRevocationFactory,
@@ -166,29 +170,24 @@ func (s *Service) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) handleToken(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	session := s.newSession(uuid.Nil)
+	// Пользователя аутентифицирует сам password-грант через
+	// DatabaseUsers.Authenticate. Раньше это делалось вручную после разбора
+	// запроса, причём фабрика гранта вообще не была зарегистрирована,
+	// и эндпоинт не поддерживал ни одного гранта, кроме refresh_token.
+	session := s.newSession(ctx, uuid.Nil)
 	accessRequest, err := s.oauth2Provider.NewAccessRequest(ctx, r, session)
 	if err != nil {
+		slog.Debug("Access request rejected", slog.String("err", err.Error()))
 		s.oauth2Provider.WriteAccessError(ctx, w, accessRequest, err)
 		return
-	}
-
-	// Для grant_type=password аутентифицируем пользователя
-	if accessRequest.GetGrantTypes().ExactOne("password") {
-		user, err := s.authenticateUser(r)
-		if err != nil {
-			s.oauth2Provider.WriteAccessError(ctx, w, accessRequest, err)
-			return
-		}
-		session.Subject = user.Id.String()
 	}
 
 	response, err := s.oauth2Provider.NewAccessResponse(ctx, accessRequest)
 	if err != nil {
+		slog.Debug("Access response failed", slog.String("err", err.Error()))
 		s.oauth2Provider.WriteAccessError(ctx, w, accessRequest, err)
 		return
 	}
-
 	s.oauth2Provider.WriteAccessResponse(ctx, w, accessRequest, response)
 }
 
@@ -209,7 +208,7 @@ func (s *Service) protect(protected http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := fosite.AccessTokenFromRequest(r)
 		_, requester, err := s.oauth2Provider.IntrospectToken(
-			r.Context(), token, fosite.AccessToken, s.newSession(uuid.Nil))
+			r.Context(), token, fosite.AccessToken, s.newSession(r.Context(), uuid.Nil))
 		if err != nil {
 			slog.Debug("Token introspection failed", slog.String("err", err.Error()))
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -297,27 +296,31 @@ func (s *Service) handleRevoke(w http.ResponseWriter, r *http.Request) {
 	s.oauth2Provider.WriteRevocationResponse(ctx, w, err)
 }
 
-func (s *Service) newSession(userId uuid.UUID) *openid.DefaultSession {
-	return &openid.DefaultSession{
-		Claims: &jwt.IDTokenClaims{
-			Subject:   userId.String(),
-			ExpiresAt: time.Now().Add(s.oauth2Config.IDTokenLifespan),
+// newSession возвращает oauth2.JWTSession: JWT-стратегия требует именно
+// контейнер JWT-claims, с openid.DefaultSession выдача токена падает
+// с "Session must be of type JWTSessionContainer".
+func (s *Service) newSession(ctx context.Context, userId uuid.UUID) *jwtSession {
+	headers := jwt.NewHeaders()
+	// Без kid проверяющая сторона не знает, каким ключом из JWKS проверять
+	// подпись, и отвергает корректный токен.
+	if kid, err := s.keyManager.GetPublicKeyId(ctx); err != nil {
+		slog.Error("Can't resolve signing key id", slog.String("err", err.Error()))
+	} else if kid != "" {
+		headers.Add("kid", kid)
+	}
+
+	subject := ""
+	if userId != uuid.Nil {
+		subject = userId.String()
+	}
+	return &jwtSession{oauth2.JWTSession{
+		JWTClaims: &jwt.JWTClaims{
+			Subject:   subject,
+			Issuer:    s.cfg.OAuth2Issuer,
+			IssuedAt:  time.Now(),
+			ExpiresAt: time.Now().Add(s.oauth2Config.AccessTokenLifespan),
 		},
-		Headers: new(jwt.Headers),
-	}
-}
-
-func (s *Service) authenticateUser(r *http.Request) (*User, error) {
-	username := r.FormValue("username")
-	password := r.FormValue("password")
-
-	user, err := s.db.GetUser(r.Context(), username)
-	if err != nil {
-		return nil, err
-	}
-	if err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		return nil, err
-	}
-
-	return user, nil
+		JWTHeader: headers,
+		Subject:   subject,
+	}}
 }

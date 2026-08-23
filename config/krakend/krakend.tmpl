@@ -1,7 +1,7 @@
 {
   "$schema": "https://www.krakend.io/schema/v3.json",
   "version": 3,
-  "name": "Caldero",
+  "name": "{{ env "KRAKEND_NAME" }}",
   "port": 8080,
   "timeout": "3000ms",
   "cache_ttl": "300s",
@@ -48,9 +48,9 @@
       "backend": [
         {
           "host": [
-            "http://users:51053"
+            "{{ env "AUTH_HOST" }}"
           ],
-          "url_pattern": "/token",
+          "url_pattern": "{{ env "AUTH_TOKEN_PATH" }}",
           "encoding": "no-op"
         }
       ],
@@ -72,9 +72,9 @@
       "backend": [
         {
           "host": [
-            "http://users:51053"
+            "{{ env "AUTH_HOST" }}"
           ],
-          "url_pattern": "/.well-known/jwks.json",
+          "url_pattern": "{{ env "AUTH_JWKS_PATH" }}",
           "encoding": "no-op"
         }
       ]
@@ -100,7 +100,7 @@
       "extra_config": {
         "auth/validator": {
           "alg": "RS256",
-          "jwk_url": "http://keycloak:8080/realms/krakend/protocol/openid-connect/certs",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
           "@comment": "disable_jwk_security нужен, пока JWKS отдаётся по http внутри compose-сети. С TLS убрать.",
           "disable_jwk_security": true,
           "cache": true,
@@ -133,7 +133,7 @@
       "extra_config": {
         "auth/validator": {
           "alg": "RS256",
-          "jwk_url": "http://keycloak:8080/realms/krakend/protocol/openid-connect/certs",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
           "disable_jwk_security": true,
           "cache": true,
           "propagate_claims": [
@@ -166,7 +166,7 @@
       "extra_config": {
         "auth/validator": {
           "alg": "RS256",
-          "jwk_url": "http://keycloak:8080/realms/krakend/protocol/openid-connect/certs",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
           "disable_jwk_security": true,
           "cache": true,
           "propagate_claims": [

@@ -16,9 +16,25 @@ docker compose up -d
 curl http://localhost:8080/api/v1/register -d 'username=...&password=...'
 ```
 
-Маршруты шлюза описаны в [config/krakend/krakend.json](config/krakend/krakend.json).
+Маршруты шлюза описаны в [config/krakend/krakend.tmpl](config/krakend/krakend.tmpl).
 Кошелёк доступен только по gRPC внутри сети: KrakenD Community Edition
 не проксирует gRPC-бэкенды.
+
+### Провайдер аутентификации
+
+Провайдеров два, и они переключаются набором переменных в `.env`
+(готовые значения — в [.env.example](.env.example), обоснование —
+в [ADR 0001](docs/adr/0001-auth-provider.md)). Точка переключения одна:
+какой JWKS считает доверенным шлюз.
+
+| Режим | Переменные | Запуск |
+|---|---|---|
+| Keycloak (по умолчанию) | `AUTH_HOST=http://keycloak:8080` | `docker compose --profile keycloak up` |
+| Собственный на fosite | `AUTH_HOST=http://users:51053` | `docker compose up` |
+
+Собственный провайдер поддерживает гранты `password` и `refresh_token`,
+выдаёт RS256 JWT и публикует ключи на `/.well-known/jwks.json`.
+Authorization Code Flow в нём не реализован.
 
 ## Основные цели
 
