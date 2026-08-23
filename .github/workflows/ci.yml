@@ -37,6 +37,20 @@ jobs:
       - name: Тесты с детектором гонок
         run: make test-race
 
+  integration:
+    name: Интеграционные тесты
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # testcontainers поднимает PostgreSQL сам, docker на раннере уже есть.
+      - name: Тесты репозиториев
+        run: make test-integration
+
   lint:
     name: Линтер
     runs-on: ubuntu-latest
