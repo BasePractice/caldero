@@ -846,7 +846,10 @@ func TestRefundPendingFinishesInterruptedRefund(t *testing.T) {
 	}
 }
 
-func TestSettleTransfersEverythingToWinner(t *testing.T) {
+// TestSettleRequiresDraw закрывает обход розыгрыша: без него организатору
+// достаточно было бы не запускать розыгрыш вовсе и передать собранное
+// кому угодно, и весь механизм проверяемости терял бы смысл.
+func TestSettleRequiresDraw(t *testing.T) {
 	ctx := context.Background()
 	env := newEnvironment(t)
 	creator := uuid.New()
@@ -856,23 +859,48 @@ func TestSettleTransfersEverythingToWinner(t *testing.T) {
 	before := env.wallet.total()
 
 	pot := env.fixedCaldron(t, creator, 2_500_00, member)
-	if _, err := env.caldrons.Contribute(ctx, creator, pot.Id, 0); err != nil {
-		t.Fatalf("взнос создателя: %v", err)
-	}
-	if _, err := env.caldrons.Contribute(ctx, member, pot.Id, 0); err != nil {
-		t.Fatalf("взнос участника: %v", err)
+	for _, user := range []uuid.UUID{creator, member} {
+		if _, err := env.caldrons.Contribute(ctx, user, pot.Id, 0); err != nil {
+			t.Fatalf("взнос: %v", err)
+		}
 	}
 
-	settled, err := env.caldrons.Settle(ctx, creator, pot.Id, member)
+	t.Run("без розыгрыша средства не передаются", func(t *testing.T) {
+		if _, err := env.caldrons.Settle(ctx, creator, pot.Id, member); !errors.Is(err, ErrDrawRequired) {
+			t.Fatalf("получено %v, ожидалась %v", err, ErrDrawRequired)
+		}
+		if env.wallet.balanceOf(member) != 10_000_00-2_500_00 {
+			t.Errorf("средства ушли мимо розыгрыша: %s", env.wallet.balanceOf(member))
+		}
+	})
+
+	collected, err := env.db.Caldron(ctx, pot.Id)
 	if err != nil {
-		t.Fatalf("завершение котла: %v", err)
+		t.Fatalf("чтение котла: %v", err)
 	}
-	if settled.State != caldron.StateSettled {
-		t.Errorf("состояние %s, ожидалось %s", settled.State, caldron.StateSettled)
+
+	draw, err := env.caldrons.Draw(ctx, creator, pot.Id)
+	if err != nil {
+		t.Fatalf("розыгрыш: %v", err)
 	}
-	if env.wallet.balanceOf(member) != 12_500_00 {
+
+	t.Run("получателя выбирает розыгрыш, а не создатель", func(t *testing.T) {
+		loser := creator
+		if draw.WinnerId == creator {
+			loser = member
+		}
+		// Котёл уже завершён розыгрышем, но проверка сработает и до этого:
+		// важно, что имя получателя сверяется с результатом.
+		if _, err := env.caldrons.Settle(ctx, creator, pot.Id, loser); err == nil {
+			t.Error("средства переданы не победителю розыгрыша")
+		}
+	})
+
+	// Вся сумма котла у одного участника, а в системе денег не прибавилось
+	// и не убавилось.
+	if env.wallet.balanceOf(draw.WinnerId) != 10_000_00-2_500_00+collected.Collected {
 		t.Errorf("победителю досталось %s, ожидалось %s",
-			env.wallet.balanceOf(member), credit.Amount(12_500_00))
+			env.wallet.balanceOf(draw.WinnerId), 10_000_00-2_500_00+collected.Collected)
 	}
 	if env.wallet.total() != before {
 		t.Errorf("сумма средств в системе изменилась: было %s, стало %s", before, env.wallet.total())

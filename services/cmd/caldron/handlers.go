@@ -321,7 +321,7 @@ func writeError(ctx context.Context, w http.ResponseWriter, message string, err 
 		// Сумма не подходит под правила котла — это ошибка в запросе.
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrAlreadyPaid), errors.Is(err, ErrNotReady),
-		errors.Is(err, caldron.ErrInvalidTransition):
+		errors.Is(err, ErrDrawRequired), errors.Is(err, caldron.ErrInvalidTransition):
 		// Состояние котла не позволяет операцию: повтор с тем же телом
 		// ничего не изменит.
 		http.Error(w, err.Error(), http.StatusConflict)

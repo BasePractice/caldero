@@ -131,14 +131,24 @@ func TestCaldronStatusCodes(t *testing.T) {
 		}
 	})
 
-	t.Run("завершение котла", func(t *testing.T) {
+	t.Run("передача средств без розыгрыша — 409", func(t *testing.T) {
 		body := fmt.Sprintf(`{"winner":%q}`, member)
-		recorder := post(creator, path+"/settle", body)
+		if code := post(creator, path+"/settle", body).Code; code != http.StatusConflict {
+			t.Errorf("код ответа %d, ожидался %d", code, http.StatusConflict)
+		}
+	})
+
+	t.Run("розыгрыш передаёт собранное победителю", func(t *testing.T) {
+		recorder := post(creator, path+"/draw", "")
 		if recorder.Code != http.StatusOK {
 			t.Fatalf("код ответа %d (%s)", recorder.Code, recorder.Body)
 		}
-		if env.wallet.balanceOf(member) != 12_500_00 {
-			t.Errorf("победителю досталось %s", env.wallet.balanceOf(member))
+		var draw caldron.Draw
+		if err := json.Unmarshal(recorder.Body.Bytes(), &draw); err != nil {
+			t.Fatalf("разбор ответа: %v", err)
+		}
+		if env.wallet.balanceOf(draw.WinnerId) != 10_000_00-2_500_00+5_000_00 {
+			t.Errorf("победителю досталось %s", env.wallet.balanceOf(draw.WinnerId))
 		}
 	})
 

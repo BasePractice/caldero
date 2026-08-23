@@ -24,6 +24,8 @@ var (
 	ErrWalletUnavailable = errors.New("wallet is unavailable")
 	// ErrNotReady — котёл ещё не собран.
 	ErrNotReady = errors.New("caldron is not ready")
+	// ErrDrawRequired — средства передаются только по итогам розыгрыша.
+	ErrDrawRequired = errors.New("the winner is decided by the draw")
 	// ErrMarketplaceUnavailable — площадка не ответила, и цена подарка
 	// неизвестна.
 	ErrMarketplaceUnavailable = errors.New("marketplace is unavailable")
@@ -248,6 +250,20 @@ func (c *Caldrons) Settle(
 	if !pot.IsParticipant(winner) {
 		return caldron.Caldron{}, fmt.Errorf("%w: winner is not a participant", ErrForbidden)
 	}
+
+	// Получателя определяет розыгрыш, а не создатель. Иначе проверяемый
+	// розыгрыш терял бы смысл: организатору достаточно было бы не запускать
+	// его вовсе и передать собранное кому угодно.
+	drawn, err := c.db.Draw(ctx, id)
+	switch {
+	case errors.Is(err, ErrNoDraw):
+		return caldron.Caldron{}, fmt.Errorf("%w: run the draw first", ErrDrawRequired)
+	case err != nil:
+		return caldron.Caldron{}, err
+	case drawn.WinnerId != winner:
+		return caldron.Caldron{}, fmt.Errorf("%w: the draw picked another winner", ErrForbidden)
+	}
+
 	if pot.Collected <= 0 {
 		return caldron.Caldron{}, fmt.Errorf("%w: nothing collected", ErrNotReady)
 	}
