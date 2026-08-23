@@ -6,7 +6,6 @@ import (
 	"crypto/subtle"
 	"crypto/x509"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -193,29 +192,30 @@ func (s *Service) handleToken(w http.ResponseWriter, r *http.Request) {
 	s.oauth2Provider.WriteAccessResponse(ctx, w, accessRequest, response)
 }
 
-func (s *Service) protect(protected func(w http.ResponseWriter, r *http.Request)) func(w http.ResponseWriter, r *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		token := fosite.AccessTokenFromRequest(r)
+// requesterKey — приватный тип ключа контекста. Строковый ключ "claims"
+// мог столкнуться с ключом любого другого пакета (staticcheck SA1029).
+type requesterKey struct{}
 
-		_, _, err := s.oauth2Provider.IntrospectToken(ctx, token, fosite.AccessToken, s.newSession(uuid.Nil))
+func requesterFromContext(ctx context.Context) (fosite.Requester, bool) {
+	requester, ok := ctx.Value(requesterKey{}).(fosite.Requester)
+	return requester, ok
+}
+
+// protect проверяет access-токен через introspection. Раньше тот же токен
+// дополнительно скармливался jwt.ParseWithClaims, хотя CoreStrategy — HMAC,
+// и access-токен не является JWT: разбор не мог завершиться успешно никогда,
+// а результат introspection отбрасывался.
+func (s *Service) protect(protected http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := fosite.AccessTokenFromRequest(r)
+		_, requester, err := s.oauth2Provider.IntrospectToken(
+			r.Context(), token, fosite.AccessToken, s.newSession(uuid.Nil))
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusUnauthorized)
+			slog.Debug("Token introspection failed", slog.String("err", err.Error()))
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-		jwtToken, err := jwt.ParseWithClaims(token, jwt.MapClaims{}, func(token *jwt.Token) (interface{}, error) {
-			kid, ok := token.Header["kid"].(string)
-			if !ok {
-				return nil, errors.New("kid header missing")
-			}
-			return s.keyManager.GetPublicKey(r.Context(), kid)
-		})
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusUnauthorized)
-			return
-		}
-		claims := jwtToken.Claims
-		protected(w, r.WithContext(context.WithValue(r.Context(), "claims", claims)))
+		protected(w, r.WithContext(context.WithValue(r.Context(), requesterKey{}, requester)))
 	}
 }
 
