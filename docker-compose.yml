@@ -18,6 +18,8 @@ services:
       AUTH_JWKS_PATH: ${AUTH_JWKS_PATH:-/realms/krakend/protocol/openid-connect/certs}
       AUTH_TOKEN_PATH: ${AUTH_TOKEN_PATH:-/realms/krakend/protocol/openid-connect/token}
       AUTH_ROLES_CLAIM: ${AUTH_ROLES_CLAIM:-realm_access.roles}
+      INFLUXDB_USER: ${INFLUXDB_USER:-krakend-dev}
+      INFLUXDB_PASSWORD: ${INFLUXDB_PASSWORD:?INFLUXDB_PASSWORD не задан}
     depends_on:
       - jaeger
       - influxdb
@@ -29,6 +31,10 @@ services:
     image: grafana/grafana
     ports:
       - "4000:3000"
+    environment:
+      INFLUXDB_USER: ${INFLUXDB_USER:-krakend-dev}
+      INFLUXDB_PASSWORD: ${INFLUXDB_PASSWORD:?INFLUXDB_PASSWORD не задан}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD не задан}
     volumes:
       - "./config/grafana/datasources/all.yml:/etc/grafana/provisioning/datasources/all.yml"
       - "./config/grafana/dashboards/all.yml:/etc/grafana/provisioning/dashboards/all.yml"
@@ -38,10 +44,10 @@ services:
     image: influxdb
     environment:
       - "INFLUXDB_DB=krakend"
-      - "INFLUXDB_USER=krakend-dev"
-      - "INFLUXDB_USER_PASSWORD=pas5w0rd"
-      - "INFLUXDB_ADMIN_USER=admin"
-      - "INFLUXDB_ADMIN_PASSWORD=supersecretpassword"
+      - "INFLUXDB_USER=${INFLUXDB_USER:-krakend-dev}"
+      - "INFLUXDB_USER_PASSWORD=${INFLUXDB_PASSWORD:?INFLUXDB_PASSWORD не задан, скопируйте .env.example в .env}"
+      - "INFLUXDB_ADMIN_USER=${INFLUXDB_ADMIN_USER:-admin}"
+      - "INFLUXDB_ADMIN_PASSWORD=${INFLUXDB_ADMIN_PASSWORD:?INFLUXDB_ADMIN_PASSWORD не задан}"
     ports:
       - "8086:8086"
   jaeger:
@@ -96,7 +102,6 @@ services:
       - '--storage.tsdb.path=/prometheus'
       - '--web.console.libraries=/usr/share/prometheus/console_libraries'
       - '--web.console.templates=/usr/share/prometheus/consoles'
-      - '--web.enable-admin-api'
     ports:
       - "9099:9090"
     restart: always
@@ -113,19 +118,19 @@ services:
     volumes:
       - ./config/keycloak/realms:/opt/keycloak/data/import
     environment:
-      - KEYCLOAK_ADMIN=admin
-      - KEYCLOAK_ADMIN_PASSWORD=admin
+      - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN:-admin}
+      - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD не задан}
       - KC_DB=postgres
       - KC_DB_URL=jdbc:postgresql://postgres-db:5432/keycloak?verifyServerCertificate=false&ssl=allow
-      - KC_DB_USERNAME=postgres
-      - KC_DB_PASSWORD=postgres
+      - KC_DB_USERNAME=${POSTGRES_USER:-postgres}
+      - KC_DB_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD не задан}
       - KC_DB_SCHEMA=keycloak
       - KC_HTTP_ENABLED=true
       - KC_HTTP_PORT=8080
       - KC_METRICS_ENABLED=true
       - KC_HEALTH_ENABLED=true
-      - KC_LOG_LEVEL=DEBUG
-      - KEYCLOAK_LOGLEVEL=DEBUG
+      - KC_LOG_LEVEL=${KC_LOG_LEVEL:-INFO}
+      - KEYCLOAK_LOGLEVEL=${KC_LOG_LEVEL:-INFO}
     command: [ "start-dev", "--import-realm" ]
   postgres-db:
     image: postgres
@@ -133,7 +138,7 @@ services:
     ports:
       - '25432:5432'
     environment:
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD не задан}
     volumes:
       - ./.pg:/var/lib/postgresql/data
       - ./config/postgresql/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -174,7 +179,7 @@ services:
       retries: 3
       start_period: 5s
     environment:
-      DATABASE_URL: postgres://postgres:postgres@postgres-db:5432/wish?sslmode=disable&search_path=wallet
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres-db:5432/wish?sslmode=disable&search_path=wallet
       REDIS_URL: redis://redis:6379/10?protocol=3
       LOG_COLOR: "false"
 #      LOG_FILE: /logs/wallet.log
@@ -203,7 +208,7 @@ services:
       retries: 3
       start_period: 5s
     environment:
-      DATABASE_URL: postgres://postgres:postgres@postgres-db:5432/wish?sslmode=disable&search_path=credit
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres-db:5432/wish?sslmode=disable&search_path=credit
       REDIS_URL: redis://redis:6379/10?protocol=3
       LOG_COLOR: "false"
 #      LOG_FILE: /logs/credit.log
@@ -232,9 +237,12 @@ services:
       retries: 3
       start_period: 5s
     environment:
-      DATABASE_URL: postgres://postgres:postgres@postgres-db:5432/wish?sslmode=disable&search_path=users
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres-db:5432/wish?sslmode=disable&search_path=users
       REDIS_URL: redis://redis:6379/10?protocol=3
       LOG_COLOR: "false"
+      OAUTH2_GLOBAL_SECRET: ${OAUTH2_GLOBAL_SECRET:?OAUTH2_GLOBAL_SECRET не задан, нужно ровно 32 байта}
+      OAUTH2_ISSUER: ${OAUTH2_ISSUER:-http://localhost:8080/api/v1}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
 #      LOG_FILE: /logs/users.log
     volumes:
       - ./.logs/users:/logs
@@ -261,7 +269,7 @@ services:
       retries: 3
       start_period: 5s
     environment:
-      DATABASE_URL: postgres://postgres:postgres@postgres-db:5432/wish?sslmode=disable&search_path=account
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres-db:5432/wish?sslmode=disable&search_path=account
       REDIS_URL: redis://redis:6379/10?protocol=3
       LOG_COLOR: "false"
     #      LOG_FILE: /logs/users.log

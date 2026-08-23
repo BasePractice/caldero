@@ -201,8 +201,8 @@
       "address": "http://influxdb:8086",
       "ttl": "25s",
       "buffer_size": 100,
-      "username": "krakend-dev",
-      "password": "pas5w0rd"
+      "username": "{{ env "INFLUXDB_USER" }}",
+      "password": "{{ env "INFLUXDB_PASSWORD" }}"
     },
     "telemetry/logging": {
       "level": "INFO",
