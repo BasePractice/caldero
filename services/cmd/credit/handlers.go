@@ -29,6 +29,11 @@ func registerHttpHandlers(ctx context.Context, db Database) http.Handler {
 		createCredit(ctx, db, w, r)
 	})
 	mux.HandleFunc("GET /credits/{id}/schedule", func(w http.ResponseWriter, r *http.Request) {
+		operator, err := services.HttpAuthorized(r)
+		if err != nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
 		id := r.PathValue("id")
 		idInt, err := strconv.ParseUint(id, 10, 64)
 		if err != nil {
@@ -42,13 +47,20 @@ func registerHttpHandlers(ctx context.Context, db Database) http.Handler {
 			http.Error(w, "Not found", http.StatusNotFound)
 			return
 		}
+		// Идентификатор кредита последовательный, поэтому чужой кредит
+		// отдаётся как несуществующий: 403 подтвердил бы, что он есть,
+		// и оставил бы возможность перебора.
+		if c.UserId != operator.Id && c.CreatorId != operator.Id {
+			slog.Warn("Attempt to read foreign credit schedule",
+				slog.String("id", id), slog.String("operator", operator.Id.String()))
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
 		payments := mothPaymentCalculation(*c)
 		w.Header().Set("X-Credit-Id", id)
 		w.Header().Set("Content-Type", "application/json")
-		err = json.NewEncoder(w).Encode(payments)
-		if err != nil {
+		if err = json.NewEncoder(w).Encode(payments); err != nil {
 			slog.Error("Encode json", slog.String("id", id), slog.String("err", err.Error()))
-			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	})
