@@ -12,6 +12,10 @@ services:
       - jaeger
       - influxdb
       - elasticsearch
+      - keycloak
+      - users
+      - credit
+      - account
   grafana:
     image: grafana/grafana
     ports:
@@ -145,8 +149,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    ports:
-      - "51051:51051"
+    # Порт наружу не публикуется: доступ к сервису только через шлюз (T-001).
+    # Для локальной отладки поднимайте профиль debug или пробрасывайте порт вручную.
+    expose:
+      - "51051"
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres-db:5432/wish?sslmode=disable&search_path=wallet
       REDIS_URL: redis://redis:6379/10?protocol=3
@@ -163,8 +169,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    ports:
-      - "51052:51052"
+    # Порт наружу не публикуется: доступ к сервису только через шлюз (T-001).
+    # Для локальной отладки поднимайте профиль debug или пробрасывайте порт вручную.
+    expose:
+      - "51052"
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres-db:5432/wish?sslmode=disable&search_path=credit
       REDIS_URL: redis://redis:6379/10?protocol=3
@@ -181,8 +189,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    ports:
-      - "51053:51053"
+    # Порт наружу не публикуется: доступ к сервису только через шлюз (T-001).
+    # Для локальной отладки поднимайте профиль debug или пробрасывайте порт вручную.
+    expose:
+      - "51053"
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres-db:5432/wish?sslmode=disable&search_path=users
       REDIS_URL: redis://redis:6379/10?protocol=3
@@ -199,8 +209,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    ports:
-      - "51054:51054"
+    # Порт наружу не публикуется: доступ к сервису только через шлюз (T-001).
+    # Для локальной отладки поднимайте профиль debug или пробрасывайте порт вручную.
+    expose:
+      - "51054"
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres-db:5432/wish?sslmode=disable&search_path=account
       REDIS_URL: redis://redis:6379/10?protocol=3
