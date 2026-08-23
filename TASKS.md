@@ -8,7 +8,6 @@
 |---|---|---|
 | T-066 | Веб-интерфейс на Go WebAssembly | ЗАВЕДЕНА |
 | T-067 | Автоматическое создание партиций транзакций | ЗАВЕДЕНА |
-| T-029 | `Makefile` вместо `build.sh` / `build.cmd` | ЗАВЕДЕНА |
 | T-030 | CI с линтером и проверками | ЗАВЕДЕНА |
 | T-031 | Секреты из `docker-compose.yml` в `.env` | ЗАВЕДЕНА |
 | T-034 | Интеграционные тесты на `testcontainers-go` | ЗАВЕДЕНА |
@@ -40,26 +39,6 @@
 ---
 
 # Детальные планы
-
-## T-029. `Makefile` вместо `build.sh` / `build.cmd`
-
-**Статус:** ЗАВЕДЕНА
-
-В [build.cmd:3](build.cmd:3) захардкожен `E:\Programs\protobuf\bin`,
-в [build.sh:3](build.sh:3) — `~/go/bin`. Нет `set -e`: падение `protoc`
-не останавливает сборку. Цели `test`, `vet`, `lint` отсутствуют.
-[config/keycloak/README.md](config/keycloak/README.md) ссылается
-на несуществующую `make save-keycloak-config`.
-
-**План**
-1. `Makefile` с целями: `proto`, `build`, `test`, `lint`, `vet`, `up`, `down`,
-   `migrate`, `save-keycloak-config`.
-2. Путь к `protoc` — из `PATH`, с внятной ошибкой при отсутствии.
-3. Удалить `build.cmd`, `build.sh` заменить тонкой обёрткой либо удалить.
-
-**Проверка:** `make build` и `make test` работают на чистом окружении.
-
----
 
 ## T-030. CI с линтером и проверками
 

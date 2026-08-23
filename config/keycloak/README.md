@@ -6,5 +6,8 @@ All the new users, roles, configurations, clients... created or modified using K
 If you need to export the realm config for later usage, you can overwrite the `realms/` contents by spawning the following command (make sure the container is up and running):
 
 ```shell
-    $ make save-keycloak-config
+make save-keycloak-config
 ```
+
+Цель описана в [Makefile](../../Makefile) и требует запущенного контейнера
+Keycloak (профиль `keycloak`).

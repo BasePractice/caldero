@@ -12,9 +12,11 @@
 произвольный идентификатор и работать от имени чужого пользователя.
 
 ```bash
-docker compose up -d
+make up
 curl http://localhost:8080/api/v1/register -d 'username=...&password=...'
 ```
+
+Список целей сборки — `make help`.
 
 Маршруты шлюза описаны в [config/krakend/krakend.tmpl](config/krakend/krakend.tmpl).
 Кошелёк доступен только по gRPC внутри сети: KrakenD Community Edition
