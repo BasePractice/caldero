@@ -31,8 +31,10 @@ curl http://localhost:8080/api/v1/register -d 'username=...&password=...'
 
 | Режим | Переменные | Запуск |
 |---|---|---|
-| Keycloak (по умолчанию) | `AUTH_HOST=http://keycloak:8080` | `docker compose --profile keycloak up` |
-| Собственный на fosite | `AUTH_HOST=http://users:51053` | `docker compose up` |
+| Собственный на fosite (по умолчанию) | `AUTH_HOST=http://users:51053` | `docker compose up` |
+| Keycloak | `AUTH_HOST=http://keycloak:8080` | `docker compose --profile keycloak up` |
+
+Выбор библиотеки обоснован в [ADR 0002](docs/adr/0002-oauth2-library.md).
 
 Собственный провайдер поддерживает гранты `authorization_code` (с PKCE),
 `password` и `refresh_token`, выдаёт RS256 JWT и публикует ключи
