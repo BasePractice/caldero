@@ -42,7 +42,12 @@ type Profile struct {
 	EmailConfirmed bool      `json:"email_confirmed"`
 	Gender         string    `json:"gender,omitempty"`
 	AvatarURL      string    `json:"avatar_url,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
+	// Complete сообщает, что профиль дозаполнен. Пользователь, вошедший
+	// через внешнего провайдера, приходит без телефона: требовать номер
+	// в момент входа значит спрашивать его до того, как человек решил
+	// остаться в системе.
+	Complete  bool      `json:"complete"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // PublicProfile — то, что видно посторонним по идентификатору.

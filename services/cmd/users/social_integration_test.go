@@ -257,3 +257,49 @@ func TestUnlinkAllowedWithPassword(t *testing.T) {
 		t.Errorf("отвязка при заданном пароле: %v", err)
 	}
 }
+
+// TestPhoneRequiredForPasswordUsers проверяет ужесточение схемы: у того,
+// кто регистрировался с паролем, телефон обязателен на уровне базы.
+func TestPhoneRequiredForPasswordUsers(t *testing.T) {
+	ctx := context.Background()
+	service := newSocialService(t)
+
+	if _, err := service.db.CreateUser(ctx, Registration{
+		Username:     "no-phone-" + uuid.NewString()[:8],
+		PasswordHash: "not-a-real-hash",
+	}); err == nil {
+		t.Error("пользователь с паролем записан без телефона")
+	}
+
+	// Внешний вход телефона не требует: спрашивать номер в момент входа
+	// значит спрашивать его до того, как человек решил остаться.
+	userId, err := service.resolveIdentity(ctx, SocialLogin{Provider: "demo"},
+		testProfile("ext-phone", "phone@example.com"))
+	if err != nil {
+		t.Fatalf("внешний вход: %v", err)
+	}
+
+	created, err := service.db.GetUserById(ctx, userId)
+	if err != nil {
+		t.Fatalf("чтение пользователя: %v", err)
+	}
+	if created.Complete() {
+		t.Error("профиль без телефона считается полным")
+	}
+
+	t.Run("дозаполнение делает профиль полным", func(t *testing.T) {
+		phone := "+79007778899"
+		updated, err := service.db.UpdateProfile(ctx, userId, ProfileUpdate{Phone: &phone})
+		if err != nil {
+			t.Fatalf("дозаполнение профиля: %v", err)
+		}
+		if !updated.Complete() {
+			t.Error("профиль с телефоном считается неполным")
+		}
+		if updated.PhoneConfirmed {
+			// Заполненность и подтверждённость — разные вещи: ограничение
+			// схемы гарантирует первое, но не второе.
+			t.Error("телефон отмечен подтверждённым сразу после ввода")
+		}
+	})
+}

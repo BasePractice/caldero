@@ -23,6 +23,15 @@ type User struct {
 	CreatedAt   time.Time
 }
 
+// Complete сообщает, что профиль дозаполнен: телефон обязателен
+// по требованию, и без него профиль неполон.
+//
+// Учётная запись при этом не блокируется: блокировка наказывала бы
+// пользователя за то, что он пришёл через внешнего провайдера.
+func (u User) Complete() bool {
+	return u.Phone.Valid && u.Phone.String != ""
+}
+
 // Contact возвращает контакт нужного вида и признак его подтверждения.
 //
 // Собрано в одном месте: иначе каждая операция подтверждения повторяла бы
@@ -46,6 +55,7 @@ func (u User) Profile() Profile {
 		EmailConfirmed: u.EmailConfirmed,
 		Gender:         u.Gender.String,
 		AvatarURL:      AvatarURL(u.Email.String),
+		Complete:       u.Complete(),
 		CreatedAt:      u.CreatedAt,
 	}
 }
