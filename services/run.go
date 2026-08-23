@@ -80,8 +80,11 @@ func ServeHTTP(ctx context.Context, addr string, handler http.Handler) error {
 		return err
 	case <-ctx.Done():
 		slog.Info("Shutting down HTTP server", slog.String("addr", addr))
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		// Контекст намеренно не наследуется: родительский уже отменён
+		// сигналом, и производный от него не дал бы запросам завершиться.
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
 		defer cancel()
+		//nolint:contextcheck // см. комментарий выше: отмена родителя — это и есть повод для остановки
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			return fmt.Errorf("shutting down http server on %s: %w", addr, err)
 		}

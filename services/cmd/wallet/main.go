@@ -39,7 +39,7 @@ func main() {
 		}
 		defer services.Close("cache", cache)
 
-		db, err := NewDatabaseWallet(cfg)
+		db, err := NewDatabaseWallet(ctx, cfg)
 		if err != nil {
 			return err
 		}

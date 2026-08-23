@@ -1,0 +1,157 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, 'stage/**' ]
+  pull_request:
+
+# Отменяем предыдущий прогон той же ветки: смысла держать очередь нет.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Сборка и тесты
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Форматирование
+        run: make fmt-check
+
+      - name: Согласованность go.mod
+        run: make tidy-check
+
+      - name: go vet
+        run: make vet
+
+      - name: Сборка
+        run: make build
+
+      - name: Тесты с детектором гонок
+        run: make test-race
+
+  lint:
+    name: Линтер
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
+  vulnerabilities:
+    name: Известные уязвимости
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+  docker:
+    name: Образы
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+
+      - name: Сборка образов
+        run: |
+          for service in wallet credit account users; do
+            docker build --build-arg SERVICE="$service" -t "wish/$service:ci" .
+          done
+
+  migrations:
+    name: Миграции
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@v4
+
+      # Полный цикл up и down: именно здесь ловятся ошибки порядка удаления
+      # таблиц и конфликты между миграциями соседних версий.
+      - name: Прогон up и down
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          psql -h localhost -U postgres -c "CREATE DATABASE wish"
+          for service in wallet credit account users; do
+            psql -h localhost -U postgres -d wish -c "CREATE SCHEMA $service"
+          done
+          for service in wallet credit account users; do
+            for file in $(ls services/cmd/$service/migrations/*.up.sql | sort -t_ -k1 -n); do
+              echo "up $service/$(basename "$file")"
+              psql -h localhost -U postgres -d wish -v ON_ERROR_STOP=1 -q \
+                -c "SET search_path TO $service" -f "$file"
+            done
+          done
+          for service in wallet credit account users; do
+            for file in $(ls services/cmd/$service/migrations/*.down.sql | sort -t_ -k1 -rn); do
+              echo "down $service/$(basename "$file")"
+              psql -h localhost -U postgres -d wish -v ON_ERROR_STOP=1 -q \
+                -c "SET search_path TO $service" -f "$file"
+            done
+          done
+
+  gateway:
+    name: Конфигурация шлюза
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Шаблон шлюза — не JSON, ошибку в нём заметно только после рендера.
+      - name: Проверка шаблона в обоих режимах
+        run: |
+          set -euo pipefail
+          for mode in keycloak internal; do
+            if [ "$mode" = keycloak ]; then
+              host=http://keycloak:8080
+              jwks=/realms/krakend/protocol/openid-connect/certs
+              token=/realms/krakend/protocol/openid-connect/token
+              roles=realm_access.roles
+            else
+              host=http://users:51053
+              jwks=/.well-known/jwks.json
+              token=/token
+              roles=roles
+            fi
+            echo "режим $mode"
+            docker run --rm -e FC_ENABLE=1 -e FC_OUT=/tmp/out.json \
+              -e KRAKEND_NAME=Caldero -e AUTH_HOST="$host" \
+              -e AUTH_JWKS_PATH="$jwks" -e AUTH_TOKEN_PATH="$token" \
+              -e AUTH_ROLES_CLAIM="$roles" \
+              -v "$PWD/config/krakend":/etc/krakend \
+              krakend:latest check -c /etc/krakend/krakend.tmpl
+          done

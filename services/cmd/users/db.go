@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/url"
 	"strings"
 	"time"
@@ -52,7 +51,7 @@ type DatabaseUsers interface {
 	ClearKeys(ctx context.Context) error
 
 	IsUniqueConstraintError(err error) bool
-	CreateClient(ctx context.Context, clientId, clientSecret, redirectUri, scopes, responseType, grantTypes string)
+	CreateClient(ctx context.Context, clientId, clientSecret, redirectUri, scopes, responseType, grantTypes string) error
 	// Close освобождает соединения с БД
 	Close() error
 }
@@ -121,26 +120,39 @@ func (s *ds) RotateRefreshToken(ctx context.Context, requestID string, _ string)
 	return nil
 }
 
-func (s *ds) CreateClient(ctx context.Context, clientId, clientSecret, redirectUri, scopes, responseType, grantTypes string) {
-	_, err := s.db.ExecContext(ctx, "INSERT INTO oauth_clients (client_id, client_secret, redirect_uris, grant_types, response_types, scopes) VALUES ($1, $2, $3, $4, $5, $6)", clientId, clientSecret, redirectUri, grantTypes, responseType, scopes)
+func (s *ds) CreateClient(ctx context.Context, clientId, clientSecret, redirectUri, scopes, responseType, grantTypes string) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO oauth_clients (client_id, client_secret, redirect_uris, grant_types, response_types, scopes)
+		 VALUES ($1, $2, $3, $4, $5, $6)`,
+		clientId, clientSecret, redirectUri, grantTypes, responseType, scopes)
 	if err != nil {
-		slog.Error("Failed to create client", slog.String("error", err.Error()))
+		return fmt.Errorf("creating client %s: %w", clientId, err)
 	}
+	return nil
 }
 
 func (s *ds) GetKeys(ctx context.Context, cb func(string, []byte)) error {
 	rows, err := s.db.QueryContext(ctx, "SELECT key_id, private_key FROM keys ORDER BY created_at DESC LIMIT 2")
 	if err != nil {
-		return err
+		return fmt.Errorf("loading signing keys: %w", err)
 	}
+	defer func() {
+		// Настоящая причина сбоя придёт из rows.Err().
+		_ = rows.Close()
+	}()
+
 	for rows.Next() {
 		var id string
 		var privateKey []byte
-		err = rows.Scan(&id, &privateKey)
-		if err != nil {
-			return err
+		if err = rows.Scan(&id, &privateKey); err != nil {
+			return fmt.Errorf("scanning signing key: %w", err)
 		}
 		cb(id, privateKey)
+	}
+	// Без этой проверки обрыв соединения посреди выборки выглядит как пустой
+	// набор ключей, и JWKS молча отдаёт пустой список.
+	if err = rows.Err(); err != nil {
+		return fmt.Errorf("reading signing keys: %w", err)
 	}
 	return nil
 }
@@ -557,8 +569,8 @@ func (s *ds) Close() error {
 	return s.db.Close()
 }
 
-func NewDatabaseUsers(cfg services.Config) (DatabaseUsers, error) {
-	d, err := services.NewDatabase(cfg, migrations)
+func NewDatabaseUsers(ctx context.Context, cfg services.Config) (DatabaseUsers, error) {
+	d, err := services.NewDatabase(ctx, cfg, migrations)
 	if err != nil {
 		return nil, fmt.Errorf("opening users database: %w", err)
 	}

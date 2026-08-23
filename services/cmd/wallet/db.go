@@ -140,8 +140,8 @@ func (d ds) Close() error {
 	return d.db.Close()
 }
 
-func NewDatabaseWallet(cfg services.Config) (DatabaseWallet, error) {
-	db, err := services.NewDatabase(cfg, migrations)
+func NewDatabaseWallet(ctx context.Context, cfg services.Config) (DatabaseWallet, error) {
+	db, err := services.NewDatabase(ctx, cfg, migrations)
 	if err != nil {
 		return nil, fmt.Errorf("opening wallet database: %w", err)
 	}

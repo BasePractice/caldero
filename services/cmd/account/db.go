@@ -61,8 +61,8 @@ func (d ds) Close() error {
 	return d.db.Close()
 }
 
-func NewDatabase(cfg services.Config) (Database, error) {
-	db, err := services.NewDatabase(cfg, migrations)
+func NewDatabase(ctx context.Context, cfg services.Config) (Database, error) {
+	db, err := services.NewDatabase(ctx, cfg, migrations)
 	if err != nil {
 		return nil, fmt.Errorf("opening account database: %w", err)
 	}

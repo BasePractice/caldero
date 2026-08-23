@@ -24,7 +24,7 @@ func main() {
 		return
 	}
 	services.Run("credit", func(ctx context.Context, cfg services.Config) error {
-		db, err := NewDatabase(cfg)
+		db, err := NewDatabase(ctx, cfg)
 		if err != nil {
 			return err
 		}

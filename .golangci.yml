@@ -1,0 +1,38 @@
+# Набор подобран под дефекты, которые уже встречались в этом репозитории:
+# проглоченные ошибки, незакрытые rows, запросы без контекста, возврат nil
+# вместо ошибки.
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck        # проглоченные ошибки — источник большей части найденных дефектов
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - bodyclose       # незакрытое тело ответа
+    - sqlclosecheck   # незакрытый *sql.Rows
+    - rowserrcheck    # непроверенный rows.Err()
+    - contextcheck    # потерянный контекст
+    - nilerr          # return nil при непустой ошибке
+    - errorlint       # сравнение ошибок без errors.Is/As
+    - gosec
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+
+  exclusions:
+    rules:
+      # В тестах допустимы менее строгие правила.
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+
+formatters:
+  enable:
+    - gofmt

@@ -23,7 +23,7 @@ func DefineLogging(cfg Config) (*slog.Logger, error) {
 	var handler slog.Handler
 	switch {
 	case cfg.LogFile != "":
-		file, err := os.OpenFile(cfg.LogFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+		file, err := os.OpenFile(cfg.LogFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 		if err != nil {
 			return nil, fmt.Errorf("opening log file %q: %w", cfg.LogFile, err)
 		}
@@ -56,9 +56,19 @@ func DefineMetrics(cfg Config) {
 		return
 	}
 	addr := ":" + strconv.Itoa(cfg.MetricsPort)
+	// Явный сервер, а не http.ListenAndServe: тот не даёт задать таймауты,
+	// и служебный порт остаётся уязвим к медленным соединениям.
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 	go func() {
 		slog.Info("Metrics listening", slog.String("addr", addr))
-		if err := http.ListenAndServe(addr, mux); err != nil {
+		if err := srv.ListenAndServe(); err != nil {
 			slog.Error("Metrics server stopped",
 				slog.String("addr", addr), slog.String("err", err.Error()))
 		}

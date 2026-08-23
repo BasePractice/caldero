@@ -77,7 +77,7 @@ func newService(ctx context.Context, cfg services.Config) (*Service, error) {
 		// перехваченный код обменивается на токен кем угодно.
 		EnforcePKCEForPublicClients: true,
 	}
-	db, err := NewDatabaseUsers(cfg)
+	db, err := NewDatabaseUsers(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -98,6 +98,10 @@ func newService(ctx context.Context, cfg services.Config) (*Service, error) {
 		},
 		compose.OAuth2AuthorizeExplicitFactory,
 		compose.OAuth2PKCEFactory,
+		// ROPC помечен устаревшим и исключён из OAuth 2.1: клиент видит пароль
+		// пользователя. Грант оставлен для отладочных сценариев и коллекций
+		// в _requests; снятие — отдельная задача.
+		//nolint:staticcheck // SA1019, осознанное решение
 		compose.OAuth2ResourceOwnerPasswordCredentialsFactory,
 		compose.OAuth2RefreshTokenGrantFactory,
 		compose.OAuth2TokenIntrospectionFactory,
@@ -129,23 +133,57 @@ func (s *Service) Close() error {
 	return s.db.Close()
 }
 
+// handleCreateClient заводит OAuth2-клиента. Раньше функция существовала,
+// но не была зарегистрирована ни на одном маршруте: единственным способом
+// создать клиента оставался INSERT в миграции.
 func (s *Service) handleCreateClient(w http.ResponseWriter, r *http.Request) {
-	clientId := r.FormValue("client-id")
-	clientSecret := r.FormValue("client-secret")
-	redirectUri := r.FormValue("redirect-uri")
-	scopes := r.FormValue("scopes")
+	if !s.authorizeAdmin(r) {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	clientId := r.PostFormValue("client-id")
+	clientSecret := r.PostFormValue("client-secret")
+	redirectUri := r.PostFormValue("redirect-uri")
+	if clientId == "" || clientSecret == "" || redirectUri == "" {
+		http.Error(w, "client-id, client-secret and redirect-uri are required",
+			http.StatusBadRequest)
+		return
+	}
+
+	scopes := r.PostFormValue("scopes")
 	if scopes == "" {
 		scopes = "openid,read,write"
 	}
-	responseTypes := r.FormValue("response-types")
+	responseTypes := r.PostFormValue("response-types")
 	if responseTypes == "" {
 		responseTypes = "code"
 	}
-	grantTypes := r.FormValue("grant-types")
+	grantTypes := r.PostFormValue("grant-types")
 	if grantTypes == "" {
-		grantTypes = "authorization_code,refresh_token,password"
+		grantTypes = "authorization_code,refresh_token"
 	}
-	s.db.CreateClient(r.Context(), clientId, clientSecret, redirectUri, scopes, responseTypes, grantTypes)
+
+	// Секрет хранится bcrypt-хешем: fosite сравнивает GetHashedSecret через
+	// bcrypt, и открытый текст не совпал бы никогда.
+	hashed, err := bcrypt.GenerateFromPassword([]byte(clientSecret), bcrypt.DefaultCost)
+	if err != nil {
+		slog.Error("Failed to hash client secret", slog.String("err", err.Error()))
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	err = s.db.CreateClient(r.Context(), clientId, string(hashed), redirectUri, scopes, responseTypes, grantTypes)
+	if s.db.IsUniqueConstraintError(err) {
+		http.Error(w, "Client already exists", http.StatusConflict)
+		return
+	}
+	if err != nil {
+		slog.Error("Failed to create client", slog.String("err", err.Error()))
+		http.Error(w, "Can't create client", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
 }
 
 func (s *Service) handleRegister(w http.ResponseWriter, r *http.Request) {

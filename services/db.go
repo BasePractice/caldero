@@ -42,7 +42,7 @@ func migrationScheme(db *sql.DB, migrations embed.FS) error {
 	return nil
 }
 
-func NewDatabase(cfg Config, migrations embed.FS) (*sql.DB, error) {
+func NewDatabase(ctx context.Context, cfg Config, migrations embed.FS) (*sql.DB, error) {
 	db, err := sql.Open("postgres", cfg.PostgresURL)
 	if err != nil {
 		return nil, fmt.Errorf("opening postgres connection: %w", err)
@@ -56,9 +56,9 @@ func NewDatabase(cfg Config, migrations embed.FS) (*sql.DB, error) {
 
 	// sql.Open соединение не устанавливает, поэтому недоступная база иначе
 	// обнаруживается только на первом запросе.
-	ctx, cancel := context.WithTimeout(context.Background(), pingTimeout)
+	pingCtx, cancel := context.WithTimeout(ctx, pingTimeout)
 	defer cancel()
-	if err = db.PingContext(ctx); err != nil {
+	if err = db.PingContext(pingCtx); err != nil {
 		_ = db.Close() // Соединение всё равно не установлено.
 		return nil, fmt.Errorf("connecting to postgres: %w", err)
 	}
