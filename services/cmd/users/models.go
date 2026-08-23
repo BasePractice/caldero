@@ -17,7 +17,10 @@ type User struct {
 	PhoneConfirmed bool
 	EmailConfirmed bool
 	Gender         sql.NullString
-	CreatedAt      time.Time
+	// PasswordSet отличает «пароль не задан» от «задан»: у пользователя,
+	// созданного через внешнего провайдера, пароля нет.
+	PasswordSet bool
+	CreatedAt   time.Time
 }
 
 // Contact возвращает контакт нужного вида и признак его подтверждения.

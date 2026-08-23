@@ -1524,6 +1524,186 @@
           ]
         }
       }
+    },
+    {
+      "@comment": "Публичный: начало входа через внешнего провайдера",
+      "endpoint": "/api/v1/auth/social/{provider}",
+      "method": "GET",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type"
+      ],
+      "input_query_strings": [
+        "*"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://users:51053"
+          ],
+          "url_pattern": "/auth/social/{provider}",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "qos/ratelimit/router": {
+          "@comment": "Вход через провайдера доступен без токена, поэтому предел по IP обязателен.",
+          "max_rate": 10,
+          "capacity": 10,
+          "client_max_rate": 2,
+          "client_capacity": 2,
+          "strategy": "ip"
+        }
+      }
+    },
+    {
+      "@comment": "Публичный: возврат от внешнего провайдера",
+      "endpoint": "/api/v1/auth/social/{provider}/callback",
+      "method": "GET",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type"
+      ],
+      "input_query_strings": [
+        "*"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://users:51053"
+          ],
+          "url_pattern": "/auth/social/{provider}/callback",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "qos/ratelimit/router": {
+          "@comment": "Вход через провайдера доступен без токена, поэтому предел по IP обязателен.",
+          "max_rate": 10,
+          "capacity": 10,
+          "client_max_rate": 2,
+          "client_capacity": 2,
+          "strategy": "ip"
+        }
+      }
+    },
+    {
+      "@comment": "Защищённый: способы внешнего входа",
+      "endpoint": "/api/v1/profile/identities",
+      "method": "GET",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type"
+      ],
+      "input_query_strings": [
+        "*"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://users:51053"
+          ],
+          "url_pattern": "/profile/identities",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "@comment": "Защищённый: привязка внешнего аккаунта",
+      "endpoint": "/api/v1/profile/identities/{provider}",
+      "method": "POST",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type",
+        "Content-Length"
+      ],
+      "input_query_strings": [
+        "*"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://users:51053"
+          ],
+          "url_pattern": "/profile/identities/{provider}",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "@comment": "Защищённый: отвязка внешнего аккаунта",
+      "endpoint": "/api/v1/profile/identities/{provider}",
+      "method": "DELETE",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type"
+      ],
+      "input_query_strings": [
+        "*"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://users:51053"
+          ],
+          "url_pattern": "/profile/identities/{provider}",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+      }
     }
   ],
   "sequential_start": true,

@@ -40,6 +40,11 @@ type Service struct {
 	// что подписывает токены: заводить второй секрет ради одной таблицы
 	// значит удваивать то, что нужно беречь.
 	confirmationSecret []byte
+	// providers — внешние провайдеры входа, разобранные при старте:
+	// провайдер без адреса токена или секрета не заработает, и узнать
+	// об этом лучше сразу.
+	providers map[string]SocialProvider
+	social    *SocialClient
 
 	rotationMu   sync.Mutex
 	lastRotation time.Time
@@ -114,6 +119,11 @@ func newService(ctx context.Context, cfg services.Config) (*Service, error) {
 		compose.OAuth2TokenIntrospectionFactory,
 		compose.OAuth2TokenRevocationFactory,
 	)
+	providers, err := LoadSocialProviders(cfg.SocialProviders)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Service{
 		oauth2Config:       oauth2Config,
 		oauth2Provider:     oauth2Provider,
@@ -122,6 +132,8 @@ func newService(ctx context.Context, cfg services.Config) (*Service, error) {
 		cfg:                cfg,
 		notifier:           notify.NewClient(cfg.NotifyEndpoint, cfg.ServiceUserId),
 		confirmationSecret: secret,
+		providers:          providers,
+		social:             NewSocialClient(),
 	}, nil
 }
 
@@ -455,4 +467,16 @@ func (s *Service) newSession(ctx context.Context, userId uuid.UUID) *jwtSession 
 		JWTHeader: headers,
 		Subject:   subject,
 	}}
+}
+
+// CleanupSocialLogins удаляет брошенные состояния внешнего входа.
+func (s *Service) CleanupSocialLogins(ctx context.Context) error {
+	deleted, err := s.db.DeleteExpiredSocialLogins(ctx)
+	if err != nil {
+		return err
+	}
+	if deleted > 0 {
+		slog.InfoContext(ctx, "Expired social logins deleted", slog.Int64("count", deleted))
+	}
+	return nil
 }

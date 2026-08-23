@@ -203,3 +203,28 @@ Authorization: Bearer {{access_token}}
 > {%
     client.assert(response.status === 400, "Неизвестный вид должен отклоняться")
 %}
+
+### Неизвестный провайдер входа
+GET {{users.url}}/auth/social/unknown
+
+> {%
+    client.assert(response.status === 404, "Неизвестный провайдер должен давать 404")
+%}
+
+### Способы внешнего входа
+GET {{users.url}}/profile/identities
+Accept: application/json
+Authorization: Bearer {{access_token}}
+
+> {%
+    client.assert(response.status === 200, "Список идентичностей не отдан")
+%}
+
+### Отвязка непривязанного провайдера
+DELETE {{users.url}}/profile/identities/demo
+Authorization: Bearer {{access_token}}
+
+> {%
+    client.assert(response.status === 404 || response.status === 409,
+        "Неожиданный ответ отвязки: " + response.status)
+%}

@@ -275,6 +275,10 @@ services:
       CONFIRMATION_COOLDOWN: ${CONFIRMATION_COOLDOWN:-1m}
       CONFIRMATION_RATE_LIMIT: ${CONFIRMATION_RATE_LIMIT:-5}
       CONFIRMATION_RATE_WINDOW: ${CONFIRMATION_RATE_WINDOW:-1h}
+      # Внешние провайдеры входа: пустой список выключает соц-вход,
+      # настройки каждого провайдера приходят из .env по префиксу.
+      SOCIAL_PROVIDERS: ${SOCIAL_PROVIDERS:-}
+      SOCIAL_REDIRECT_BASE: ${SOCIAL_REDIRECT_BASE:-http://localhost:8080/api/v1}
       LOG_FILE: /logs/users.log
     volumes:
       - ./.logs/users:/logs

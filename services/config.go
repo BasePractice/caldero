@@ -170,6 +170,15 @@ type Config struct {
 	// означает, что ссылку показать негде и в письмо уйдёт код.
 	PublicBaseURL string
 
+	// SocialProviders — имена подключённых внешних провайдеров входа.
+	// Их настройки читает сам сервис пользователей: набор переменных
+	// зависит от числа провайдеров и нужен только там.
+	SocialProviders []string
+	// SocialRedirectBase — база адресов возврата от провайдера. Задаётся
+	// явно, потому что адрес обязан совпадать с зарегистрированным
+	// у провайдера, а заголовок Host запроса подделывается.
+	SocialRedirectBase string
+
 	// DebugStatsviz открывает страницу состояния рантайма на порту метрик.
 	// По умолчанию выключено: страница не аутентифицирована.
 	DebugStatsviz bool
@@ -434,6 +443,8 @@ func LoadConfig() (Config, error) {
 	cfg.ConfirmationRateWindow = confirmationWindow
 
 	cfg.PublicBaseURL = env("PUBLIC_BASE_URL", "")
+	cfg.SocialProviders = splitList(env("SOCIAL_PROVIDERS", ""))
+	cfg.SocialRedirectBase = env("SOCIAL_REDIRECT_BASE", "")
 
 	connLifetime, err := time.ParseDuration(env("DB_CONN_MAX_LIFETIME", "30m"))
 	if err != nil {

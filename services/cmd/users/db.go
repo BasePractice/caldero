@@ -56,6 +56,16 @@ type DatabaseUsers interface {
 	FailConfirmation(ctx context.Context, id uuid.UUID) error
 	// ConfirmContact отмечает контакт подтверждённым.
 	ConfirmContact(ctx context.Context, id uuid.UUID, user uuid.UUID, kind ConfirmationKind, target string) error
+
+	// Вход через внешних провайдеров.
+	StartSocialLogin(ctx context.Context, login SocialLogin) error
+	TakeSocialLogin(ctx context.Context, state string) (SocialLogin, error)
+	DeleteExpiredSocialLogins(ctx context.Context) (int64, error)
+	IdentityUser(ctx context.Context, provider, externalId string) (uuid.UUID, error)
+	LinkIdentity(ctx context.Context, user uuid.UUID, profile SocialProfile) error
+	Identities(ctx context.Context, user uuid.UUID) ([]Identity, error)
+	UnlinkIdentity(ctx context.Context, user uuid.UUID, provider string) error
+	CreateSocialUser(ctx context.Context, profile SocialProfile) (*User, error)
 	GetUserRoles(ctx context.Context, userId uuid.UUID) ([]string, error)
 	DeleteExpiredTokens(ctx context.Context) (int64, error)
 
@@ -257,12 +267,13 @@ func (s *ds) GetLastKey(ctx context.Context) (string, error) {
 }
 
 const userColumns = `user_id, username, password_hash, display_name, email,
-	phone, phone_confirmed, email_confirmed, gender, created_at`
+	phone, phone_confirmed, email_confirmed, gender, password_set, created_at`
 
 func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	var u User
 	err := row.Scan(&u.Id, &u.Username, &u.PasswordHash, &u.DisplayName, &u.Email,
-		&u.Phone, &u.PhoneConfirmed, &u.EmailConfirmed, &u.Gender, &u.CreatedAt)
+		&u.Phone, &u.PhoneConfirmed, &u.EmailConfirmed, &u.Gender,
+		&u.PasswordSet, &u.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -848,4 +859,237 @@ func (d ds) inTx(ctx context.Context, do func(tx *sql.Tx) error) error {
 		return fmt.Errorf("committing transaction: %w", err)
 	}
 	return nil
+}
+
+// Identity — внешняя идентичность пользователя.
+type Identity struct {
+	Provider   string    `json:"provider"`
+	ExternalId string    `json:"external_id"`
+	Email      string    `json:"email,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+// SocialLogin — начатый вход через внешнего провайдера.
+type SocialLogin struct {
+	State          string
+	Provider       string
+	Verifier       string
+	AuthorizeQuery string
+	// LinkUserId заполнен, если вход начат ради привязки к уже
+	// существующему пользователю.
+	LinkUserId *uuid.UUID
+	ExpiresAt  time.Time
+}
+
+func (d ds) StartSocialLogin(ctx context.Context, login SocialLogin) error {
+	_, err := d.db.ExecContext(ctx, `
+		INSERT INTO social_login (state, provider, verifier, authorize_query, link_user_id, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6)`,
+		login.State, login.Provider, login.Verifier, login.AuthorizeQuery,
+		nullableUUID(login.LinkUserId), login.ExpiresAt)
+	if err != nil {
+		return fmt.Errorf("starting social login with %s: %w", login.Provider, err)
+	}
+	return nil
+}
+
+// TakeSocialLogin забирает состояние входа: оно одноразовое, поэтому
+// удаляется тем же запросом. Иначе перехваченный ответ провайдера можно
+// было бы предъявить повторно.
+func (d ds) TakeSocialLogin(ctx context.Context, state string) (SocialLogin, error) {
+	var (
+		login SocialLogin
+		link  sql.NullString
+	)
+	err := d.db.QueryRowContext(ctx, `
+		DELETE FROM social_login
+		WHERE state = $1 AND expires_at > current_timestamp
+		RETURNING state, provider, verifier, authorize_query, link_user_id, expires_at`, state).
+		Scan(&login.State, &login.Provider, &login.Verifier,
+			&login.AuthorizeQuery, &link, &login.ExpiresAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return SocialLogin{}, ErrSocialState
+	}
+	if err != nil {
+		return SocialLogin{}, fmt.Errorf("taking social login state: %w", err)
+	}
+	if link.Valid {
+		parsed, err := uuid.Parse(link.String)
+		if err != nil {
+			return SocialLogin{}, fmt.Errorf("parsing link user id: %w", err)
+		}
+		login.LinkUserId = &parsed
+	}
+	return login, nil
+}
+
+// DeleteExpiredSocialLogins убирает брошенные состояния: пользователь
+// мог начать вход и закрыть вкладку.
+func (d ds) DeleteExpiredSocialLogins(ctx context.Context) (int64, error) {
+	result, err := d.db.ExecContext(ctx,
+		`DELETE FROM social_login WHERE expires_at <= current_timestamp`)
+	if err != nil {
+		return 0, fmt.Errorf("deleting expired social logins: %w", err)
+	}
+	deleted, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("counting deleted social logins: %w", err)
+	}
+	return deleted, nil
+}
+
+// IdentityUser находит пользователя по внешней идентичности.
+func (d ds) IdentityUser(ctx context.Context, provider, externalId string) (uuid.UUID, error) {
+	var user uuid.UUID
+	err := d.db.QueryRowContext(ctx,
+		`SELECT user_id FROM identity WHERE provider = $1 AND external_id = $2`,
+		provider, externalId).Scan(&user)
+	if errors.Is(err, sql.ErrNoRows) {
+		return uuid.Nil, sql.ErrNoRows
+	}
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("loading identity %s/%s: %w", provider, externalId, err)
+	}
+	return user, nil
+}
+
+// LinkIdentity связывает внешний аккаунт с пользователем.
+func (d ds) LinkIdentity(ctx context.Context, user uuid.UUID, profile SocialProfile) error {
+	result, err := d.db.ExecContext(ctx, `
+		INSERT INTO identity (provider, external_id, user_id, email)
+		VALUES ($1, $2, $3, NULLIF($4, ''))
+		ON CONFLICT (provider, external_id) DO NOTHING`,
+		profile.Provider, profile.ExternalId, user, profile.Email)
+	if err != nil {
+		return fmt.Errorf("linking identity %s/%s: %w", profile.Provider, profile.ExternalId, err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("counting linked identities: %w", err)
+	}
+	if affected == 0 {
+		// Строка уже есть: либо привязка повторная, либо аккаунт связан
+		// с другим пользователем — и это разные ответы.
+		var owner uuid.UUID
+		if owner, err = d.IdentityUser(ctx, profile.Provider, profile.ExternalId); err != nil {
+			return err
+		}
+		if owner != user {
+			return ErrIdentityTaken
+		}
+	}
+	return nil
+}
+
+// Identities перечисляет способы внешнего входа пользователя.
+func (d ds) Identities(ctx context.Context, user uuid.UUID) ([]Identity, error) {
+	rows, err := d.db.QueryContext(ctx, `
+		SELECT provider, external_id, COALESCE(email, ''), created_at
+		FROM identity WHERE user_id = $1 ORDER BY created_at`, user)
+	if err != nil {
+		return nil, fmt.Errorf("loading identities of %s: %w", user, err)
+	}
+	defer func() {
+		// Настоящая причина сбоя придёт из rows.Err().
+		_ = rows.Close()
+	}()
+
+	identities := make([]Identity, 0)
+	for rows.Next() {
+		var identity Identity
+		if err = rows.Scan(&identity.Provider, &identity.ExternalId,
+			&identity.Email, &identity.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scanning identity: %w", err)
+		}
+		identities = append(identities, identity)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading identities: %w", err)
+	}
+	return identities, nil
+}
+
+// UnlinkIdentity отвязывает внешний аккаунт.
+//
+// Последний способ входа отвязать нельзя: пользователь, вошедший через
+// провайдера и не заводивший пароль, потерял бы доступ к учётной записи.
+func (d ds) UnlinkIdentity(ctx context.Context, user uuid.UUID, provider string) error {
+	return d.inTx(ctx, func(tx *sql.Tx) error {
+		var passwordSet bool
+		if err := tx.QueryRowContext(ctx,
+			`SELECT password_set FROM users WHERE user_id = $1 FOR UPDATE`, user).
+			Scan(&passwordSet); err != nil {
+			return fmt.Errorf("locking user %s: %w", user, err)
+		}
+
+		var remaining int
+		if err := tx.QueryRowContext(ctx,
+			`SELECT count(*) FROM identity WHERE user_id = $1 AND provider <> $2`,
+			user, provider).Scan(&remaining); err != nil {
+			return fmt.Errorf("counting identities of %s: %w", user, err)
+		}
+		if !passwordSet && remaining == 0 {
+			return ErrLastIdentity
+		}
+
+		result, err := tx.ExecContext(ctx,
+			`DELETE FROM identity WHERE user_id = $1 AND provider = $2`, user, provider)
+		if err != nil {
+			return fmt.Errorf("unlinking identity %s of %s: %w", provider, user, err)
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("counting unlinked identities: %w", err)
+		}
+		if affected == 0 {
+			return sql.ErrNoRows
+		}
+		return nil
+	})
+}
+
+// CreateSocialUser заводит пользователя по внешнему профилю.
+//
+// Почта провайдера в профиль не переносится: она может совпасть с почтой
+// существующего пользователя, и тогда чужой аккаунт оказался бы захвачен
+// тем, кто просто завёл ящик с таким адресом у провайдера. Почта остаётся
+// справочной в самой идентичности, а в профиль пользователь заведёт её сам
+// и подтвердит.
+func (d ds) CreateSocialUser(ctx context.Context, profile SocialProfile) (*User, error) {
+	var user *User
+	err := d.inTx(ctx, func(tx *sql.Tx) error {
+		// Пароля нет: вход возможен только через провайдера, пока
+		// пользователь не задаст пароль сам.
+		placeholder, err := randomToken()
+		if err != nil {
+			return err
+		}
+
+		created, err := scanUser(tx.QueryRowContext(ctx, `
+			INSERT INTO users (username, password_hash, display_name, password_set)
+			VALUES ($1, $2, NULLIF($3, ''), FALSE)
+			RETURNING `+userColumns,
+			profile.Provider+":"+profile.ExternalId, placeholder, profile.Name))
+		if err != nil {
+			return fmt.Errorf("creating user from %s identity: %w", profile.Provider, err)
+		}
+
+		if _, err = tx.ExecContext(ctx, `
+			INSERT INTO identity (provider, external_id, user_id, email)
+			VALUES ($1, $2, $3, NULLIF($4, ''))`,
+			profile.Provider, profile.ExternalId, created.Id, profile.Email); err != nil {
+			return fmt.Errorf("linking identity to the new user: %w", err)
+		}
+
+		user = created
+		return nil
+	})
+	return user, err
+}
+
+func nullableUUID(value *uuid.UUID) any {
+	if value == nil {
+		return nil
+	}
+	return *value
 }

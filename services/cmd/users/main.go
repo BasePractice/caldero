@@ -34,6 +34,10 @@ func main() {
 
 		go services.RunPeriodic(ctx, "token-cleanup", cfg.TokenCleanupInterval,
 			service.CleanupExpiredTokens)
+		// Брошенные состояния внешнего входа накапливаются сами собой:
+		// пользователь начал вход и закрыл вкладку.
+		go services.RunPeriodic(ctx, "social-login-cleanup", cfg.TokenCleanupInterval,
+			service.CleanupSocialLogins)
 
 		return services.ServeHTTP(ctx, cfg, fmt.Sprintf(":%d", *port),
 			registerHttpHandlers(service))

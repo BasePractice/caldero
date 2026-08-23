@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -45,6 +46,12 @@ var loginPage = template.Must(template.New("login").Parse(`<!doctype html>
     </label>
     <button type="submit">Войти и разрешить</button>
 </form>
+{{ if .Providers }}
+<p class="client">Или войдите через:</p>
+<ul>
+    {{ range .Providers }}<li><a href="{{ .URL }}">{{ .Name }}</a></li>{{ end }}
+</ul>
+{{ end }}
 </body>
 </html>`))
 
@@ -53,6 +60,40 @@ type loginPageData struct {
 	ClientId string
 	Scopes   string
 	Error    string
+	// Providers — внешние способы входа. Ссылка сохраняет исходные
+	// параметры запроса: после возвращения от провайдера продолжается
+	// тот же поток авторизации.
+	Providers []socialLink
+}
+
+// socialLink — кнопка входа через провайдера.
+type socialLink struct {
+	Name string
+	URL  string
+}
+
+// socialLinks собирает ссылки входа для формы. Порядок фиксирован:
+// карта провайдеров обходится в произвольном порядке, и без сортировки
+// кнопки прыгали бы при каждом показе страницы.
+func (s *Service) socialLinks(query string) []socialLink {
+	if s.cfg.SocialRedirectBase == "" {
+		return nil
+	}
+
+	names := make([]string, 0, len(s.providers))
+	for name := range s.providers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	links := make([]socialLink, 0, len(names))
+	for _, name := range names {
+		links = append(links, socialLink{
+			Name: name,
+			URL:  "/auth/social/" + name + "?" + query,
+		})
+	}
+	return links
 }
 
 // handleAuthorization реализует Authorization Code Flow. Раньше эндпоинта
@@ -70,9 +111,10 @@ func (s *Service) handleAuthorization(w http.ResponseWriter, r *http.Request) {
 	page := loginPageData{
 		// Действие формы сохраняет исходные параметры: fosite разбирает
 		// запрос заново и на POST, а тело формы их не содержит.
-		Action:   "?" + r.URL.RawQuery,
-		ClientId: authorizeRequest.GetClient().GetID(),
-		Scopes:   strings.Join(authorizeRequest.GetRequestedScopes(), ", "),
+		Action:    "?" + r.URL.RawQuery,
+		ClientId:  authorizeRequest.GetClient().GetID(),
+		Scopes:    strings.Join(authorizeRequest.GetRequestedScopes(), ", "),
+		Providers: s.socialLinks(r.URL.RawQuery),
 	}
 
 	if r.Method != http.MethodPost {
