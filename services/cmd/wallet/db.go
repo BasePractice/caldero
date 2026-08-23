@@ -66,40 +66,71 @@ FROM wlt
          LEFT JOIN trans_credit ON wlt.id = trans_credit.id
 ORDER BY wlt.created_at;`
 
+// Information отдаёт кошельки пользователя, создавая кошелёк по умолчанию,
+// если его ещё нет.
 func (d ds) Information(userId uuid.UUID, cb func(reply *wallet.InformationReply)) error {
-	var retry int
-next:
-	rows, err := d.db.Query(informationQuery, userId)
+	found, err := d.selectWallets(userId, cb)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
-	has := false
+	if found {
+		return nil
+	}
+
+	if err = d.ensureWallet(userId); err != nil {
+		return err
+	}
+	if _, err = d.selectWallets(userId, cb); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ensureWallet создаёт кошелёк по умолчанию. ON CONFLICT обязателен: два
+// параллельных запроса одного пользователя иначе нарушают UNIQUE (user_id, type),
+// и второй запрос возвращает ошибку вместо кошелька.
+func (d ds) ensureWallet(userId uuid.UUID) error {
+	_, err := d.db.Exec(
+		"INSERT INTO wallet (user_id) VALUES ($1) ON CONFLICT (user_id, type) DO NOTHING",
+		userId)
+	if err != nil {
+		return fmt.Errorf("creating default wallet for user %s: %w", userId, err)
+	}
+	return nil
+}
+
+func (d ds) selectWallets(userId uuid.UUID, cb func(reply *wallet.InformationReply)) (bool, error) {
+	rows, err := d.db.Query(informationQuery, userId)
+	if err != nil {
+		return false, fmt.Errorf("querying wallets of user %s: %w", userId, err)
+	}
+	defer func() {
+		// Ошибка закрытия не влияет на уже прочитанные строки, а настоящая
+		// причина сбоя приходит из rows.Err().
+		_ = rows.Close()
+	}()
+
+	found := false
 	for rows.Next() {
 		var reply wallet.InformationReply
-		var state string
-		var typ string
-		has = true
-		err = rows.Scan(
+		var state, typ string
+		if err = rows.Scan(
 			&reply.Id, &state, &typ,
 			&reply.Balance, &reply.Transactions,
-			&reply.ReservedDebit, &reply.ReservedCredit)
-		if err != nil {
-			return err
+			&reply.ReservedDebit, &reply.ReservedCredit); err != nil {
+			return false, fmt.Errorf("scanning wallet of user %s: %w", userId, err)
 		}
 		reply.State = wallet.WalletState(wallet.WalletState_value[state])
 		reply.Type = wallet.WalletType(wallet.WalletType_value[typ])
+		found = true
 		cb(&reply)
 	}
-	if !has && retry < 2 {
-		_, err = d.db.Exec("INSERT INTO wallet (user_id) VALUES ($1)", userId)
-		if err != nil {
-			return err
-		}
-		retry++
-		goto next
+	// Без этой проверки обрыв соединения посреди выборки выглядит как пустой
+	// результат, и сервис молча пытается создать второй кошелёк.
+	if err = rows.Err(); err != nil {
+		return false, fmt.Errorf("reading wallets of user %s: %w", userId, err)
 	}
-	return nil
+	return found, nil
 }
 
 func NewDatabaseWallet(cfg services.Config) (DatabaseWallet, error) {
