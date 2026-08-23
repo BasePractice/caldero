@@ -22,6 +22,6 @@ func main() {
 		defer services.Close("database", db)
 
 		return services.ServeHTTP(ctx, fmt.Sprintf(":%d", *port),
-			registerHttpHandlers(ctx, db))
+			registerHttpHandlers(db))
 	})
 }

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,11 +22,11 @@ var (
 	})
 )
 
-func registerHttpHandlers(ctx context.Context, db Database) http.Handler {
+func registerHttpHandlers(db Database) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /credit", func(w http.ResponseWriter, r *http.Request) {
 		creditCreateCounter.Inc()
-		createCredit(ctx, db, w, r)
+		createCredit(db, w, r)
 	})
 	mux.HandleFunc("GET /credits/{id}/schedule", func(w http.ResponseWriter, r *http.Request) {
 		operator, err := services.HttpAuthorized(r)
@@ -42,7 +41,7 @@ func registerHttpHandlers(ctx context.Context, db Database) http.Handler {
 			http.Error(w, "Invalid id", http.StatusBadRequest)
 			return
 		}
-		c, err := db.Get(ctx, idInt)
+		c, err := db.Get(r.Context(), idInt)
 		if errors.Is(err, ErrCreditNotFound) {
 			http.Error(w, "Not found", http.StatusNotFound)
 			return
@@ -79,7 +78,7 @@ func registerHttpHandlers(ctx context.Context, db Database) http.Handler {
 	return mux
 }
 
-func createCredit(ctx context.Context, db Database, w http.ResponseWriter, r *http.Request) {
+func createCredit(db Database, w http.ResponseWriter, r *http.Request) {
 	operator, err := services.HttpAuthorized(r)
 	if err != nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -98,7 +97,7 @@ func createCredit(ctx context.Context, db Database, w http.ResponseWriter, r *ht
 		return
 	}
 
-	id, err := db.Create(ctx, c, operator)
+	id, err := db.Create(r.Context(), c, operator)
 	if err != nil {
 		slog.Error("Failed to create credit",
 			slog.String("credit", c.String()),

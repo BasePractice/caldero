@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -21,21 +20,21 @@ var (
 	})
 )
 
-func registerHttpHandlers(ctx context.Context, db Database) http.Handler {
+func registerHttpHandlers(db Database) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /account", func(w http.ResponseWriter, r *http.Request) {
 		accountCreateCounter.Inc()
-		createAccount(ctx, db, w, r)
+		createAccount(db, w, r)
 	})
 	mux.HandleFunc("GET /account/{id}", func(w http.ResponseWriter, r *http.Request) {
-		getAccount(ctx, db, w, r)
+		getAccount(db, w, r)
 	})
 	prometheus.MustRegister(accountCreateCounter)
 	mux.HandleFunc("GET /metrics", promhttp.Handler().ServeHTTP)
 	return mux
 }
 
-func createAccount(ctx context.Context, db Database, w http.ResponseWriter, r *http.Request) {
+func createAccount(db Database, w http.ResponseWriter, r *http.Request) {
 	operator, err := services.HttpAuthorized(r)
 	if err != nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -62,7 +61,7 @@ func createAccount(ctx context.Context, db Database, w http.ResponseWriter, r *h
 		return
 	}
 
-	id, err := db.Create(ctx, a, operator)
+	id, err := db.Create(r.Context(), a, operator)
 	if err != nil {
 		slog.Error("Failed to create account",
 			slog.String("account", a.String()),
@@ -74,7 +73,7 @@ func createAccount(ctx context.Context, db Database, w http.ResponseWriter, r *h
 	w.WriteHeader(http.StatusCreated)
 }
 
-func getAccount(ctx context.Context, db Database, w http.ResponseWriter, r *http.Request) {
+func getAccount(db Database, w http.ResponseWriter, r *http.Request) {
 	operator, err := services.HttpAuthorized(r)
 	if err != nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -86,7 +85,7 @@ func getAccount(ctx context.Context, db Database, w http.ResponseWriter, r *http
 		return
 	}
 
-	a, err := db.Get(ctx, id)
+	a, err := db.Get(r.Context(), id)
 	if err != nil {
 		slog.Error("Get account", slog.Int64("id", id), slog.String("err", err.Error()))
 		http.Error(w, "Not found", http.StatusNotFound)

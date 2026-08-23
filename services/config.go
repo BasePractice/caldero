@@ -32,6 +32,12 @@ type Config struct {
 	OAuth2GlobalSecret string
 	// OAuth2Debug включает передачу внутренних деталей ошибок клиенту.
 	OAuth2Debug bool
+
+	// Пул соединений. Суммарно по всем сервисам должен укладываться
+	// в max_connections PostgreSQL, по умолчанию равный 100.
+	DBMaxOpenConns    int
+	DBMaxIdleConns    int
+	DBConnMaxLifetime time.Duration
 }
 
 // LoadConfig читает .env-файлы и окружение. Вызывается первой строкой main:
@@ -84,6 +90,24 @@ func LoadConfig() (Config, error) {
 		return Config{}, fmt.Errorf("parsing METRICS_PORT: %w", err)
 	}
 	cfg.MetricsPort = metricsPort
+
+	maxOpen, err := strconv.Atoi(env("DB_MAX_OPEN_CONNS", "10"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing DB_MAX_OPEN_CONNS: %w", err)
+	}
+	cfg.DBMaxOpenConns = maxOpen
+
+	maxIdle, err := strconv.Atoi(env("DB_MAX_IDLE_CONNS", "5"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing DB_MAX_IDLE_CONNS: %w", err)
+	}
+	cfg.DBMaxIdleConns = maxIdle
+
+	connLifetime, err := time.ParseDuration(env("DB_CONN_MAX_LIFETIME", "30m"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing DB_CONN_MAX_LIFETIME: %w", err)
+	}
+	cfg.DBConnMaxLifetime = connLifetime
 
 	return cfg, nil
 }

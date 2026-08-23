@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"fmt"
@@ -17,7 +18,7 @@ import (
 var migrations embed.FS
 
 type DatabaseWallet interface {
-	Information(userId uuid.UUID, cb func(reply *wallet.InformationReply)) error
+	Information(ctx context.Context, userId uuid.UUID, cb func(reply *wallet.InformationReply)) error
 	// Close освобождает соединения с БД
 	Close() error
 }
@@ -70,8 +71,8 @@ ORDER BY wlt.created_at;`
 
 // Information отдаёт кошельки пользователя, создавая кошелёк по умолчанию,
 // если его ещё нет.
-func (d ds) Information(userId uuid.UUID, cb func(reply *wallet.InformationReply)) error {
-	found, err := d.selectWallets(userId, cb)
+func (d ds) Information(ctx context.Context, userId uuid.UUID, cb func(reply *wallet.InformationReply)) error {
+	found, err := d.selectWallets(ctx, userId, cb)
 	if err != nil {
 		return err
 	}
@@ -79,10 +80,10 @@ func (d ds) Information(userId uuid.UUID, cb func(reply *wallet.InformationReply
 		return nil
 	}
 
-	if err = d.ensureWallet(userId); err != nil {
+	if err = d.ensureWallet(ctx, userId); err != nil {
 		return err
 	}
-	if _, err = d.selectWallets(userId, cb); err != nil {
+	if _, err = d.selectWallets(ctx, userId, cb); err != nil {
 		return err
 	}
 	return nil
@@ -91,8 +92,8 @@ func (d ds) Information(userId uuid.UUID, cb func(reply *wallet.InformationReply
 // ensureWallet создаёт кошелёк по умолчанию. ON CONFLICT обязателен: два
 // параллельных запроса одного пользователя иначе нарушают UNIQUE (user_id, type),
 // и второй запрос возвращает ошибку вместо кошелька.
-func (d ds) ensureWallet(userId uuid.UUID) error {
-	_, err := d.db.Exec(
+func (d ds) ensureWallet(ctx context.Context, userId uuid.UUID) error {
+	_, err := d.db.ExecContext(ctx,
 		"INSERT INTO wallet (user_id) VALUES ($1) ON CONFLICT (user_id, type) DO NOTHING",
 		userId)
 	if err != nil {
@@ -101,8 +102,8 @@ func (d ds) ensureWallet(userId uuid.UUID) error {
 	return nil
 }
 
-func (d ds) selectWallets(userId uuid.UUID, cb func(reply *wallet.InformationReply)) (bool, error) {
-	rows, err := d.db.Query(informationQuery, userId)
+func (d ds) selectWallets(ctx context.Context, userId uuid.UUID, cb func(reply *wallet.InformationReply)) (bool, error) {
+	rows, err := d.db.QueryContext(ctx, informationQuery, userId)
 	if err != nil {
 		return false, fmt.Errorf("querying wallets of user %s: %w", userId, err)
 	}

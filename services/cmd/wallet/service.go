@@ -40,7 +40,7 @@ func (s service) Information(ctx context.Context, request *wallet.InformationReq
 	}
 
 	replies := make([]*wallet.InformationReply, 0)
-	if err = s.db.Information(authorized.Id, func(reply *wallet.InformationReply) {
+	if err = s.db.Information(ctx, authorized.Id, func(reply *wallet.InformationReply) {
 		replies = append(replies, reply)
 	}); err != nil {
 		slog.Error("Failed to load wallets", slog.String("err", err.Error()))

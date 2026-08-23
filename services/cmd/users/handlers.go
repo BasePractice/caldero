@@ -1,11 +1,10 @@
 package main
 
 import (
-	"context"
 	"net/http"
 )
 
-func registerHttpHandlers(_ context.Context, service *Service) http.Handler {
+func registerHttpHandlers(service *Service) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /register", service.handleRegister)
 	mux.HandleFunc("POST /token", service.handleToken)

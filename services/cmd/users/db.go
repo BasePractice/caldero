@@ -172,7 +172,7 @@ func (s *ds) GetClient(ctx context.Context, id string) (fosite.Client, error) {
 	var client fosite.DefaultClient
 	var redirectURIs, grantTypes, responseTypes, scopes string
 
-	err := s.db.QueryRow(
+	err := s.db.QueryRowContext(ctx,
 		`SELECT client_id, client_secret, redirect_uris, 
 		grant_types, response_types, scopes 
 		FROM oauth_clients 
@@ -199,30 +199,30 @@ func (s *ds) GetClient(ctx context.Context, id string) (fosite.Client, error) {
 }
 
 func (s *ds) CreateAccessTokenSession(ctx context.Context, signature string, request fosite.Requester) error {
-	return s.createTokenSession("access", signature, request)
+	return s.createTokenSession(ctx, "access", signature, request)
 }
 
 func (s *ds) GetAccessTokenSession(ctx context.Context, signature string, session fosite.Session) (fosite.Requester, error) {
-	return s.getTokenSession("access", signature, session)
+	return s.getTokenSession(ctx, "access", signature, session)
 }
 
 func (s *ds) DeleteAccessTokenSession(ctx context.Context, signature string) error {
-	return s.deleteTokenSession("access", signature)
+	return s.deleteTokenSession(ctx, "access", signature)
 }
 
 func (s *ds) CreateRefreshTokenSession(ctx context.Context, signature string, accessSignature string, request fosite.Requester) (err error) {
-	return s.createTokenSession("refresh", signature, request)
+	return s.createTokenSession(ctx, "refresh", signature, request)
 }
 
 func (s *ds) GetRefreshTokenSession(ctx context.Context, signature string, session fosite.Session) (fosite.Requester, error) {
-	return s.getTokenSession("refresh", signature, session)
+	return s.getTokenSession(ctx, "refresh", signature, session)
 }
 
 func (s *ds) DeleteRefreshTokenSession(ctx context.Context, signature string) error {
-	return s.deleteTokenSession("refresh", signature)
+	return s.deleteTokenSession(ctx, "refresh", signature)
 }
 
-func (s *ds) createTokenSession(tokenType, signature string, request fosite.Requester) error {
+func (s *ds) createTokenSession(ctx context.Context, tokenType, signature string, request fosite.Requester) error {
 	data, err := json.Marshal(request)
 	if err != nil {
 		return fmt.Errorf("marshalling %s token session: %w", tokenType, err)
@@ -231,7 +231,7 @@ func (s *ds) createTokenSession(tokenType, signature string, request fosite.Requ
 	// Срок жизни берётся по типу токена: у refresh он на порядок длиннее
 	// access, и подстановка чужого срока обрывала refresh-поток через час.
 	expiresAt := request.GetSession().GetExpiresAt(tokenKind(tokenType))
-	_, err = s.db.Exec(
+	_, err = s.db.ExecContext(ctx,
 		"INSERT INTO oauth_tokens (signature, request_id, session_data, expires_at, token_type) VALUES ($1, $2, $3, $4, $5)",
 		signature,
 		request.GetID(),
@@ -252,11 +252,11 @@ func tokenKind(tokenType string) fosite.TokenType {
 	return fosite.AccessToken
 }
 
-func (s *ds) getTokenSession(tokenType, signature string, session fosite.Session) (fosite.Requester, error) {
+func (s *ds) getTokenSession(ctx context.Context, tokenType, signature string, session fosite.Session) (fosite.Requester, error) {
 	var data []byte
 	var expiresAt time.Time
 
-	err := s.db.QueryRow(
+	err := s.db.QueryRowContext(ctx,
 		"SELECT session_data, expires_at FROM oauth_tokens WHERE signature = $1 AND token_type = $2",
 		signature,
 		tokenType,
@@ -278,8 +278,8 @@ func (s *ds) getTokenSession(tokenType, signature string, session fosite.Session
 	return &req, nil
 }
 
-func (s *ds) deleteTokenSession(tokenType, signature string) error {
-	_, err := s.db.Exec(
+func (s *ds) deleteTokenSession(ctx context.Context, tokenType, signature string) error {
+	_, err := s.db.ExecContext(ctx,
 		"DELETE FROM oauth_tokens WHERE signature = $1 AND token_type = $2",
 		signature,
 		tokenType,
@@ -288,7 +288,7 @@ func (s *ds) deleteTokenSession(tokenType, signature string) error {
 }
 
 func (s *ds) RevokeRefreshToken(ctx context.Context, requestId string) error {
-	_, err := s.db.Exec(
+	_, err := s.db.ExecContext(ctx,
 		"DELETE FROM oauth_tokens WHERE request_id = $1 AND token_type = 'refresh'",
 		requestId,
 	)
@@ -296,7 +296,7 @@ func (s *ds) RevokeRefreshToken(ctx context.Context, requestId string) error {
 }
 
 func (s *ds) RevokeAccessToken(ctx context.Context, requestId string) error {
-	_, err := s.db.Exec(
+	_, err := s.db.ExecContext(ctx,
 		"DELETE FROM oauth_tokens WHERE request_id = $1 AND token_type = 'access'",
 		requestId,
 	)
