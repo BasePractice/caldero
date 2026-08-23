@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
 
 	"wish/services"
@@ -24,16 +25,32 @@ type ds struct {
 	db *sql.DB
 }
 
+// ErrCreditNotFound отделяет отсутствие записи от прочих ошибок БД:
+// раньше обработчик отвечал 404 на любую ошибку, включая недоступную базу.
+var ErrCreditNotFound = errors.New("credit not found")
+
 func (d ds) Get(ctx context.Context, id uint64) (*credit.Credit, error) {
 	var c credit.Credit
+	var lastPaidAt sql.NullTime
 
-	err := d.db.QueryRowContext(ctx, `SELECT 
-    user_id, creator_id, type, percent, balance, kind, month FROM credit WHERE id = $1`,
-		id).Scan(&c.UserId, &c.CreatorId, &c.Type, &c.Percent, &c.Balance, &c.Kind, &c.Month)
-	if err != nil {
-		return nil, err
+	// already_payed, created_at и last_payed_at управляют расчётом графика:
+	// без них частично погашенный кредит считался как только что выданный.
+	err := d.db.QueryRowContext(ctx, `SELECT
+		user_id, creator_id, type, percent, balance, kind, month,
+		already_payed, created_at, last_payed_at
+		FROM credit WHERE id = $1`, id).
+		Scan(&c.UserId, &c.CreatorId, &c.Type, &c.Percent, &c.Balance, &c.Kind, &c.Month,
+			&c.AlreadyPaid, &c.CreatedAt, &lastPaidAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("credit %d: %w", id, ErrCreditNotFound)
 	}
-	return &c, err
+	if err != nil {
+		return nil, fmt.Errorf("loading credit %d: %w", id, err)
+	}
+	if lastPaidAt.Valid {
+		c.LastPaidAt = &lastPaidAt.Time
+	}
+	return &c, nil
 }
 
 func (d ds) Create(ctx context.Context, c credit.CreateCredit, operator *services.AuthorizedUser) (int64, error) {

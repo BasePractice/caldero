@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -42,9 +43,13 @@ func registerHttpHandlers(ctx context.Context, db Database) http.Handler {
 			return
 		}
 		c, err := db.Get(ctx, idInt)
+		if errors.Is(err, ErrCreditNotFound) {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
 		if err != nil {
 			slog.Error("Get credit", slog.String("id", id), slog.String("err", err.Error()))
-			http.Error(w, "Not found", http.StatusNotFound)
+			http.Error(w, "Can't load credit", http.StatusInternalServerError)
 			return
 		}
 		// Идентификатор кредита последовательный, поэтому чужой кредит
