@@ -11,9 +11,6 @@ BEGIN
 END;
 $$ LANGUAGE 'plpgsql';
 
-ALTER TABLE transaction
-    ALTER COLUMN created_at TYPE TIMESTAMP,
-    ALTER COLUMN updated_at TYPE TIMESTAMP;
 ALTER TABLE wallet
     ALTER COLUMN created_at TYPE TIMESTAMP,
     ALTER COLUMN updated_at TYPE TIMESTAMP;

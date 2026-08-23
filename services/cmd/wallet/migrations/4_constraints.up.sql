@@ -10,9 +10,8 @@ ALTER TABLE wallet
 ALTER TABLE wallet
     ALTER COLUMN created_at TYPE TIMESTAMPTZ,
     ALTER COLUMN updated_at TYPE TIMESTAMPTZ;
-ALTER TABLE transaction
-    ALTER COLUMN created_at TYPE TIMESTAMPTZ,
-    ALTER COLUMN updated_at TYPE TIMESTAMPTZ;
+-- transaction переведена в TIMESTAMPTZ вместе с партиционированием:
+-- created_at стал ключом партиционирования, и менять его тип здесь уже нельзя.
 
 -- Прежний триггер молча пропускал SWAP и не трогал source, то есть перевод
 -- между кошельками не менял ни одного баланса. Операция, для которой нет

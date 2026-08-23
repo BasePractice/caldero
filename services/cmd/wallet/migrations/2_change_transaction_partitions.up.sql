@@ -1,40 +1,64 @@
--- CREATE TABLE transaction
--- (
---     id         UUID      NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
---     type       VARCHAR   NOT NULL DEFAULT 'PLAIN' CHECK ( type IN ('PLAIN') ),
---     source     UUID      NOT NULL,
---     target     UUID               DEFAULT NULL,
---     state      VARCHAR   NOT NULL DEFAULT 'CREATE' CHECK ( state IN ('CREATE', 'SUCCESS', 'FAILURE', 'REJECTED') ),
---     message    VARCHAR            DEFAULT NULL,
---     details    JSONB              DEFAULT NULL,
---     created_at TIMESTAMP NOT NULL DEFAULT current_timestamp,
---     updated_at TIMESTAMP NOT NULL DEFAULT current_timestamp,
---     FOREIGN KEY (source) REFERENCES wallet (id)
--- ) PARTITION BY RANGE (created_at);
--- CREATE INDEX ON transaction (created_at);
+-- Требование №6 из README кошелька: партиционирование транзакций по месяцу
+-- создания. Раньше этот файл состоял из закомментированного черновика
+-- и занимал номер версии, создавая видимость выполненной работы.
 --
--- CREATE TABLE transaction_2025_04 PARTITION OF transaction FOR VALUES FROM ('2025-04-01') TO ('2025-05-01');
--- CREATE TABLE transaction_2025_05 PARTITION OF transaction FOR VALUES FROM ('2025-05-01') TO ('2025-06-01');
---
--- CREATE OR REPLACE FUNCTION create_next_partition() RETURNS VOID AS
--- $$
--- DECLARE
---     next_month TEXT := to_char(now() + INTERVAL '1 month', 'YYYY_MM');
---     start_date DATE := date_trunc('month', now() - INTERVAL '1 month');
---     end_date   DATE := start_date + INTERVAL '1 month';
--- BEGIN
---     EXECUTE format(
---             'CREATE TABLE transaction_%s PARTITION OF transaction FOR VALUES FROM (%L) TO (%L)',
---             next_month,
---             start_date,
---             end_date
---             );
--- END;
--- $$ LANGUAGE plpgsql;
---
--- CREATE EXTENSION pg_cron;
--- SELECT cron.schedule(
---                'create-next-partition',
---                '0 0 26 * *',
---                $$SELECT create_next_partition()$$
---        );
+-- Ключ партиционирования обязан входить в первичный ключ, поэтому он
+-- становится составным: (id, created_at).
+ALTER TABLE transaction
+    RENAME TO transaction_unpartitioned;
+
+CREATE TABLE transaction
+(
+    id         UUID      NOT NULL DEFAULT gen_random_uuid(),
+    type       VARCHAR   NOT NULL DEFAULT 'PLAIN' CHECK ( type IN ('PLAIN') ),
+    target     UUID      NOT NULL,
+    source     UUID               DEFAULT NULL,
+    state      VARCHAR   NOT NULL DEFAULT 'RESERVED' CHECK ( state IN ('RESERVED', 'SUCCESS', 'FAILURE', 'REJECTED') ),
+    operation  VARCHAR   NOT NULL CHECK ( operation IN ('DEBIT', 'CREDIT', 'SWAP') ),
+    value      BIGINT    NOT NULL DEFAULT 0,
+    message    VARCHAR            DEFAULT NULL,
+    details    JSONB              DEFAULT NULL,
+    -- TIMESTAMPTZ задаётся сразу: после того как created_at станет ключом
+    -- партиционирования, PostgreSQL запрещает менять тип колонки.
+    created_at TIMESTAMPTZ NOT NULL DEFAULT current_timestamp,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT current_timestamp,
+    PRIMARY KEY (id, created_at),
+    FOREIGN KEY (source) REFERENCES wallet (id),
+    FOREIGN KEY (target) REFERENCES wallet (id)
+) PARTITION BY RANGE (created_at);
+
+-- Партиции на два года вперёд плюс на год назад под уже накопленные данные.
+DO
+$$
+    DECLARE
+        month_start DATE := date_trunc('month', now() - INTERVAL '12 months');
+        month_end   DATE;
+    BEGIN
+        FOR i IN 0..35
+            LOOP
+                month_end := month_start + INTERVAL '1 month';
+                EXECUTE format(
+                        'CREATE TABLE IF NOT EXISTS transaction_%s PARTITION OF transaction FOR VALUES FROM (%L) TO (%L)',
+                        to_char(month_start, 'YYYY_MM'), month_start, month_end);
+                month_start := month_end;
+            END LOOP;
+    END
+$$;
+
+-- Страховка: без неё вставка за пределами созданного окна падает целиком.
+-- Автоматическое создание партиций вперёд — отдельная задача.
+CREATE TABLE IF NOT EXISTS transaction_default PARTITION OF transaction DEFAULT;
+
+-- Значения без часового пояса трактуются как локальное время сервера.
+INSERT INTO transaction (id, type, target, source, state, operation, value, message, details, created_at, updated_at)
+SELECT id, type, target, source, state, operation, value, message, details, created_at, updated_at
+FROM transaction_unpartitioned;
+
+DROP TABLE transaction_unpartitioned;
+
+CREATE TRIGGER transaction_update_after
+    AFTER UPDATE
+    ON transaction
+    FOR EACH ROW
+    WHEN ( NEW.state != OLD.state AND NEW.state = 'SUCCESS')
+EXECUTE FUNCTION fn_update_after_transaction();
