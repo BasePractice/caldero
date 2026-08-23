@@ -14,6 +14,7 @@ import (
 	"wish/services/shared/marketplace"
 	"wish/services/shared/notify"
 	"wish/services/shared/payment"
+	"wish/services/shared/wallets"
 	"wish/services/shared/wishlist"
 
 	"github.com/google/uuid"
@@ -171,22 +172,22 @@ func (m *memoryDatabase) Ping(context.Context) error { return nil }
 // fakeWallet подменяет сервис кошелька.
 type fakeWallet struct {
 	mu        sync.Mutex
-	wallets   map[uuid.UUID]WalletInfo
-	transfers []TransferParams
+	wallets   map[uuid.UUID]wallets.Info
+	transfers []wallets.TransferParams
 	failFee   bool
 }
 
-func (f *fakeWallet) Wallet(_ context.Context, user uuid.UUID) (WalletInfo, error) {
+func (f *fakeWallet) Wallet(_ context.Context, user uuid.UUID) (wallets.Info, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	info, ok := f.wallets[user]
 	if !ok {
-		return WalletInfo{}, errors.New("нет кошелька")
+		return wallets.Info{}, errors.New("нет кошелька")
 	}
 	return info, nil
 }
 
-func (f *fakeWallet) Transfer(_ context.Context, _ uuid.UUID, params TransferParams) error {
+func (f *fakeWallet) Transfer(_ context.Context, _ uuid.UUID, params wallets.TransferParams) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.failFee && params.Message == "Комиссия за денежный подарок" {
@@ -239,7 +240,7 @@ func newTestEnvironment(t *testing.T, fee payment.Fee, feeWallet *uuid.UUID) *te
 	events := &notifyStub{}
 	stub := &marketplace.Stub{}
 	db := newMemoryDatabase()
-	wallet := &fakeWallet{wallets: make(map[uuid.UUID]WalletInfo)}
+	wallet := &fakeWallet{wallets: make(map[uuid.UUID]wallets.Info)}
 
 	gifts := NewGifts(db, marketplace.NewRegistry(stub),
 		notify.NewClient(events.start(t), uuid.New()), wallet, fee, feeWallet, time.Hour)
@@ -521,8 +522,8 @@ func TestAcceptMoneyTransfersWithFee(t *testing.T) {
 
 	giverWallet := uuid.New()
 	ownerWallet := uuid.New()
-	env.wallet.wallets[giver] = WalletInfo{Id: giverWallet, Available: 10_000_00}
-	env.wallet.wallets[owner] = WalletInfo{Id: ownerWallet, Available: 0}
+	env.wallet.wallets[giver] = wallets.Info{Id: giverWallet, Available: 10_000_00}
+	env.wallet.wallets[owner] = wallets.Info{Id: ownerWallet, Available: 0}
 
 	item, err := env.gifts.Add(ctx, owner, wishlist.CreateItem{
 		Kind: wishlist.KindMoney, Priority: 1, Amount: 1_000_00, Title: "На велосипед",
@@ -565,8 +566,8 @@ func TestAcceptMoneyChecksFunds(t *testing.T) {
 	giver := uuid.New()
 
 	// Средств хватает на подарок, но не на подарок вместе с комиссией.
-	env.wallet.wallets[giver] = WalletInfo{Id: uuid.New(), Available: 1_000_00}
-	env.wallet.wallets[owner] = WalletInfo{Id: uuid.New()}
+	env.wallet.wallets[giver] = wallets.Info{Id: uuid.New(), Available: 1_000_00}
+	env.wallet.wallets[owner] = wallets.Info{Id: uuid.New()}
 
 	item, err := env.gifts.Add(ctx, owner, wishlist.CreateItem{
 		Kind: wishlist.KindMoney, Priority: 1, Amount: 1_000_00, Title: "На велосипед",
@@ -608,8 +609,8 @@ func TestAcceptMoneyKeepsGiftWhenFeeFails(t *testing.T) {
 	env.wallet.failFee = true
 	owner := uuid.New()
 	giver := uuid.New()
-	env.wallet.wallets[giver] = WalletInfo{Id: uuid.New(), Available: 10_000_00}
-	env.wallet.wallets[owner] = WalletInfo{Id: uuid.New()}
+	env.wallet.wallets[giver] = wallets.Info{Id: uuid.New(), Available: 10_000_00}
+	env.wallet.wallets[owner] = wallets.Info{Id: uuid.New()}
 
 	item, err := env.gifts.Add(ctx, owner, wishlist.CreateItem{
 		Kind: wishlist.KindMoney, Priority: 1, Amount: 1_000_00, Title: "На велосипед",

@@ -1,0 +1,135 @@
+### Создание котла с точной суммой взноса
+POST {{caldron.url}}/caldrons
+Content-Type: application/json
+X-Authorized-Id: {{user_id}}
+
+{
+  "title": "Юбилей",
+  "type": "GIFT",
+  "mode": "FIXED",
+  "creator_participates": true,
+  "amount": 250000
+}
+
+> {%
+    client.assert(response.status === 201, "Котёл не создан: " + response.status)
+    client.assert(response.body.state === "PREPARING", "Состояние: " + response.body.state)
+    client.global.set("caldron_id", response.body.id)
+%}
+
+### Точная сумма без суммы отклоняется
+POST {{caldron.url}}/caldrons
+Content-Type: application/json
+X-Authorized-Id: {{user_id}}
+
+{
+  "title": "Юбилей",
+  "type": "GIFT",
+  "mode": "FIXED"
+}
+
+> {%
+    client.assert(response.status === 400, "Котёл без правила взноса должен отклоняться")
+%}
+
+### Добавление участника
+POST {{caldron.url}}/caldrons/{{caldron_id}}/participants
+Content-Type: application/json
+X-Authorized-Id: {{user_id}}
+
+{
+  "user_id": "00000000-0000-0000-0000-000000000002"
+}
+
+> {%
+    client.assert(response.status === 200, "Участник не добавлен: " + response.status)
+    client.assert(response.body.participants.length >= 2, "Участников меньше ожидаемого")
+%}
+
+### Посторонний котла не видит
+GET {{caldron.url}}/caldrons/{{caldron_id}}
+Accept: application/json
+X-Authorized-Id: 00000000-0000-0000-0000-000000000009
+
+> {%
+    client.assert(response.status === 404, "Чужой котёл не должен быть виден")
+%}
+
+### Взнос создателя
+POST {{caldron.url}}/caldrons/{{caldron_id}}/contribute
+X-Authorized-Id: {{user_id}}
+
+> {%
+    client.assert(response.status === 200 || response.status === 503,
+        "Неожиданный ответ взноса: " + response.status)
+    if (response.status === 200) {
+        client.assert(response.body.state === "PREPARING", "Котёл собран раньше времени")
+    }
+%}
+
+### Взнос участника переводит котёл в «готов»
+POST {{caldron.url}}/caldrons/{{caldron_id}}/contribute
+X-Authorized-Id: 00000000-0000-0000-0000-000000000002
+
+> {%
+    client.assert(response.status === 200 || response.status === 503,
+        "Неожиданный ответ взноса: " + response.status)
+    if (response.status === 200) {
+        client.assert(response.body.state === "READY", "Состояние: " + response.body.state)
+        client.assert(response.body.collected === 500000, "Собрано: " + response.body.collected)
+    }
+%}
+
+### Повторный взнос отклоняется
+POST {{caldron.url}}/caldrons/{{caldron_id}}/contribute
+X-Authorized-Id: 00000000-0000-0000-0000-000000000002
+
+> {%
+    client.assert(response.status === 409 || response.status === 503,
+        "Повторный взнос должен отклоняться: " + response.status)
+%}
+
+### Участник не добавляет других
+POST {{caldron.url}}/caldrons/{{caldron_id}}/participants
+Content-Type: application/json
+X-Authorized-Id: 00000000-0000-0000-0000-000000000002
+
+{
+  "user_id": "00000000-0000-0000-0000-000000000003"
+}
+
+> {%
+    client.assert(response.status === 403, "Добавлять участников может только создатель")
+%}
+
+### Завершение котла с передачей средств победителю
+POST {{caldron.url}}/caldrons/{{caldron_id}}/settle
+Content-Type: application/json
+X-Authorized-Id: {{user_id}}
+
+{
+  "winner": "00000000-0000-0000-0000-000000000002"
+}
+
+> {%
+    client.assert(response.status === 200 || response.status === 409 || response.status === 503,
+        "Неожиданный ответ завершения: " + response.status)
+%}
+
+### Мои котлы
+GET {{caldron.url}}/caldrons
+Accept: application/json
+X-Authorized-Id: {{user_id}}
+
+> {%
+    client.assert(response.status === 200, "Список котлов не отдан")
+%}
+
+### Отмена котла возвращает средства
+POST {{caldron.url}}/caldrons/{{caldron_id}}/cancel
+X-Authorized-Id: {{user_id}}
+
+> {%
+    client.assert(response.status === 200 || response.status === 409,
+        "Неожиданный ответ отмены: " + response.status)
+%}

@@ -390,3 +390,44 @@ services:
       LOG_FILE: /logs/wishlist.log
     volumes:
       - ./.logs/wishlist:/logs
+  caldron:
+    image: wish/caldron:latest
+    build:
+      context: ./
+      dockerfile: ./Dockerfile
+      args:
+        SERVICE: caldron
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+      wallet:
+        condition: service_healthy
+      notify:
+        condition: service_healthy
+    # Порт наружу не публикуется: доступ к сервису только через шлюз (T-001).
+    # Для локальной отладки поднимайте профиль debug или пробрасывайте порт вручную.
+    expose:
+      - "51057"
+    healthcheck:
+      test: [ "CMD", "/service", "-healthcheck" ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres-db:5432/wish?sslmode=disable&search_path=caldron
+      REDIS_URL: redis://redis:6379/10?protocol=3
+      LOG_COLOR: "false"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}
+      OTEL_TRACES_SAMPLER_ARG: ${OTEL_TRACES_SAMPLER_ARG:-1.0}
+      WALLET_ADDRESS: ${WALLET_ADDRESS:-wallet:51051}
+      NOTIFY_ENDPOINT: ${NOTIFY_ENDPOINT:-http://notify:51055}
+      SERVICE_USER_ID: ${SERVICE_USER_ID:-11111111-1111-1111-1111-111111111111}
+      CALDRON_REFUND_INTERVAL: ${CALDRON_REFUND_INTERVAL:-5m}
+      LOG_FILE: /logs/caldron.log
+    volumes:
+      - ./.logs/caldron:/logs

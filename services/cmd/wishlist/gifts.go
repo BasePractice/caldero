@@ -7,10 +7,10 @@ import (
 	"log/slog"
 	"time"
 
-	"wish/services/shared/credit"
 	"wish/services/shared/marketplace"
 	"wish/services/shared/notify"
 	"wish/services/shared/payment"
+	"wish/services/shared/wallets"
 	"wish/services/shared/wishlist"
 
 	"github.com/google/uuid"
@@ -33,31 +33,15 @@ var (
 	ErrInsufficientFunds = errors.New("insufficient funds")
 )
 
-// WalletInfo — то, что нужно знать о кошельке.
-type WalletInfo struct {
-	Id uuid.UUID
-	// Available — остаток за вычетом действующих резервов.
-	Available credit.Amount
-}
-
-// TransferParams — перевод между кошельками.
-type TransferParams struct {
-	IdempotencyKey string
-	Source         uuid.UUID
-	Target         uuid.UUID
-	Value          credit.Amount
-	Message        string
-}
-
 // Wallet — то, что нужно от сервиса кошелька. Интерфейс объявлен здесь,
-// у потребителя.
+// у потребителя; реализация — общий клиент в services/shared/wallets.
 type Wallet interface {
 	// Wallet возвращает кошелёк пользователя. Вызывается и для чужого
 	// кошелька, поэтому реализация ходит от имени служебного оператора.
-	Wallet(ctx context.Context, user uuid.UUID) (WalletInfo, error)
+	Wallet(ctx context.Context, user uuid.UUID) (wallets.Info, error)
 	// Transfer переводит средства от имени владельца исходного кошелька:
 	// подарок делает даритель, а не система за него.
-	Transfer(ctx context.Context, giver uuid.UUID, params TransferParams) error
+	Transfer(ctx context.Context, giver uuid.UUID, params wallets.TransferParams) error
 }
 
 // Gifts — операции над списком желаний вместе с их последствиями:
@@ -354,7 +338,7 @@ func (g *Gifts) transfer(ctx context.Context, item wishlist.Item, giver uuid.UUI
 			ErrInsufficientFunds, source.Available, item.Amount+fee)
 	}
 
-	if err = g.wallet.Transfer(ctx, giver, TransferParams{
+	if err = g.wallet.Transfer(ctx, giver, wallets.TransferParams{
 		IdempotencyKey: fmt.Sprintf("wishlist:%s:gift", item.Id),
 		Source:         source.Id,
 		Target:         target.Id,
@@ -365,7 +349,7 @@ func (g *Gifts) transfer(ctx context.Context, item wishlist.Item, giver uuid.UUI
 	}
 
 	if fee > 0 {
-		if err = g.wallet.Transfer(ctx, giver, TransferParams{
+		if err = g.wallet.Transfer(ctx, giver, wallets.TransferParams{
 			IdempotencyKey: fmt.Sprintf("wishlist:%s:fee", item.Id),
 			Source:         source.Id,
 			Target:         *g.feeWallet,

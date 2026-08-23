@@ -854,6 +854,299 @@
           ]
         }
       }
+    },
+    {
+      "@comment": "Защищённый: создание котла",
+      "endpoint": "/api/v1/caldrons",
+      "method": "POST",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type",
+        "Content-Length"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://caldron:51057"
+          ],
+          "url_pattern": "/caldrons",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "@comment": "Защищённый: мои котлы",
+      "endpoint": "/api/v1/caldrons",
+      "method": "GET",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://caldron:51057"
+          ],
+          "url_pattern": "/caldrons",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "@comment": "Защищённый: карточка котла с участниками",
+      "endpoint": "/api/v1/caldrons/{id}",
+      "method": "GET",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://caldron:51057"
+          ],
+          "url_pattern": "/caldrons/{id}",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "@comment": "Защищённый: добавление участника",
+      "endpoint": "/api/v1/caldrons/{id}/participants",
+      "method": "POST",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type",
+        "Content-Length"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://caldron:51057"
+          ],
+          "url_pattern": "/caldrons/{id}/participants",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "@comment": "Защищённый: исключение участника",
+      "endpoint": "/api/v1/caldrons/{id}/participants/{user}",
+      "method": "DELETE",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://caldron:51057"
+          ],
+          "url_pattern": "/caldrons/{id}/participants/{user}",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "@comment": "Защищённый: взнос в котёл",
+      "endpoint": "/api/v1/caldrons/{id}/contribute",
+      "method": "POST",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type",
+        "Content-Length"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://caldron:51057"
+          ],
+          "url_pattern": "/caldrons/{id}/contribute",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "@comment": "Защищённый: отмена котла с возвратом средств",
+      "endpoint": "/api/v1/caldrons/{id}/cancel",
+      "method": "POST",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type",
+        "Content-Length"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://caldron:51057"
+          ],
+          "url_pattern": "/caldrons/{id}/cancel",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "@comment": "Защищённый: завершение котла и передача средств",
+      "endpoint": "/api/v1/caldrons/{id}/settle",
+      "method": "POST",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type",
+        "Content-Length"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://caldron:51057"
+          ],
+          "url_pattern": "/caldrons/{id}/settle",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+      }
     }
   ],
   "sequential_start": true,

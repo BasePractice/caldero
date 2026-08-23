@@ -12,6 +12,7 @@ import (
 	"wish/services/shared/marketplace"
 	"wish/services/shared/notify"
 	"wish/services/shared/payment"
+	"wish/services/shared/wallets"
 
 	"github.com/google/uuid"
 )
@@ -67,7 +68,7 @@ func main() {
 				return fmt.Errorf("connecting to wallet: %w", err)
 			}
 			defer services.CloseGrpcClient("wallet", conn)
-			wallet = NewWalletClient(conn, cfg.ServiceUserId)
+			wallet = wallets.NewClient(conn, cfg.ServiceUserId)
 		} else {
 			// Не ошибка старта: товарная часть списка работает и без
 			// кошелька, отказ придёт только на денежном подарке.

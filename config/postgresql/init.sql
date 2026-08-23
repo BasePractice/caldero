@@ -11,3 +11,4 @@ CREATE SCHEMA account;
 CREATE SCHEMA users;
 CREATE SCHEMA notify;
 CREATE SCHEMA wishlist;
+CREATE SCHEMA caldron;

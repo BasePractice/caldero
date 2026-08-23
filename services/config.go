@@ -145,6 +145,11 @@ type Config struct {
 	// «в никуда» значило бы нарушить сходимость средств в системе.
 	FeeWalletId uuid.UUID
 
+	// CaldronRefundInterval — как часто добивать незавершённые возвраты
+	// по отменённым котлам. Ноль отключает добивание, и тогда сбой посреди
+	// отмены оставляет средства участников в котле.
+	CaldronRefundInterval time.Duration
+
 	// DebugStatsviz открывает страницу состояния рантайма на порту метрик.
 	// По умолчанию выключено: страница не аутентифицирована.
 	DebugStatsviz bool
@@ -366,6 +371,12 @@ func LoadConfig() (Config, error) {
 		}
 		cfg.FeeWalletId = feeWallet
 	}
+
+	refundInterval, err := time.ParseDuration(env("CALDRON_REFUND_INTERVAL", "5m"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing CALDRON_REFUND_INTERVAL: %w", err)
+	}
+	cfg.CaldronRefundInterval = refundInterval
 
 	connLifetime, err := time.ParseDuration(env("DB_CONN_MAX_LIFETIME", "30m"))
 	if err != nil {
