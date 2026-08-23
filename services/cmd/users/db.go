@@ -39,8 +39,10 @@ type DatabaseUsers interface {
 	GetPKCERequestSession(ctx context.Context, signature string, session fosite.Session) (fosite.Requester, error)
 	DeletePKCERequestSession(ctx context.Context, signature string) error
 
-	CreateUser(ctx context.Context, username, passwordHash string) (*User, error)
+	CreateUser(ctx context.Context, registration Registration) (*User, error)
 	GetUser(ctx context.Context, username string) (*User, error)
+	GetUserById(ctx context.Context, id uuid.UUID) (*User, error)
+	UpdateProfile(ctx context.Context, id uuid.UUID, update ProfileUpdate) (*User, error)
 	Authenticate(ctx context.Context, username, secret string) (string, error)
 	GetUserRoles(ctx context.Context, userId uuid.UUID) ([]string, error)
 	DeleteExpiredTokens(ctx context.Context) (int64, error)
@@ -242,13 +244,60 @@ func (s *ds) GetLastKey(ctx context.Context) (string, error) {
 	return keyId, nil
 }
 
-func (s *ds) GetUser(ctx context.Context, username string) (*User, error) {
-	var u = User{Username: username}
-	err := s.db.QueryRowContext(ctx, "SELECT user_id, password_hash FROM users WHERE username = $1", username).Scan(&u.Id, &u.PasswordHash)
+const userColumns = `user_id, username, password_hash, display_name, email,
+	phone, phone_confirmed, gender, created_at`
+
+func scanUser(row interface{ Scan(...any) error }) (*User, error) {
+	var u User
+	err := row.Scan(&u.Id, &u.Username, &u.PasswordHash, &u.DisplayName, &u.Email,
+		&u.Phone, &u.PhoneConfirmed, &u.Gender, &u.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
 	return &u, nil
+}
+
+func (s *ds) GetUser(ctx context.Context, username string) (*User, error) {
+	return scanUser(s.db.QueryRowContext(ctx,
+		"SELECT "+userColumns+" FROM users WHERE username = $1", username))
+}
+
+func (s *ds) GetUserById(ctx context.Context, id uuid.UUID) (*User, error) {
+	return scanUser(s.db.QueryRowContext(ctx,
+		"SELECT "+userColumns+" FROM users WHERE user_id = $1", id))
+}
+
+// UpdateProfile меняет только переданные поля: nil означает «не трогать»,
+// а пустая строка — «очистить». Без этого различия любое обновление
+// затирало бы поля, которых клиент не касался.
+func (s *ds) UpdateProfile(ctx context.Context, id uuid.UUID, update ProfileUpdate) (*User, error) {
+	return scanUser(s.db.QueryRowContext(ctx, `
+		UPDATE users SET
+			display_name = COALESCE($2, display_name),
+			email        = COALESCE($3, email),
+			phone        = COALESCE($4, phone),
+			gender       = COALESCE($5, gender),
+			-- Смена телефона сбрасывает подтверждение: подтверждён был
+			-- прежний номер, а не новый.
+			phone_confirmed = CASE WHEN $4 IS NOT NULL AND $4 IS DISTINCT FROM phone
+			                       THEN FALSE ELSE phone_confirmed END,
+			updated_at   = now()
+		WHERE user_id = $1
+		RETURNING `+userColumns,
+		id, nullable(update.DisplayName), nullable(update.Email),
+		nullable(update.Phone), nullable(update.Gender)))
+}
+
+// nullable превращает пустую строку в NULL: клиент очищает поле, передавая
+// пустое значение.
+func nullable(value *string) any {
+	if value == nil {
+		return nil
+	}
+	if *value == "" {
+		return nil
+	}
+	return *value
 }
 
 // Authenticate проверяет учётные данные на форме входа. Неизвестный
@@ -308,16 +357,23 @@ func (s *ds) GetUserRoles(ctx context.Context, userId uuid.UUID) ([]string, erro
 	return roles, nil
 }
 
-func (s *ds) CreateUser(ctx context.Context, username, passwordHash string) (*User, error) {
-	var id uuid.UUID
-	err := s.db.QueryRowContext(ctx,
-		"INSERT INTO users (username, password_hash) VALUES ($1, $2) RETURNING user_id",
-		username, passwordHash,
-	).Scan(&id)
-	if err != nil {
-		return nil, err
-	}
-	return &User{Id: id, Username: username, PasswordHash: passwordHash}, nil
+// Registration — данные для создания пользователя.
+type Registration struct {
+	Username     string
+	PasswordHash string
+	Phone        string
+	Email        string
+	DisplayName  string
+	Gender       string
+}
+
+func (s *ds) CreateUser(ctx context.Context, registration Registration) (*User, error) {
+	return scanUser(s.db.QueryRowContext(ctx, `
+		INSERT INTO users (username, password_hash, phone, email, display_name, gender)
+		VALUES ($1, $2, NULLIF($3, ''), NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, ''))
+		RETURNING `+userColumns,
+		registration.Username, registration.PasswordHash, registration.Phone,
+		registration.Email, registration.DisplayName, registration.Gender))
 }
 
 func (s *ds) GetClient(ctx context.Context, id string) (fosite.Client, error) {

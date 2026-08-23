@@ -8,10 +8,12 @@ GET {{users.url}}/.well-known/jwks.json
 %}
 
 ### Регистрация пользователя
+# Телефон обязателен (FR-02). Обязательность формы — ещё не подтверждение:
+# поле phone_confirmed остаётся ложным, пока номер не подтверждён.
 POST {{users.url}}/register
 Content-Type: application/x-www-form-urlencoded
 
-username={{username}}&password={{password}}
+username={{username}}&password={{password}}&phone={{phone}}&email={{email}}&display_name={{display_name}}&gender=OTHER
 
 > {%
     client.assert(response.status === 201 || response.status === 409,
@@ -106,3 +108,37 @@ client-id=web&client-secret=смените-меня&redirect-uri={{redirect_uri}
 ### Ротация ключей подписи (только с административным токеном)
 POST {{users.url}}/rotate-keys
 Authorization: Bearer {{admin_token}}
+
+### Свой профиль
+GET {{users.url}}/profile
+Authorization: Bearer {{access_token}}
+
+> {%
+    client.assert(response.status === 200, "Профиль не отдан")
+    client.assert(response.body.phone, "Телефон отсутствует")
+%}
+
+### Изменение профиля
+PATCH {{users.url}}/profile
+Content-Type: application/json
+Authorization: Bearer {{access_token}}
+
+{
+  "display_name": "Новое имя"
+}
+
+> {%
+    client.assert(response.status === 200, "Профиль не изменён")
+    // Частичное обновление не должно затирать поля, которых клиент не касался.
+    client.assert(response.body.phone, "Телефон затёрт при частичном обновлении")
+%}
+
+### Публичная карточка пользователя
+GET {{users.url}}/users/{{user_id}}
+X-Authorized-Id: {{user_id}}
+
+> {%
+    client.assert(response.status === 200, "Карточка не отдана")
+    client.assert(!response.body.phone, "Телефон не должен быть виден посторонним")
+    client.assert(!response.body.email, "Почта не должна быть видна посторонним")
+%}

@@ -97,7 +97,9 @@ func TestUsersRepository(t *testing.T) {
 		if err != nil {
 			t.Fatalf("хеширование: %v", err)
 		}
-		user, err := db.CreateUser(ctx, "integration-user", string(hash))
+		user, err := db.CreateUser(ctx, Registration{
+			Username: "integration-user", PasswordHash: string(hash), Phone: "+79001234567",
+		})
 		if err != nil {
 			t.Fatalf("создание пользователя: %v", err)
 		}
@@ -118,7 +120,9 @@ func TestUsersRepository(t *testing.T) {
 			t.Errorf("неизвестный пользователь дал %v, ожидалась ErrNotFound", err)
 		}
 
-		if _, err = db.CreateUser(ctx, "integration-user", string(hash)); !db.IsUniqueConstraintError(err) {
+		if _, err = db.CreateUser(ctx, Registration{
+			Username: "integration-user", PasswordHash: string(hash), Phone: "+79007654321",
+		}); !db.IsUniqueConstraintError(err) {
 			t.Errorf("повторное имя дало %v, ожидалось нарушение уникальности", err)
 		}
 	})
@@ -128,7 +132,9 @@ func TestUsersRepository(t *testing.T) {
 		if err != nil {
 			t.Fatalf("хеширование: %v", err)
 		}
-		user, err := db.CreateUser(ctx, "role-user", string(hash))
+		user, err := db.CreateUser(ctx, Registration{
+			Username: "role-user", PasswordHash: string(hash), Phone: "+79001112233",
+		})
 		if err != nil {
 			t.Fatalf("создание пользователя: %v", err)
 		}

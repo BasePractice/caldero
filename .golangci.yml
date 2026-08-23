@@ -22,11 +22,17 @@ linters:
     - gosec
 
   settings:
+    gosec:
+      excludes:
+        # G501: протокол gravatar требует MD5, и заменить его нельзя,
+        # не сломав совместимость. Хеш там не средство защиты.
+        - G501
     errcheck:
       check-type-assertions: true
 
   exclusions:
     rules:
+
       # В тестах допустимы менее строгие правила.
       - path: _test\.go
         linters:

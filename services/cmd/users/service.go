@@ -195,17 +195,40 @@ func (s *Service) handleCreateClient(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) handleRegister(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	username := r.FormValue("username")
-	password := r.FormValue("password")
-
+	username := r.PostFormValue("username")
+	password := r.PostFormValue("password")
 	if username == "" || password == "" {
 		http.Error(w, "Username and password required", http.StatusBadRequest)
 		return
+	}
+
+	// Телефон обязателен по требованию FR-02. Обязательность формы —
+	// это ещё не подтверждение: пока номер не подтверждён, полагаться
+	// на него нельзя, и это отражено отдельным полем.
+	phone, err := NormalizePhone(r.PostFormValue("phone"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	registration := Registration{
+		Username:    username,
+		Phone:       phone,
+		Email:       r.PostFormValue("email"),
+		DisplayName: r.PostFormValue("display_name"),
+		Gender:      r.PostFormValue("gender"),
+	}
+	if registration.Email != "" {
+		if err = ValidateEmail(registration.Email); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	if registration.Gender != "" {
+		if err = ValidateGender(registration.Gender); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -214,18 +237,23 @@ func (s *Service) handleRegister(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
+	registration.PasswordHash = string(hashedPassword)
 
-	user, err := s.db.CreateUser(r.Context(), username, string(hashedPassword))
+	user, err := s.db.CreateUser(r.Context(), registration)
 	if err != nil {
 		if s.db.IsUniqueConstraintError(err) {
-			slog.WarnContext(r.Context(), "User already exists", slog.String("username", username), slog.String("err", err.Error()))
-			http.Error(w, "Username already exists", http.StatusConflict)
+			// Что именно занято — имя, телефон или почта — наружу
+			// не сообщается: это позволяло бы проверять, зарегистрирован ли
+			// человек с известным номером.
+			slog.WarnContext(r.Context(), "Registration conflict", slog.String("err", err.Error()))
+			http.Error(w, "Username, phone or email is already taken", http.StatusConflict)
 			return
 		}
 		slog.ErrorContext(r.Context(), "Failed to create user", slog.String("err", err.Error()))
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
+
 	w.Header().Set("X-User-Id", user.Id.String())
 	w.WriteHeader(http.StatusCreated)
 }
