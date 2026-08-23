@@ -184,8 +184,8 @@ func TestCreateCreditValidate(t *testing.T) {
 		UserId: uuid.New(), Type: "SIMPLE", Kind: "ANN",
 		Month: 36, Rate: 24 * credit.BasisPointsInPercent, Balance: 1_200_000,
 	}
-	if !valid.Validate() {
-		t.Fatal("корректный кредит не прошёл валидацию")
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("корректный кредит не прошёл валидацию: %v", err)
 	}
 
 	tests := []struct {
@@ -200,15 +200,24 @@ func TestCreateCreditValidate(t *testing.T) {
 		{name: "внесено больше тела", mutate: func(c *credit.CreateCredit) { c.AlreadyPaid = c.Balance }},
 		{name: "срок за верхней границей", mutate: func(c *credit.CreateCredit) { c.Month = credit.MaxMonth + 1 }},
 		{name: "срок в один месяц", mutate: func(c *credit.CreateCredit) { c.Month = 1 }},
+		{name: "неизвестный тип", mutate: func(c *credit.CreateCredit) { c.Type = "UNKNOWN" }},
+		{name: "неизвестный вид", mutate: func(c *credit.CreateCredit) { c.Kind = "UNKNOWN" }},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := valid
 			tt.mutate(&c)
-			if c.Validate() {
-				t.Errorf("невалидный кредит прошёл валидацию: %s", c)
+			err := c.Validate()
+			if err == nil {
+				t.Fatalf("невалидный кредит прошёл валидацию: %s", c)
 			}
+			// Причина должна быть содержательной: клиенту предстоит по ней
+			// понять, что исправить.
+			if err.Error() == "" {
+				t.Error("причина отказа пуста")
+			}
+			t.Logf("причина: %v", err)
 		})
 	}
 }

@@ -24,6 +24,18 @@ const (
 	MaxRate = 300 * BasisPointsInPercent
 )
 
+// Типы и виды кредита. Значения совпадают с CHECK-ограничениями схемы:
+// проверять их в коде нужно, чтобы отдавать понятную причину, а не
+// нарушение ограничения из базы.
+const (
+	TypeSimple   = "SIMPLE"
+	TypeMicro    = "MICRO"
+	TypeMortgage = "IPOT"
+
+	KindAnnuity        = "ANN"
+	KindDifferentiated = "DYN"
+)
+
 // Amount — денежная сумма в минимальных единицах (копейках).
 // Дробные типы для денег не используются: 0.1 + 0.2 не равно 0.3,
 // и ошибка накапливается на каждом платеже.
@@ -78,11 +90,34 @@ type CreateCredit struct {
 	LastPaidAt  *time.Time `json:"last_paid_at"`
 }
 
-func (c CreateCredit) Validate() bool {
-	return c.UserId != uuid.Nil &&
-		c.Rate >= MinRate && c.Rate <= MaxRate &&
-		c.Balance > 0 && c.AlreadyPaid >= 0 && c.AlreadyPaid < c.Balance &&
-		c.Month > 1 && c.Month <= MaxMonth
+// Validate возвращает причину отказа, а не просто false: клиенту нужно
+// знать, что именно исправить, иначе остаётся угадывать.
+func (c CreateCredit) Validate() error {
+	if c.UserId == uuid.Nil {
+		return fmt.Errorf("user_id is required")
+	}
+	if c.Type != TypeSimple && c.Type != TypeMicro && c.Type != TypeMortgage {
+		return fmt.Errorf("type must be one of %s, %s, %s", TypeSimple, TypeMicro, TypeMortgage)
+	}
+	if c.Kind != KindAnnuity && c.Kind != KindDifferentiated {
+		return fmt.Errorf("kind must be one of %s, %s", KindAnnuity, KindDifferentiated)
+	}
+	if c.Rate < MinRate || c.Rate > MaxRate {
+		return fmt.Errorf("rate_bp must be between %d and %d, got %d", MinRate, MaxRate, c.Rate)
+	}
+	if c.Balance <= 0 {
+		return fmt.Errorf("balance must be positive, got %d", c.Balance)
+	}
+	if c.AlreadyPaid < 0 {
+		return fmt.Errorf("already_paid must not be negative, got %d", c.AlreadyPaid)
+	}
+	if c.AlreadyPaid >= c.Balance {
+		return fmt.Errorf("already_paid %d must be less than balance %d", c.AlreadyPaid, c.Balance)
+	}
+	if c.Month <= 1 || c.Month > MaxMonth {
+		return fmt.Errorf("month must be between 2 and %d, got %d", MaxMonth, c.Month)
+	}
+	return nil
 }
 
 func (c CreateCredit) String() string {

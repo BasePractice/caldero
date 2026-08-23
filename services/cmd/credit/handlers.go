@@ -78,9 +78,10 @@ func createCredit(db Database, w http.ResponseWriter, r *http.Request) {
 		services.WriteDecodeError(w, err)
 		return
 	}
-	if !c.Validate() {
-		slog.Error("Credit validation failed", slog.String("credit", c.String()))
-		http.Error(w, "Credit validation failed", http.StatusBadRequest)
+	if err = c.Validate(); err != nil {
+		slog.Debug("Credit validation failed",
+			slog.String("credit", c.String()), slog.String("reason", err.Error()))
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 

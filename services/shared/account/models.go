@@ -1,6 +1,7 @@
 package account
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -27,19 +28,32 @@ type CreateAccount struct {
 	CreditId *uuid.UUID `json:"credit_id"`
 }
 
-func (a CreateAccount) Validate() bool {
+// Типы счёта. Совпадают с CHECK-ограничением схемы.
+const (
+	TypeDebit  = "DEBIT"
+	TypeCredit = "CREDIT"
+)
+
+// Validate возвращает причину отказа, а не просто false.
+func (a CreateAccount) Validate() error {
 	if a.UserId == uuid.Nil {
-		return false
+		return fmt.Errorf("user_id is required")
 	}
 	// Согласовано с CHECK-ограничением схемы: кредитный счёт обязан ссылаться
 	// на кредит, дебетовый — не может.
 	switch a.Type {
-	case "DEBIT":
-		return a.CreditId == nil
-	case "CREDIT":
-		return a.CreditId != nil
+	case TypeDebit:
+		if a.CreditId != nil {
+			return fmt.Errorf("credit_id must be empty for a %s account", TypeDebit)
+		}
+		return nil
+	case TypeCredit:
+		if a.CreditId == nil {
+			return fmt.Errorf("credit_id is required for a %s account", TypeCredit)
+		}
+		return nil
 	default:
-		return false
+		return fmt.Errorf("type must be one of %s, %s", TypeDebit, TypeCredit)
 	}
 }
 

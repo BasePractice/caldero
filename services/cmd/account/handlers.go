@@ -35,9 +35,10 @@ func createAccount(db Database, w http.ResponseWriter, r *http.Request) {
 		services.WriteDecodeError(w, err)
 		return
 	}
-	if !a.Validate() {
-		slog.Error("Account validation failed", slog.String("account", a.String()))
-		http.Error(w, "Account validation failed", http.StatusBadRequest)
+	if err = a.Validate(); err != nil {
+		slog.Debug("Account validation failed",
+			slog.String("account", a.String()), slog.String("reason", err.Error()))
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if !operator.CanActOnBehalfOf(a.UserId) {
