@@ -38,11 +38,40 @@ jobs:
           go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
           make proto-check
 
+      - name: Актуальность документа проекта
+        run: make docs-check
+
       - name: Сборка
         run: make build
 
       - name: Тесты с детектором гонок
         run: make test-race
+
+  docs:
+    name: Документ проекта
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Typst берётся образом: ставить его в систему ради одной команды
+      # незачем, а версия при этом фиксируется тегом.
+      - name: Сборка PDF
+        run: |
+          go run ./tools/bookgen -root .
+          docker run --rm -v "$PWD":/work -w /work ghcr.io/typst/typst:latest \
+            compile docs/book/main.typ docs/book/caldero.pdf
+
+      - name: Публикация документа
+        uses: actions/upload-artifact@v4
+        with:
+          name: caldero-doc
+          path: docs/book/caldero.pdf
+          if-no-files-found: error
 
   integration:
     name: Интеграционные тесты

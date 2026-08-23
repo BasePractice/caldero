@@ -8,7 +8,7 @@ REVISION ?= $(shell git rev-parse HEAD 2>/dev/null)
 LDFLAGS  := -X wish/services.Version=$(VERSION) -X wish/services.Revision=$(REVISION)
 
 .DEFAULT_GOAL := help
-.PHONY: help build wasm test test-race test-integration lint vet fmt fmt-check tidy-check proto up down logs migrate-status migrate-check vuln bench load-test proto-check images clean save-keycloak-config
+.PHONY: help build wasm docs docs-check test test-race test-integration lint vet fmt fmt-check tidy-check proto up down logs migrate-status migrate-check vuln bench load-test proto-check images clean save-keycloak-config
 
 help: ## Показать список целей
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -25,6 +25,24 @@ wasm: ## Собрать веб-интерфейс (WebAssembly) в статик�
 	@GOOS=js GOARCH=wasm go build $(GOFLAGS) -ldflags "$(LDFLAGS)" \
 		-o services/cmd/web/static/app.wasm wish/services/cmd/web/app
 	@cp "$$(go env GOROOT)/lib/wasm/wasm_exec.js" services/cmd/web/static/wasm_exec.js
+
+docs: ## Собрать единый документ проекта в PDF
+	@go run ./tools/bookgen -root .
+	@if command -v typst >/dev/null 2>&1; then \
+		typst compile docs/book/main.typ docs/book/caldero.pdf; \
+	else \
+		docker run --rm -v "$(PWD)":/work -w /work ghcr.io/typst/typst:latest \
+			compile docs/book/main.typ docs/book/caldero.pdf; \
+	fi
+	@echo "документ: docs/book/caldero.pdf"
+
+docs-check: ## Проверить, что сгенерированные части документа не разошлись с кодом
+	@tmp=$$(mktemp -d) && \
+		go run ./tools/bookgen -root . -out "$$tmp" >/dev/null && \
+		diff -ru docs/book/generated "$$tmp" > /dev/null \
+			&& rm -rf "$$tmp" \
+			|| (echo "документ разошёлся с кодом: выполните make docs и закоммитьте изменения"; \
+			    diff -ru docs/book/generated "$$tmp" | head -20; rm -rf "$$tmp"; exit 1)
 
 test: ## Прогнать тесты
 	go test ./...
