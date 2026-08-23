@@ -3,3 +3,5 @@
 .prometheus
 .bin
 .logs
+.env
+.env.local

@@ -10,8 +10,6 @@ import (
 	"runtime/debug"
 
 	"wish/services"
-
-	"github.com/joho/godotenv"
 )
 
 var (
@@ -31,13 +29,17 @@ func main() {
 		os.Exit(0)
 	})
 	flag.Parse()
-	services.DefineLogging()
-	services.DefineMetrics()
-	err := godotenv.Load(".env", ".env.local")
+	cfg, err := services.LoadConfig()
 	if err != nil {
-		slog.Warn("Warning loading .env file", slog.String("err", err.Error()))
+		fmt.Fprintln(os.Stderr, "can't load configuration:", err)
+		os.Exit(1)
 	}
-	cdb := NewDatabase()
+	if _, err = services.DefineLogging(cfg); err != nil {
+		fmt.Fprintln(os.Stderr, "can't configure logging:", err)
+		os.Exit(1)
+	}
+	services.DefineMetrics(cfg)
+	cdb := NewDatabase(cfg)
 	handler := registerHttpHandlers(ctx, cdb)
 	err = http.ListenAndServe(fmt.Sprintf(":%d", *port), handler)
 	if err != nil {

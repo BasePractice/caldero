@@ -1,8 +1,7 @@
 package services
 
 import (
-	"flag"
-	"log"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -14,48 +13,48 @@ import (
 	"github.com/mattn/go-colorable"
 )
 
-func DefineLogging() *slog.Logger {
-	var level *slog.Level
-	debugLevel := slog.LevelDebug
-	level = &debugLevel
-	_ = level.UnmarshalText([]byte(LogLevel))
+func DefineLogging(cfg Config) (*slog.Logger, error) {
+	level := slog.LevelDebug
+	if err := level.UnmarshalText([]byte(cfg.LogLevel)); err != nil {
+		return nil, fmt.Errorf("parsing log level %q: %w", cfg.LogLevel, err)
+	}
 	opts := &slog.HandlerOptions{Level: level, AddSource: true}
-	var handler slog.Handler = slog.NewTextHandler(os.Stdout, opts)
-	if LogFile != "" {
-		file, err := os.OpenFile(LogFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
-		if err == nil {
-			handler = slog.NewJSONHandler(file, opts)
-		} else {
-			log.Fatal(err)
+
+	var handler slog.Handler
+	switch {
+	case cfg.LogFile != "":
+		file, err := os.OpenFile(cfg.LogFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+		if err != nil {
+			return nil, fmt.Errorf("opening log file %q: %w", cfg.LogFile, err)
 		}
-	} else if LogColor != "" {
+		handler = slog.NewJSONHandler(file, opts)
+	case cfg.LogColor:
 		handler = tint.NewHandler(colorable.NewColorable(os.Stdout), &tint.Options{
 			Level:      level,
 			TimeFormat: time.DateTime,
 			AddSource:  true,
 		})
+	default:
+		handler = slog.NewTextHandler(os.Stdout, opts)
 	}
+
 	logger := slog.New(handler)
 	slog.SetDefault(logger)
-	return logger
+	return logger, nil
 }
 
-func DefineMetrics() {
-	i, err := strconv.Atoi(MetricsPort)
-	if err != nil {
-		slog.Error("Error parsing metrics port",
-			slog.String("port", MetricsPort), slog.String("err", err.Error()))
-		i = 8081
-	}
-	mPort := flag.Int("mport", i, "Metrics port")
+func DefineMetrics(cfg Config) {
 	mux := http.NewServeMux()
-	err = statsviz.Register(mux)
-	if err != nil {
+	if err := statsviz.Register(mux); err != nil {
 		slog.Error("Error registering metrics", slog.String("err", err.Error()))
-	} else {
-		go func() {
-			slog.Info("Metrics listening on port", slog.String("port", strconv.Itoa(*mPort)))
-			_ = http.ListenAndServe(":"+strconv.Itoa(*mPort), mux)
-		}()
+		return
 	}
+	addr := ":" + strconv.Itoa(cfg.MetricsPort)
+	go func() {
+		slog.Info("Metrics listening", slog.String("addr", addr))
+		if err := http.ListenAndServe(addr, mux); err != nil {
+			slog.Error("Metrics server stopped",
+				slog.String("addr", addr), slog.String("err", err.Error()))
+		}
+	}()
 }

@@ -47,8 +47,8 @@ func (d ds) Create(ctx context.Context, c credit.CreateCredit, operator *service
 	return id, nil
 }
 
-func NewDatabase() Database {
-	db, err := services.NewDatabase(migrations)
+func NewDatabase(cfg services.Config) Database {
+	db, err := services.NewDatabase(cfg, migrations)
 	if err != nil {
 		return nil
 	}

@@ -33,8 +33,8 @@ func migrationScheme(db *sql.DB, migrations embed.FS) {
 	}
 }
 
-func NewDatabase(migrations embed.FS) (*sql.DB, error) {
-	db, err := sql.Open("postgres", PostgresUrl)
+func NewDatabase(cfg Config, migrations embed.FS) (*sql.DB, error) {
+	db, err := sql.Open("postgres", cfg.PostgresURL)
 	if err != nil {
 		slog.Error("Can't open postgres connection", slog.String("err", err.Error()))
 		return nil, err

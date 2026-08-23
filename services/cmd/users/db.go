@@ -311,8 +311,8 @@ func splitCSV(input string) []string {
 	return strings.Split(input, ",")
 }
 
-func NewDatabaseUsers() DatabaseUsers {
-	d, err := services.NewDatabase(migrations)
+func NewDatabaseUsers(cfg services.Config) DatabaseUsers {
+	d, err := services.NewDatabase(cfg, migrations)
 	if err != nil {
 		return nil
 	}

@@ -26,8 +26,8 @@ func (c *redisCache) Get(ctx context.Context, key string) (string, error) {
 	return c.c.Get(ctx, key).Result()
 }
 
-func NewRedisCache(ctx context.Context) (Cache, error) {
-	options, err := redis.ParseURL(RedisUrl)
+func NewRedisCache(ctx context.Context, cfg Config) (Cache, error) {
+	options, err := redis.ParseURL(cfg.RedisURL)
 	if err != nil {
 		slog.Error("Failed parse URL", slog.String("error", err.Error()))
 		return nil, err
@@ -43,6 +43,6 @@ func NewRedisCache(ctx context.Context) (Cache, error) {
 	return &redisCache{client}, nil
 }
 
-func NewDefaultCache(ctx context.Context) (Cache, error) {
-	return NewRedisCache(ctx)
+func NewDefaultCache(ctx context.Context, cfg Config) (Cache, error) {
+	return NewRedisCache(ctx, cfg)
 }

@@ -90,8 +90,8 @@ ORDER BY created_at;`, userId)
 	return nil
 }
 
-func NewDatabaseWallet() DatabaseWallet {
-	db, err := services.NewDatabase(migrations)
+func NewDatabaseWallet(cfg services.Config) DatabaseWallet {
+	db, err := services.NewDatabase(cfg, migrations)
 	if err != nil {
 		return nil
 	}

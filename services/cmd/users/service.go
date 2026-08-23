@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"time"
 
+	"wish/services"
+
 	"github.com/go-jose/go-jose/v4"
 	"github.com/google/uuid"
 	"github.com/ory/fosite"
@@ -26,7 +28,7 @@ type Service struct {
 	db             DatabaseUsers
 }
 
-func newService(ctx context.Context) *Service {
+func newService(ctx context.Context, cfg services.Config) *Service {
 	var secret = make([]byte, 32)
 	_, _ = rand.Read(secret)
 	var oauth2Config = &fosite.Config{
@@ -36,7 +38,7 @@ func newService(ctx context.Context) *Service {
 		SendDebugMessagesToClients: true,
 		GlobalSecret:               secret,
 	}
-	db := NewDatabaseUsers()
+	db := NewDatabaseUsers(cfg)
 	keyManager, _ := NewKeyManager(ctx, db)
 	var oauth2Provider = compose.Compose(
 		oauth2Config,

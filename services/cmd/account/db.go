@@ -34,8 +34,8 @@ func (d ds) Get(ctx context.Context, id uuid.UUID) (*account.Account, error) {
 	panic("implement me")
 }
 
-func NewDatabase() Database {
-	db, err := services.NewDatabase(migrations)
+func NewDatabase(cfg services.Config) Database {
+	db, err := services.NewDatabase(cfg, migrations)
 	if err != nil {
 		return nil
 	}

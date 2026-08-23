@@ -156,6 +156,7 @@ services:
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres-db:5432/wish?sslmode=disable&search_path=wallet
       REDIS_URL: redis://redis:6379/10?protocol=3
+      LOG_COLOR: "false"
 #      LOG_FILE: /logs/wallet.log
     volumes:
       - ./.logs/wallet:/logs
@@ -176,6 +177,7 @@ services:
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres-db:5432/wish?sslmode=disable&search_path=credit
       REDIS_URL: redis://redis:6379/10?protocol=3
+      LOG_COLOR: "false"
 #      LOG_FILE: /logs/credit.log
     volumes:
       - ./.logs/credit:/logs
@@ -196,6 +198,7 @@ services:
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres-db:5432/wish?sslmode=disable&search_path=users
       REDIS_URL: redis://redis:6379/10?protocol=3
+      LOG_COLOR: "false"
 #      LOG_FILE: /logs/users.log
     volumes:
       - ./.logs/users:/logs
@@ -216,6 +219,7 @@ services:
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres-db:5432/wish?sslmode=disable&search_path=account
       REDIS_URL: redis://redis:6379/10?protocol=3
+      LOG_COLOR: "false"
     #      LOG_FILE: /logs/users.log
     volumes:
       - ./.logs/account:/logs

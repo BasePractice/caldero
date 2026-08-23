@@ -12,7 +12,6 @@ import (
 	"wish/middleware/wallet"
 	"wish/services"
 
-	"github.com/joho/godotenv"
 	"google.golang.org/grpc"
 )
 
@@ -33,20 +32,24 @@ func main() {
 		os.Exit(0)
 	})
 	flag.Parse()
-	services.DefineLogging()
-	services.DefineMetrics()
-	err := godotenv.Load(".env", ".env.local")
+	cfg, err := services.LoadConfig()
 	if err != nil {
-		slog.Warn("Warning loading .env file", slog.String("err", err.Error()))
+		fmt.Fprintln(os.Stderr, "can't load configuration:", err)
+		os.Exit(1)
 	}
+	if _, err = services.DefineLogging(cfg); err != nil {
+		fmt.Fprintln(os.Stderr, "can't configure logging:", err)
+		os.Exit(1)
+	}
+	services.DefineMetrics(cfg)
 	listen, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 	if err != nil {
 		slog.Error("Failed to listen", slog.String("err", err.Error()))
 		return
 	}
 	grpcServer := grpc.NewServer()
-	cache, _ := services.NewDefaultCache(ctx)
-	db := NewDatabaseWallet()
+	cache, _ := services.NewDefaultCache(ctx, cfg)
+	db := NewDatabaseWallet(cfg)
 	server := &service{db: db, cache: cache}
 	wallet.RegisterServiceServer(grpcServer, server)
 	slog.Info("Starting server", slog.String("addr", listen.Addr().String()))
