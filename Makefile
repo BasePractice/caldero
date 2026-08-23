@@ -1,6 +1,6 @@
 # Пути к инструментам берутся из PATH: в прежних build.sh и build.cmd они были
 # захардкожены под конкретные машины.
-SERVICES := wallet credit account users notify wishlist caldron
+SERVICES := wallet credit account users notify wishlist caldron web
 BIN      := .bin
 GOFLAGS  := -trimpath
 VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
@@ -8,17 +8,23 @@ REVISION ?= $(shell git rev-parse HEAD 2>/dev/null)
 LDFLAGS  := -X wish/services.Version=$(VERSION) -X wish/services.Revision=$(REVISION)
 
 .DEFAULT_GOAL := help
-.PHONY: help build test test-race test-integration lint vet fmt fmt-check tidy-check proto up down logs migrate-status migrate-check vuln bench load-test proto-check images clean save-keycloak-config
+.PHONY: help build wasm test test-race test-integration lint vet fmt fmt-check tidy-check proto up down logs migrate-status migrate-check vuln bench load-test proto-check images clean save-keycloak-config
 
 help: ## Показать список целей
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 
-build: ## Собрать все сервисы в .bin
+build: wasm ## Собрать все сервисы в .bin
 	@mkdir -p $(BIN)
 	@for s in $(SERVICES); do \
 		echo "сборка $$s"; \
 		go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BIN)/$$s wish/services/cmd/$$s || exit 1; \
 	done
+
+wasm: ## Собрать веб-интерфейс (WebAssembly) в статику сервиса web
+	@echo "сборка интерфейса"
+	@GOOS=js GOARCH=wasm go build $(GOFLAGS) -ldflags "$(LDFLAGS)" \
+		-o services/cmd/web/static/app.wasm wish/services/cmd/web/app
+	@cp "$$(go env GOROOT)/lib/wasm/wasm_exec.js" services/cmd/web/static/wasm_exec.js
 
 test: ## Прогнать тесты
 	go test ./...
@@ -99,4 +105,4 @@ save-keycloak-config: ## Выгрузить realm Keycloak в config/keycloak/re
 		--dir /opt/keycloak/data/import --realm krakend --users realm_file
 
 clean: ## Удалить артефакты сборки
-	rm -rf $(BIN)
+	rm -rf $(BIN) services/cmd/web/static/app.wasm

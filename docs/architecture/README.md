@@ -49,6 +49,7 @@ graph TB
         notify["notify<br/>оповещения<br/>очередь доставки"]
         wishlist["wishlist<br/>списки желаний<br/>резервы подарков"]
         caldron["caldron<br/>котлы<br/>сбор и возврат средств"]
+        web["web<br/>веб-интерфейс<br/>раздача статики"]
     end
 
     subgraph data["Данные"]
@@ -68,6 +69,7 @@ graph TB
     end
 
     client["Клиент"] -->|HTTPS| gateway
+    client -->|"статика"| web
     gateway -->|"HTTP<br/>X-Authorized-Id, X-Roles"| users
     gateway --> credit
     gateway --> account
@@ -151,6 +153,7 @@ sequenceDiagram
 | `notify` | события, очередь доставки, лента сообщений, привязки мессенджеров | `notify` | HTTP, WebSocket |
 | `wishlist` | элементы списков желаний, резервы, состояния подарков | `wishlist` | HTTP |
 | `caldron` | котлы, участники, взносы | `caldron` | HTTP |
+| `web` | ничем не владеет: раздаёт интерфейс | — | HTTP |
 
 Правило одно: в чужую схему не ходит никто. Данные другого сервиса
 запрашиваются его методами, а не запросом в его таблицы.

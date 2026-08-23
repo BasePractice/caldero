@@ -444,3 +444,35 @@ services:
       LOG_FILE: /logs/caldron.log
     volumes:
       - ./.logs/caldron:/logs
+  web:
+    image: wish/web:latest
+    build:
+      context: ./
+      dockerfile: ./Dockerfile
+      args:
+        SERVICE: web
+    depends_on:
+      krakend:
+        condition: service_started
+    # Единственный сервис с публикацией порта наружу: это и есть интерфейс,
+    # который открывает браузер. API остаётся за шлюзом, сюда приходит
+    # только статика.
+    ports:
+      - "3000:51058"
+    healthcheck:
+      test: [ "CMD", "/service", "-healthcheck" ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    environment:
+      LOG_COLOR: "false"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}
+      OTEL_TRACES_SAMPLER_ARG: ${OTEL_TRACES_SAMPLER_ARG:-1.0}
+      # Адрес API отдаётся браузеру отдельным ответом: один и тот же бандл
+      # должен работать и на стенде, и в бою.
+      WEB_API_BASE: ${WEB_API_BASE:-http://localhost:8080/api/v1}
+      WEB_CLIENT_ID: ${WEB_CLIENT_ID:-web}
+      LOG_FILE: /logs/web.log
+    volumes:
+      - ./.logs/web:/logs

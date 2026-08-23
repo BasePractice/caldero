@@ -23,6 +23,15 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+
+# Интерфейс собирается до основного бинарника: сервис раздачи встраивает
+# статику через embed, и app.wasm должен существовать к моменту компиляции.
+RUN if [ "${SERVICE}" = "web" ]; then \
+        GOOS=js GOARCH=wasm go build -trimpath \
+            -o services/cmd/web/static/app.wasm wish/services/cmd/web/app && \
+        cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" services/cmd/web/static/wasm_exec.js; \
+    fi
+
 RUN CGO_ENABLED=0 go build -trimpath \
     -ldflags "-s -w -X wish/services.Version=${VERSION} -X wish/services.Revision=${REVISION}" \
     -o /service wish/services/cmd/${SERVICE}

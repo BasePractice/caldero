@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Котелок</title>
+    <style>
+        :root { color-scheme: light dark; }
+        body {
+            font-family: system-ui, sans-serif;
+            max-width: 44rem;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            line-height: 1.5;
+        }
+        h1 { font-size: 1.4rem; }
+        h2 { font-size: 1.1rem; margin-top: 2rem; }
+        button { padding: .5rem 1rem; margin-right: .5rem; }
+        input, select { padding: .4rem; }
+        .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin: .5rem 0; }
+        .card { border: 1px solid #8884; border-radius: .4rem; padding: .75rem; margin: .5rem 0; }
+        .muted { color: #7a7a7a; font-size: .9rem; }
+        .error { color: #b00020; }
+        #status { margin: 1rem 0; }
+    </style>
+</head>
+<body>
+<h1>Котелок</h1>
+<p class="muted">Интерфейс собран из того же кода, что и сервисы: модели общие,
+язык один.</p>
+
+<div id="status">Загрузка приложения…</div>
+<div id="app"></div>
+
+<noscript>Интерфейс собран в WebAssembly и требует включённого JavaScript.</noscript>
+
+<script src="wasm_exec.js"></script>
+<script>
+    // Приложение целиком на Go: этот файл только запускает его.
+    const go = new Go();
+    WebAssembly.instantiateStreaming(fetch("app.wasm"), go.importObject)
+        .then((result) => go.run(result.instance))
+        .catch((err) => {
+            document.getElementById("status").innerHTML =
+                '<span class="error">Не удалось загрузить app.wasm: ' + err +
+                '. Соберите его командой <code>make wasm</code>.</span>';
+        });
+</script>
+</body>
+</html>

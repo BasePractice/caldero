@@ -179,6 +179,14 @@ type Config struct {
 	// у провайдера, а заголовок Host запроса подделывается.
 	SocialRedirectBase string
 
+	// WebAPIBase — адрес API для веб-интерфейса. Отдаётся браузеру
+	// отдельным ответом, а не зашивается в бандл: один и тот же файл
+	// должен работать и на стенде, и в бою.
+	WebAPIBase string
+	// WebClientId — идентификатор публичного клиента OAuth2, от имени
+	// которого входит интерфейс.
+	WebClientId string
+
 	// DebugStatsviz открывает страницу состояния рантайма на порту метрик.
 	// По умолчанию выключено: страница не аутентифицирована.
 	DebugStatsviz bool
@@ -443,6 +451,8 @@ func LoadConfig() (Config, error) {
 	cfg.ConfirmationRateWindow = confirmationWindow
 
 	cfg.PublicBaseURL = env("PUBLIC_BASE_URL", "")
+	cfg.WebAPIBase = env("WEB_API_BASE", "http://localhost:8080/api/v1")
+	cfg.WebClientId = env("WEB_CLIENT_ID", "web")
 	cfg.SocialProviders = splitList(env("SOCIAL_PROVIDERS", ""))
 	cfg.SocialRedirectBase = env("SOCIAL_REDIRECT_BASE", "")
 

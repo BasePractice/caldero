@@ -95,7 +95,7 @@ jobs:
       # параллельно, и падение видно по конкретному сервису.
       fail-fast: false
       matrix:
-        service: [ wallet, credit, account, users, notify, wishlist, caldron ]
+        service: [ wallet, credit, account, users, notify, wishlist, caldron, web ]
     steps:
       - uses: actions/checkout@v5
 

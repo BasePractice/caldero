@@ -12,6 +12,10 @@
 /notify
 /wishlist
 /caldron
+/web
+
+# Собранный веб-интерфейс: артефакт сборки на несколько мегабайт
+services/cmd/web/static/app.wasm
 .logs
 .env
 .env.local

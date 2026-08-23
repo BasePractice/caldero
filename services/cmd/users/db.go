@@ -428,6 +428,11 @@ func (s *ds) GetClient(ctx context.Context, id string) (fosite.Client, error) {
 	client.GrantTypes = splitCSV(grantTypes)
 	client.ResponseTypes = splitCSV(responseTypes)
 	client.Scopes = splitCSV(scopes)
+	// Клиент без секрета — публичный: браузерное приложение не может
+	// сохранить секрет, и притворяться, что может, значит выдавать
+	// перехваченный код за доказательство подлинности. Для таких клиентов
+	// обязателен PKCE (EnforcePKCEForPublicClients).
+	client.Public = len(client.Secret) == 0
 
 	return &client, nil
 }

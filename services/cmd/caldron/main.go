@@ -8,7 +8,7 @@ import (
 	"os"
 
 	"wish/services"
-	"wish/services/shared/marketplace"
+	"wish/services/shared/marketplace/cached"
 	"wish/services/shared/notify"
 	"wish/services/shared/wallets"
 )
@@ -62,7 +62,7 @@ func main() {
 		}
 		defer services.Close("cache", cache)
 
-		catalogs, err := marketplace.Build(cfg.MarketplaceProviders, cache, cfg.MarketplaceCacheTTL)
+		catalogs, err := cached.Build(cfg.MarketplaceProviders, cache, cfg.MarketplaceCacheTTL)
 		if err != nil {
 			return err
 		}
