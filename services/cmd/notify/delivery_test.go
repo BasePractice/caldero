@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -34,6 +35,7 @@ type fakeDatabase struct {
 	feed              []notify.Message
 	saved             []notify.Preference
 
+	startedHash   []byte
 	binding       MessengerBinding
 	bindingErr    error
 	blocked       bool
@@ -390,5 +392,68 @@ func TestRunStopsOnContext(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Error("воркер не завершился по отмене контекста")
+	}
+}
+
+// TestRunProcessesQueueWithoutPause: пока очередь не пуста, проходы идут
+// подряд — пауза между ними задержала бы доставку на ровном месте.
+func TestRunProcessesQueueWithoutPause(t *testing.T) {
+	db := &fakeDatabase{tasks: []Task{testTask(0), testTask(0)}}
+	sender := &stubSender{channel: notify.ChannelTelegram}
+	dispatcher := newTestDispatcher(t, db, sender)
+	dispatcher.Idle = time.Hour
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- dispatcher.Run(ctx) }()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		db.mu.Lock()
+		delivered := len(db.delivered)
+		db.mu.Unlock()
+		if delivered == 2 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Errorf("цикл вернул ошибку: %v", err)
+	}
+
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	if len(db.delivered) != 2 {
+		t.Errorf("доставлено %d заданий, ожидалось 2", len(db.delivered))
+	}
+}
+
+// claimFailingDatabase отвечает отказом на выборку заданий: сбой прохода
+// не должен останавливать разбор очереди.
+type claimFailingDatabase struct {
+	Database
+	calls atomic.Int32
+}
+
+func (c *claimFailingDatabase) Claim(context.Context, int, time.Duration) ([]Task, error) {
+	c.calls.Add(1)
+	return nil, errors.New("connection refused")
+}
+
+func TestRunSurvivesClaimFailure(t *testing.T) {
+	db := &claimFailingDatabase{}
+	dispatcher := newTestDispatcher(t, db)
+	dispatcher.Idle = time.Millisecond
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+
+	if err := dispatcher.Run(ctx); err != nil {
+		t.Errorf("цикл вернул ошибку вместо остановки по контексту: %v", err)
+	}
+	if db.calls.Load() < 2 {
+		t.Errorf("проходов %d: сбой остановил разбор очереди", db.calls.Load())
 	}
 }

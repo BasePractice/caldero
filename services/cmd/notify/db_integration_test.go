@@ -436,3 +436,87 @@ func containsChannel(channels []notify.Channel, channel notify.Channel) bool {
 	}
 	return false
 }
+
+// TestQueueMetricsAndDeferral закрывает то, что видно только из метрик
+// и расписания: длину очереди, счётчик доставленных за окно и отложенную
+// попытку. Растущая очередь — первый признак сломанного канала.
+func TestQueueMetricsAndDeferral(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDatabase(t)
+	user := uuid.New()
+
+	if _, _, err := db.Publish(ctx, notify.PublishEvent{
+		UserId: user, Type: notify.EventPaymentSettled,
+	}, []notify.Channel{notify.ChannelInApp}); err != nil {
+		t.Fatalf("публикация: %v", err)
+	}
+
+	pending, err := db.Unsettled(ctx)
+	if err != nil {
+		t.Fatalf("подсчёт очереди: %v", err)
+	}
+	if pending != 1 {
+		t.Errorf("в очереди %d заданий, ожидалось одно", pending)
+	}
+
+	tasks, err := db.Claim(ctx, 10, time.Minute)
+	if err != nil {
+		t.Fatalf("выборка заданий: %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("выбрано %d заданий, ожидалось одно", len(tasks))
+	}
+
+	t.Run("отложенное задание не выбирается сразу", func(t *testing.T) {
+		if err := db.Defer(ctx, tasks[0].Id, time.Hour); err != nil {
+			t.Fatalf("отсрочка: %v", err)
+		}
+		// Аренда предыдущей выборки истекает через минуту, но отсрочка
+		// на час обязана держать задание вне выборки и после неё.
+		again, err := db.Claim(ctx, 10, 0)
+		if err != nil {
+			t.Fatalf("выборка заданий: %v", err)
+		}
+		for _, task := range again {
+			if task.Id == tasks[0].Id {
+				t.Error("отложенное задание выбрано раньше срока")
+			}
+		}
+	})
+
+	t.Run("доставленные за окно считаются", func(t *testing.T) {
+		before, err := db.SentSince(ctx, user, notify.ChannelInApp, time.Hour)
+		if err != nil {
+			t.Fatalf("подсчёт доставленных: %v", err)
+		}
+		if err := db.Delivered(ctx, tasks[0].Id); err != nil {
+			t.Fatalf("отметка доставки: %v", err)
+		}
+		after, err := db.SentSince(ctx, user, notify.ChannelInApp, time.Hour)
+		if err != nil {
+			t.Fatalf("подсчёт доставленных: %v", err)
+		}
+		if after != before+1 {
+			t.Errorf("доставленных %d, ожидалось %d", after, before+1)
+		}
+
+		// Окно ограничивает счёт: доставка минуту назад не попадает
+		// в нулевое окно, иначе ограничение частоты не работало бы.
+		narrow, err := db.SentSince(ctx, user, notify.ChannelInApp, 0)
+		if err != nil {
+			t.Fatalf("подсчёт доставленных: %v", err)
+		}
+		if narrow != 0 {
+			t.Errorf("в нулевом окне насчитано %d доставок", narrow)
+		}
+	})
+
+	t.Run("проба готовности и статистика пула", func(t *testing.T) {
+		if err := db.Ping(ctx); err != nil {
+			t.Errorf("проба готовности: %v", err)
+		}
+		if db.Stats().MaxOpenConnections == 0 {
+			t.Error("статистика пула не заполнена")
+		}
+	})
+}
