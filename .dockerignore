@@ -1,0 +1,23 @@
+.git
+.gitignore
+.idea
+.pg
+.prometheus
+.bin
+.logs
+.env
+.env.local
+
+# Не нужны в образе и только раздувают контекст сборки.
+_requests
+docs
+config
+REPORT.md
+PLAN.md
+TASKS.md
+CLAUDE.md
+RULE.md
+README.md
+docker-compose.yml
+Dockerfile
+.dockerignore

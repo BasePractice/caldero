@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"os"
 
 	"wish/middleware/wallet"
 	"wish/services"
@@ -13,11 +14,19 @@ import (
 )
 
 var (
-	port = flag.Int("port", 51051, "The service port")
+	port        = flag.Int("port", 51051, "The service port")
+	healthcheck = flag.Bool("healthcheck", false, "Check that the service accepts connections and exit")
 )
 
 func main() {
 	flag.Parse()
+	if *healthcheck {
+		if err := services.Healthcheck(fmt.Sprintf("localhost:%d", *port)); err != nil {
+			fmt.Fprintln(os.Stderr, "healthcheck failed:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	services.Run("wallet", func(ctx context.Context, cfg services.Config) error {
 		listen, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 		if err != nil {

@@ -155,7 +155,9 @@ services:
     image: wish/wallet:latest
     build:
       context: ./
-      dockerfile: ./services/cmd/wallet/Dockerfile
+      dockerfile: ./Dockerfile
+      args:
+        SERVICE: wallet
     depends_on:
       postgres-db:
         condition: service_healthy
@@ -165,6 +167,12 @@ services:
     # Для локальной отладки поднимайте профиль debug или пробрасывайте порт вручную.
     expose:
       - "51051"
+    healthcheck:
+      test: [ "CMD", "/service", "-healthcheck" ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres-db:5432/wish?sslmode=disable&search_path=wallet
       REDIS_URL: redis://redis:6379/10?protocol=3
@@ -176,7 +184,9 @@ services:
     image: wish/credit:latest
     build:
       context: ./
-      dockerfile: ./services/cmd/credit/Dockerfile
+      dockerfile: ./Dockerfile
+      args:
+        SERVICE: credit
     depends_on:
       postgres-db:
         condition: service_healthy
@@ -186,6 +196,12 @@ services:
     # Для локальной отладки поднимайте профиль debug или пробрасывайте порт вручную.
     expose:
       - "51052"
+    healthcheck:
+      test: [ "CMD", "/service", "-healthcheck" ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres-db:5432/wish?sslmode=disable&search_path=credit
       REDIS_URL: redis://redis:6379/10?protocol=3
@@ -197,7 +213,9 @@ services:
     image: wish/users:latest
     build:
       context: ./
-      dockerfile: ./services/cmd/users/Dockerfile
+      dockerfile: ./Dockerfile
+      args:
+        SERVICE: users
     depends_on:
       postgres-db:
         condition: service_healthy
@@ -207,6 +225,12 @@ services:
     # Для локальной отладки поднимайте профиль debug или пробрасывайте порт вручную.
     expose:
       - "51053"
+    healthcheck:
+      test: [ "CMD", "/service", "-healthcheck" ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres-db:5432/wish?sslmode=disable&search_path=users
       REDIS_URL: redis://redis:6379/10?protocol=3
@@ -218,7 +242,9 @@ services:
     image: wish/account:latest
     build:
       context: ./
-      dockerfile: ./services/cmd/account/Dockerfile
+      dockerfile: ./Dockerfile
+      args:
+        SERVICE: account
     depends_on:
       postgres-db:
         condition: service_healthy
@@ -228,6 +254,12 @@ services:
     # Для локальной отладки поднимайте профиль debug или пробрасывайте порт вручную.
     expose:
       - "51054"
+    healthcheck:
+      test: [ "CMD", "/service", "-healthcheck" ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres-db:5432/wish?sslmode=disable&search_path=account
       REDIS_URL: redis://redis:6379/10?protocol=3
