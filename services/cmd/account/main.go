@@ -39,7 +39,11 @@ func main() {
 		os.Exit(1)
 	}
 	services.DefineMetrics(cfg)
-	cdb := NewDatabase(cfg)
+	cdb, err := NewDatabase(cfg)
+	if err != nil {
+		slog.Error("Can't open database", slog.String("err", err.Error()))
+		os.Exit(1)
+	}
 	handler := registerHttpHandlers(ctx, cdb)
 	err = http.ListenAndServe(fmt.Sprintf(":%d", *port), handler)
 	if err != nil {

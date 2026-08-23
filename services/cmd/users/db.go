@@ -311,10 +311,10 @@ func splitCSV(input string) []string {
 	return strings.Split(input, ",")
 }
 
-func NewDatabaseUsers(cfg services.Config) DatabaseUsers {
+func NewDatabaseUsers(cfg services.Config) (DatabaseUsers, error) {
 	d, err := services.NewDatabase(cfg, migrations)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("opening users database: %w", err)
 	}
-	return &ds{d}
+	return &ds{d}, nil
 }

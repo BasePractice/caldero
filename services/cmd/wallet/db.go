@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"embed"
+	"fmt"
 
 	"wish/middleware/wallet"
 	"wish/services"
@@ -90,10 +91,10 @@ ORDER BY created_at;`, userId)
 	return nil
 }
 
-func NewDatabaseWallet(cfg services.Config) DatabaseWallet {
+func NewDatabaseWallet(cfg services.Config) (DatabaseWallet, error) {
 	db, err := services.NewDatabase(cfg, migrations)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("opening wallet database: %w", err)
 	}
-	return &ds{db}
+	return &ds{db}, nil
 }

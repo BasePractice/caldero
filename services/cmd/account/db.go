@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"fmt"
 
 	"wish/services"
 	"wish/services/shared/account"
@@ -34,10 +35,10 @@ func (d ds) Get(ctx context.Context, id uuid.UUID) (*account.Account, error) {
 	panic("implement me")
 }
 
-func NewDatabase(cfg services.Config) Database {
+func NewDatabase(cfg services.Config) (Database, error) {
 	db, err := services.NewDatabase(cfg, migrations)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("opening account database: %w", err)
 	}
-	return &ds{db}
+	return &ds{db}, nil
 }

@@ -74,7 +74,10 @@ func newService(ctx context.Context, cfg services.Config) (*Service, error) {
 		SendDebugMessagesToClients: cfg.OAuth2Debug,
 		GlobalSecret:               secret,
 	}
-	db := NewDatabaseUsers(cfg)
+	db, err := NewDatabaseUsers(cfg)
+	if err != nil {
+		return nil, err
+	}
 	keyManager, err := NewKeyManager(ctx, db)
 	if err != nil {
 		return nil, fmt.Errorf("creating key manager: %w", err)

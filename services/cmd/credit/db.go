@@ -47,10 +47,10 @@ func (d ds) Create(ctx context.Context, c credit.CreateCredit, operator *service
 	return id, nil
 }
 
-func NewDatabase(cfg services.Config) Database {
+func NewDatabase(cfg services.Config) (Database, error) {
 	db, err := services.NewDatabase(cfg, migrations)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("opening credit database: %w", err)
 	}
-	return &ds{db}
+	return &ds{db}, nil
 }

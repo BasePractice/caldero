@@ -45,11 +45,19 @@ func main() {
 	listen, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 	if err != nil {
 		slog.Error("Failed to listen", slog.String("err", err.Error()))
-		return
+		os.Exit(1)
 	}
 	grpcServer := grpc.NewServer()
-	cache, _ := services.NewDefaultCache(ctx, cfg)
-	db := NewDatabaseWallet(cfg)
+	cache, err := services.NewDefaultCache(ctx, cfg)
+	if err != nil {
+		slog.Error("Can't connect to cache", slog.String("err", err.Error()))
+		os.Exit(1)
+	}
+	db, err := NewDatabaseWallet(cfg)
+	if err != nil {
+		slog.Error("Can't open database", slog.String("err", err.Error()))
+		os.Exit(1)
+	}
 	server := &service{db: db, cache: cache}
 	wallet.RegisterServiceServer(grpcServer, server)
 	slog.Info("Starting server", slog.String("addr", listen.Addr().String()))
