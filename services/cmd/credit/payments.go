@@ -10,11 +10,11 @@ import (
 
 // MonthPayment FIXME: Сделать расчет оставшихся средств по кредиту и по процентам
 type MonthPayment struct {
-	CreditTail  uint      `json:"credit_tail"`
-	PercentTail uint      `json:"percent_tail"`
-	ExpiredAt   time.Time `json:"expired_at"`
-	Value       uint      `json:"value"`
-	Percent     uint      `json:"percent"`
+	CreditTail  credit.Amount `json:"credit_tail"`
+	PercentTail credit.Amount `json:"percent_tail"`
+	ExpiredAt   time.Time     `json:"expired_at"`
+	Value       credit.Amount `json:"value"`
+	Rate        credit.Rate   `json:"rate_bp"`
 }
 
 func monthPaymentCalculation(c credit.Credit) ([]MonthPayment, error) {
@@ -26,11 +26,11 @@ func monthPaymentCalculation(c credit.Credit) ([]MonthPayment, error) {
 			credit.MaxMonth, c.Month)
 	}
 	// При нулевой ставке формула аннуитета вырождается в 0/0.
-	if c.Percent == 0 {
-		return nil, fmt.Errorf("credit percent must be positive")
+	if c.Rate <= 0 {
+		return nil, fmt.Errorf("credit rate must be positive")
 	}
-	if c.AlreadyPaid > c.Balance {
-		return nil, fmt.Errorf("paid amount %d exceeds credit balance %d",
+	if c.AlreadyPaid >= c.Balance {
+		return nil, fmt.Errorf("paid amount %s is not less than credit balance %s",
 			c.AlreadyPaid, c.Balance)
 	}
 
@@ -54,15 +54,19 @@ func monthPaymentCalculation(c credit.Credit) ([]MonthPayment, error) {
 
 	needMonth := c.Month - paidMonth
 	principal := float64(c.Balance - c.AlreadyPaid)
-	monthPercent := float64(c.Percent) / 12 / 100
-	growth := math.Pow(1+monthPercent, float64(needMonth))
-	need := principal * monthPercent * growth / (growth - 1)
+	// Ставка годовая и в базисных пунктах: 1250 -> 0.125 -> делим на 12.
+	monthRate := float64(c.Rate) / credit.BasisPointsInWhole / 12
+	growth := math.Pow(1+monthRate, float64(needMonth))
+	// Округление, а не усечение: усечение систематически занижает платёж,
+	// и на длинном сроке недобор становится заметным.
+	need := credit.Amount(math.Round(principal * monthRate * growth / (growth - 1)))
 
 	payments := make([]MonthPayment, needMonth)
 	for i := range payments {
 		payments[i] = MonthPayment{
 			ExpiredAt: offset,
-			Value:     uint(math.Round(need)),
+			Value:     need,
+			Rate:      c.Rate,
 		}
 		offset = offset.AddDate(0, 1, 0)
 	}

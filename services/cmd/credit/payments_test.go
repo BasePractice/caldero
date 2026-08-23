@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"wish/services/shared/credit"
+
+	"github.com/google/uuid"
 )
 
 // created — фиксированная дата вместо time.Now(): число дней между
@@ -22,7 +24,7 @@ func TestMonthPaymentCalculation(t *testing.T) {
 		Kind:      "ANN",
 		Type:      "SIMPLE",
 		Month:     60,
-		Percent:   10,
+		Rate:      10 * credit.BasisPointsInPercent,
 		Balance:   1_000_000,
 		CreatedAt: created,
 	}
@@ -32,7 +34,8 @@ func TestMonthPaymentCalculation(t *testing.T) {
 		mutate    func(c *credit.Credit)
 		wantCount int
 		// Аннуитет: P * i * (1+i)^n / ((1+i)^n - 1), где i — месячная ставка.
-		wantFirst uint
+		// Ставка задаётся в базисных пунктах: 1000 bp это 10 % годовых.
+		wantFirst credit.Amount
 	}{
 		{
 			// 1 000 000 под 10 % на 60 месяцев: 21247.0447 -> 21247
@@ -86,7 +89,7 @@ func TestMonthPaymentCalculationRejects(t *testing.T) {
 		Kind:      "ANN",
 		Type:      "SIMPLE",
 		Month:     60,
-		Percent:   10,
+		Rate:      10 * credit.BasisPointsInPercent,
 		Balance:   1_000_000,
 		CreatedAt: created,
 	}
@@ -110,7 +113,7 @@ func TestMonthPaymentCalculationRejects(t *testing.T) {
 		{
 			// 0/0 в формуле аннуитета
 			name:   "нулевая ставка",
-			mutate: func(c *credit.Credit) { c.Percent = 0 },
+			mutate: func(c *credit.Credit) { c.Rate = 0 },
 		},
 		{
 			name: "внесено больше тела кредита",
@@ -146,6 +149,65 @@ func TestMonthPaymentCalculationRejects(t *testing.T) {
 			}
 			if payments != nil {
 				t.Fatalf("при ошибке платежи должны быть nil, получено %d", len(payments))
+			}
+		})
+	}
+}
+
+func TestAmountAndRateFormatting(t *testing.T) {
+	tests := []struct {
+		name   string
+		render string
+		want   string
+	}{
+		{name: "целая сумма", render: credit.Amount(120_000).String(), want: "1200.00"},
+		{name: "сумма с копейками", render: credit.Amount(120_045).String(), want: "1200.45"},
+		{name: "меньше рубля", render: credit.Amount(7).String(), want: "0.07"},
+		{name: "отрицательная сумма", render: credit.Amount(-1_250).String(), want: "-12.50"},
+		{name: "целая ставка", render: credit.Rate(2400).String(), want: "24.00%"},
+		// Ради этого ставка и переведена в базисные пункты: целыми
+		// процентами 12,5 % не выражается.
+		{name: "дробная ставка", render: credit.Rate(1250).String(), want: "12.50%"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.render != tt.want {
+				t.Errorf("получено %s, ожидалось %s", tt.render, tt.want)
+			}
+		})
+	}
+}
+
+func TestCreateCreditValidate(t *testing.T) {
+	valid := credit.CreateCredit{
+		UserId: uuid.New(), Type: "SIMPLE", Kind: "ANN",
+		Month: 36, Rate: 24 * credit.BasisPointsInPercent, Balance: 1_200_000,
+	}
+	if !valid.Validate() {
+		t.Fatal("корректный кредит не прошёл валидацию")
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(c *credit.CreateCredit)
+	}{
+		{name: "без пользователя", mutate: func(c *credit.CreateCredit) { c.UserId = uuid.Nil }},
+		{name: "ставка ниже границы", mutate: func(c *credit.CreateCredit) { c.Rate = credit.MinRate - 1 }},
+		{name: "ставка выше границы", mutate: func(c *credit.CreateCredit) { c.Rate = credit.MaxRate + 1 }},
+		{name: "нулевая сумма", mutate: func(c *credit.CreateCredit) { c.Balance = 0 }},
+		{name: "отрицательная сумма", mutate: func(c *credit.CreateCredit) { c.Balance = -1 }},
+		{name: "внесено больше тела", mutate: func(c *credit.CreateCredit) { c.AlreadyPaid = c.Balance }},
+		{name: "срок за верхней границей", mutate: func(c *credit.CreateCredit) { c.Month = credit.MaxMonth + 1 }},
+		{name: "срок в один месяц", mutate: func(c *credit.CreateCredit) { c.Month = 1 }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := valid
+			tt.mutate(&c)
+			if c.Validate() {
+				t.Errorf("невалидный кредит прошёл валидацию: %s", c)
 			}
 		})
 	}

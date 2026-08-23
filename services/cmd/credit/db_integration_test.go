@@ -29,7 +29,7 @@ func TestCreditRepository(t *testing.T) {
 	t.Run("создание и чтение возвращают все поля расчёта", func(t *testing.T) {
 		created := credit.CreateCredit{
 			UserId: borrower, Type: "SIMPLE", Kind: "ANN",
-			Month: 36, Percent: 24, Balance: 1_200_000,
+			Month: 36, Rate: 24 * credit.BasisPointsInPercent, Balance: 1_200_000,
 		}
 		id, err := db.Create(ctx, created, operator)
 		if err != nil {
@@ -46,7 +46,7 @@ func TestCreditRepository(t *testing.T) {
 		if loaded.CreatorId != operator.Id {
 			t.Errorf("creator_id = %s, ожидался %s", loaded.CreatorId, operator.Id)
 		}
-		if loaded.Month != 36 || loaded.Percent != 24 || loaded.Balance != 1_200_000 {
+		if loaded.Month != 36 || loaded.Rate != 24*credit.BasisPointsInPercent || loaded.Balance != 1_200_000 {
 			t.Errorf("не совпали параметры кредита: %+v", loaded)
 		}
 		// Именно эти три поля запрос когда-то не выбирал, из-за чего частично
@@ -71,7 +71,7 @@ func TestCreditRepository(t *testing.T) {
 	t.Run("частично погашенный кредит читается с датой платежа", func(t *testing.T) {
 		id, err := db.Create(ctx, credit.CreateCredit{
 			UserId: uuid.New(), Type: "MICRO", Kind: "ANN",
-			Month: 12, Percent: 30, Balance: 500_000,
+			Month: 12, Rate: 30 * credit.BasisPointsInPercent, Balance: 500_000,
 		}, operator)
 		if err != nil {
 			t.Fatalf("создание: %v", err)
@@ -79,7 +79,7 @@ func TestCreditRepository(t *testing.T) {
 
 		paidAt := time.Now().Add(-24 * time.Hour).UTC()
 		if _, err = rawDB(t, db).ExecContext(ctx,
-			"UPDATE credit SET already_payed = $1, last_payed_at = $2 WHERE id = $3",
+			"UPDATE credit SET already_paid = $1, last_paid_at = $2 WHERE id = $3",
 			50_000, paidAt, id); err != nil {
 			t.Fatalf("обновление: %v", err)
 		}
@@ -102,7 +102,7 @@ func TestCreditRepository(t *testing.T) {
 	t.Run("график считается по прочитанным данным", func(t *testing.T) {
 		id, err := db.Create(ctx, credit.CreateCredit{
 			UserId: uuid.New(), Type: "IPOT", Kind: "ANN",
-			Month: 60, Percent: 10, Balance: 1_000_000,
+			Month: 60, Rate: 10 * credit.BasisPointsInPercent, Balance: 1_000_000,
 		}, operator)
 		if err != nil {
 			t.Fatalf("создание: %v", err)
@@ -125,7 +125,7 @@ func TestCreditRepository(t *testing.T) {
 
 	t.Run("второй кредит того же типа разрешён", func(t *testing.T) {
 		user := uuid.New()
-		same := credit.CreateCredit{UserId: user, Type: "SIMPLE", Kind: "ANN", Month: 12, Percent: 15, Balance: 100_000}
+		same := credit.CreateCredit{UserId: user, Type: "SIMPLE", Kind: "ANN", Month: 12, Rate: 15 * credit.BasisPointsInPercent, Balance: 100_000}
 		if _, err := db.Create(ctx, same, operator); err != nil {
 			t.Fatalf("первый кредит: %v", err)
 		}

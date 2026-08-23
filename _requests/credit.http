@@ -7,8 +7,8 @@ X-Authorized-Id: {{user_id}}
 
 {
   "user_id": "{{user_id}}",
-  "percent": 24,
-  "balance": 1200000,
+  "rate_bp": 2400,
+  "balance": 120000000,
   "kind": "ANN",
   "type": "SIMPLE",
   "month": 36
@@ -27,7 +27,7 @@ X-Authorized-Id: {{user_id}}
 > {%
     client.assert(response.status === 200, "График не отдан")
     client.assert(response.body.length === 36, "Ожидалось 36 платежей")
-    client.log("Ежемесячный платёж: " + response.body[0].value)
+    client.log("Ежемесячный платёж, копеек: " + response.body[0].value)
 %}
 
 ### Чужой кредит недоступен
@@ -47,8 +47,8 @@ X-Authorized-Id: {{user_id}}
 
 {
   "user_id": "00000000-0000-0000-0000-000000000002",
-  "percent": 24,
-  "balance": 1200000,
+  "rate_bp": 2400,
+  "balance": 120000000,
   "kind": "ANN",
   "type": "MICRO",
   "month": 12
@@ -66,8 +66,8 @@ X-Roles: operator
 
 {
   "user_id": "00000000-0000-0000-0000-000000000002",
-  "percent": 24,
-  "balance": 1200000,
+  "rate_bp": 2400,
+  "balance": 120000000,
   "kind": "ANN",
   "type": "MICRO",
   "month": 12
@@ -84,8 +84,8 @@ X-Authorized-Id: {{user_id}}
 
 {
   "user_id": "{{user_id}}",
-  "percent": 24,
-  "balance": 1200000,
+  "rate_bp": 2400,
+  "balance": 120000000,
   "kind": "ANN",
   "type": "SIMPLE",
   "month": 0

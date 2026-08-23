@@ -4,18 +4,21 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"wish/services/shared/credit"
 )
 
 type Account struct {
-	Id        uuid.UUID  `json:"id"`
-	UserId    uuid.UUID  `json:"user_id"`
-	Type      string     `json:"type"`
-	CreditId  *uuid.UUID `json:"credit_id,omitempty"`
-	State     string     `json:"state"`
-	Balance   int64      `json:"balance"`
-	StartedAt *time.Time `json:"started_at,omitempty"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
+	Id       uuid.UUID  `json:"id"`
+	UserId   uuid.UUID  `json:"user_id"`
+	Type     string     `json:"type"`
+	CreditId *uuid.UUID `json:"credit_id,omitempty"`
+	State    string     `json:"state"`
+	// Баланс в минимальных единицах, как и суммы кредита.
+	Balance   credit.Amount `json:"balance"`
+	StartedAt *time.Time    `json:"started_at,omitempty"`
+	CreatedAt time.Time     `json:"created_at"`
+	UpdatedAt time.Time     `json:"updated_at"`
 }
 
 type CreateAccount struct {
