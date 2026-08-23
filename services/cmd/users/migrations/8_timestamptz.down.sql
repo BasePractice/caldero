@@ -1,0 +1,11 @@
+ALTER TABLE user_roles
+    ALTER COLUMN created_at TYPE TIMESTAMP;
+ALTER TABLE oauth_tokens
+    ALTER COLUMN expires_at TYPE TIMESTAMP,
+    ALTER COLUMN created_at TYPE TIMESTAMP;
+ALTER TABLE keys
+    ALTER COLUMN created_at TYPE TIMESTAMP;
+ALTER TABLE oauth_clients
+    ALTER COLUMN created_at TYPE TIMESTAMP;
+ALTER TABLE users
+    ALTER COLUMN created_at TYPE TIMESTAMP;

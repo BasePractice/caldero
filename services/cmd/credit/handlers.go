@@ -108,6 +108,10 @@ func createCredit(db Database, w http.ResponseWriter, r *http.Request) {
 	}
 
 	id, err := db.Create(r.Context(), c, operator)
+	if services.IsUniqueViolation(err) {
+		http.Error(w, "Such credit already exists", http.StatusConflict)
+		return
+	}
 	if err != nil {
 		slog.Error("Failed to create credit",
 			slog.String("credit", c.String()),

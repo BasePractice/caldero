@@ -15,7 +15,6 @@ import (
 	"wish/services"
 
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 	"github.com/ory/fosite"
 	"github.com/ory/fosite/handler/oauth2"
@@ -522,11 +521,7 @@ func (s *ds) RevokeAccessToken(ctx context.Context, requestId string) error {
 }
 
 func (s *ds) IsUniqueConstraintError(err error) bool {
-	var pge *pq.Error
-	if errors.As(err, &pge) {
-		return pge.Code == "23505"
-	}
-	return false
+	return services.IsUniqueViolation(err)
 }
 
 func (s *ds) ClientAssertionJWTValid(ctx context.Context, jti string) error {

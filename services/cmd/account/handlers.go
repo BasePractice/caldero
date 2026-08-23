@@ -62,6 +62,10 @@ func createAccount(db Database, w http.ResponseWriter, r *http.Request) {
 	}
 
 	id, err := db.Create(r.Context(), a, operator)
+	if services.IsUniqueViolation(err) {
+		http.Error(w, "Such account already exists", http.StatusConflict)
+		return
+	}
 	if err != nil {
 		slog.Error("Failed to create account",
 			slog.String("account", a.String()),
