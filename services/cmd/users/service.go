@@ -186,6 +186,20 @@ func (s *Service) handleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// fosite проверяет запрошенные scope против клиента, но не выдаёт их:
+	// решение, какие scope выдать, остаётся за сервером авторизации.
+	// У остальных грантов это делают их собственные обработчики — refresh
+	// восстанавливает исходный набор, authorization_code берёт его из
+	// сохранённого запроса, — а password-грант оставлял granted scope пустым.
+	if accessRequest.GetGrantTypes().ExactOne("password") {
+		for _, scope := range accessRequest.GetRequestedScopes() {
+			accessRequest.GrantScope(scope)
+		}
+		for _, audience := range accessRequest.GetRequestedAudience() {
+			accessRequest.GrantAudience(audience)
+		}
+	}
+
 	response, err := s.oauth2Provider.NewAccessResponse(ctx, accessRequest)
 	if err != nil {
 		slog.Debug("Access response failed", slog.String("err", err.Error()))
