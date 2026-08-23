@@ -1,38 +1,84 @@
-### Keys
+### Набор ключей проверки подписи
 GET {{users.url}}/.well-known/jwks.json
 
 > {%
     client.assert(response.status === 200, "Ключи не созданы")
     client.assert(response.body.keys.length > 0, "Нет ни одного ключа")
-    client.assert(response.body.keys[0].kty === "RSA", "Почему-то не RSA алгоритм")
+    client.assert(response.body.keys[0].kty === "RSA", "Ожидался ключ RSA")
 %}
 
-### Create user
+### Регистрация пользователя
 POST {{users.url}}/register
 Content-Type: application/x-www-form-urlencoded
 
-username = {{users.simple.username}} &
-password = {{users.simple.password}}
+username={{username}}&password={{password}}
 
 > {%
-    client.assert(response.status === 201 || response.status === 409, "Не удалось создать пользователя")
-    let user_id = response.headers.valueOf('X-User-Id')
-    client.global.set("user_id", user_id)
-    client.log("Пользователь", user_id, "создан")
+    client.assert(response.status === 201 || response.status === 409,
+        "Не удалось создать пользователя: " + response.status)
+    if (response.status === 201) {
+        client.global.set("user_id", response.headers.valueOf("X-User-Id"))
+    }
 %}
 
-### Authenticate user
-// @no-redirect
-POST {{users.url}}/auth
+### Токен по паролю (грант устарел, см. задачу T-068)
+POST {{users.url}}/token
 Content-Type: application/x-www-form-urlencoded
+Authorization: Basic {{client_id}} {{client_secret}}
 
-username = {{users.simple.username}} &
-password = {{users.simple.password}} &
-state = {{$random.uuid}} &
-client_id = {{users.client_id}} &
-client_secret = {{users.client_secret}} &
-response_type = {{users.response_type}} &
-redirect_uri = {{users.redirect_uri}} &
-grant_type = {{users.grant_type}} &
-scopes = {{users.scopes}}
+grant_type=password&username={{username}}&password={{password}}&scope={{scopes}}
 
+> {%
+    client.assert(response.status === 200, "Токен не выдан: " + response.body.error_description)
+    client.global.set("access_token", response.body.access_token)
+    // sub токена — это и есть идентификатор пользователя, который шлюз
+    // проставляет сервисам в X-Authorized-Id.
+    const payload = JSON.parse(atob(response.body.access_token.split(".")[1]))
+    client.global.set("user_id", payload.sub)
+    client.log("Пользователь " + payload.sub + ", scope: " + response.body.scope)
+%}
+
+### Страница входа Authorization Code Flow
+# Открывается в браузере: форма отправляет учётные данные на этот же адрес.
+# code_challenge посчитан заранее от code_verifier ниже — коллекция отладочная,
+# в реальном клиенте verifier генерируется на каждый запрос.
+GET {{users.url}}/auth
+    ?client_id={{client_id}}
+    &response_type=code
+    &redirect_uri={{redirect_uri}}
+    &state=stateabcdefghijklmnop
+    &scope=openid read
+    &code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM
+    &code_challenge_method=S256
+
+> {%
+    client.assert(response.status === 200, "Форма входа не отдана")
+%}
+
+### Обмен кода на токен
+# Подставьте code из адресной строки после входа на предыдущем шаге.
+POST {{users.url}}/token
+Content-Type: application/x-www-form-urlencoded
+Authorization: Basic {{client_id}} {{client_secret}}
+
+grant_type=authorization_code&code={{authorization_code}}&redirect_uri={{redirect_uri}}&code_verifier=dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk
+
+### Данные владельца токена
+GET {{users.url}}/me
+Authorization: Bearer {{access_token}}
+
+> {%
+    client.assert(response.status === 200, "Токен не принят")
+    client.assert(response.body.sub === client.global.get("user_id"), "Чужой subject в ответе")
+%}
+
+### Создание OAuth2-клиента (только с административным токеном)
+POST {{users.url}}/clients
+Content-Type: application/x-www-form-urlencoded
+Authorization: Bearer {{admin_token}}
+
+client-id=web&client-secret=смените-меня&redirect-uri={{redirect_uri}}&grant-types=authorization_code,refresh_token
+
+### Ротация ключей подписи (только с административным токеном)
+POST {{users.url}}/rotate-keys
+Authorization: Bearer {{admin_token}}

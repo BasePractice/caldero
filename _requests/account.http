@@ -1,7 +1,7 @@
-### Create account
+### Счёт себе
 POST {{account.url}}/account
 Content-Type: application/json
-X-Authorized-Id: {{account.operator}}
+X-Authorized-Id: {{user_id}}
 
 {
   "user_id": "{{user_id}}",
@@ -9,5 +9,39 @@ X-Authorized-Id: {{account.operator}}
 }
 
 > {%
+    client.assert(response.status === 201, "Счёт не создан: " + response.status)
     client.global.set("account_id", response.headers.valueOf("X-Account-Id"))
+%}
+
+### Чтение своего счёта
+GET {{account.url}}/account/{{account_id}}
+Accept: application/json
+X-Authorized-Id: {{user_id}}
+
+> {%
+    client.assert(response.status === 200, "Счёт не отдан")
+    client.assert(response.body.type === "DEBIT", "Не тот тип счёта")
+%}
+
+### Чужой счёт недоступен
+GET {{account.url}}/account/{{account_id}}
+Accept: application/json
+X-Authorized-Id: 00000000-0000-0000-0000-000000000001
+
+> {%
+    client.assert(response.status === 404, "Чужой счёт не должен быть виден")
+%}
+
+### Кредитный счёт без ссылки на кредит отклоняется
+POST {{account.url}}/account
+Content-Type: application/json
+X-Authorized-Id: {{user_id}}
+
+{
+  "user_id": "{{user_id}}",
+  "type": "CREDIT"
+}
+
+> {%
+    client.assert(response.status === 400, "CREDIT без credit_id должен отклоняться")
 %}

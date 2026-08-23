@@ -1,12 +1,32 @@
-### Information
+### Свои кошельки
+# Заголовок называется X-Authorized-Id — в gRPC-метаданных он приходит
+# в нижнем регистре. Кошелёк создаётся автоматически при первом обращении.
 GRPC {{wallet.url}}/wallet.Service/Information
+X-Authorized-Id: {{user_id}}
+
+{}
+
+### Кошельки по явному идентификатору владельца
+GRPC {{wallet.url}}/wallet.Service/Information
+X-Authorized-Id: {{user_id}}
 
 {
   "user_id": "{{user_id}}"
 }
-### Information
-GRPC {{wallet.url}}/wallet.Service/Information
-X-User-Id: {{user_id}}
 
-{}
-###
+### Чужой кошелёк без роли оператора
+GRPC {{wallet.url}}/wallet.Service/Information
+X-Authorized-Id: {{user_id}}
+
+{
+  "user_id": "00000000-0000-0000-0000-000000000001"
+}
+
+### Чужой кошелёк с ролью оператора
+GRPC {{wallet.url}}/wallet.Service/Information
+X-Authorized-Id: {{user_id}}
+X-Roles: operator
+
+{
+  "user_id": "00000000-0000-0000-0000-000000000001"
+}

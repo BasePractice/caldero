@@ -5,3 +5,6 @@
 .logs
 .env
 .env.local
+
+# Учётные данные для коллекций запросов
+_requests/http-client.private.env.json

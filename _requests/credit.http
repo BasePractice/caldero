@@ -1,39 +1,96 @@
-### Create credit
+### Кредит себе
+# X-Authorized-Id проставляет шлюз из claim sub проверенного токена.
+# В окружении local его приходится указывать вручную, потому что шлюза нет.
 POST {{credit.url}}/credit
 Content-Type: application/json
-X-Authorized-Id: {{credit.operator}}
-
-{
-  "user_id": "{{user_id}}",
-  "percent": 24,
-  "balance": 1200000000,
-  "kind": "ANN",
-  "type": "SIMPLE",
-  "month": 360
-}
-
-> {%
-    client.global.set("credit_id", response.headers.valueOf("X-Credit-Id"))
-%}
-
-### Get month payments
-< {%
-    request.variables.set("credit_id", client.global.get("credit_id"))
-    client.log(client.global)
-%}
-GET {{credit.url}}/credit/{{credit_id}}/need_payments
-Accept: application/json
-
-### Create credit
-POST {{credit.url}}/credit
-Content-Type: application/json
-X-Authorized-Id: {{credit.operator}}
+X-Authorized-Id: {{user_id}}
 
 {
   "user_id": "{{user_id}}",
   "percent": 24,
   "balance": 1200000,
   "kind": "ANN",
-  "type": "MICRO",
-  "month": 360
+  "type": "SIMPLE",
+  "month": 36
 }
+
+> {%
+    client.assert(response.status === 201, "Кредит не создан: " + response.status)
+    client.global.set("credit_id", response.headers.valueOf("X-Credit-Id"))
+%}
+
+### График платежей
+GET {{credit.url}}/credits/{{credit_id}}/schedule
+Accept: application/json
+X-Authorized-Id: {{user_id}}
+
+> {%
+    client.assert(response.status === 200, "График не отдан")
+    client.assert(response.body.length === 36, "Ожидалось 36 платежей")
+    client.log("Ежемесячный платёж: " + response.body[0].value)
+%}
+
+### Чужой кредит недоступен
+GET {{credit.url}}/credits/{{credit_id}}/schedule
+Accept: application/json
+X-Authorized-Id: 00000000-0000-0000-0000-000000000001
+
+> {%
+    // 404, а не 403: 403 подтвердил бы существование кредита.
+    client.assert(response.status === 404, "Чужой кредит не должен быть виден")
+%}
+
+### Кредит другому пользователю без роли оператора
+POST {{credit.url}}/credit
+Content-Type: application/json
+X-Authorized-Id: {{user_id}}
+
+{
+  "user_id": "00000000-0000-0000-0000-000000000002",
+  "percent": 24,
+  "balance": 1200000,
+  "kind": "ANN",
+  "type": "MICRO",
+  "month": 12
+}
+
+> {%
+    client.assert(response.status === 403, "Без роли оператора это должно быть запрещено")
+%}
+
+### Кредит другому пользователю с ролью оператора
+POST {{credit.url}}/credit
+Content-Type: application/json
+X-Authorized-Id: {{user_id}}
+X-Roles: operator
+
+{
+  "user_id": "00000000-0000-0000-0000-000000000002",
+  "percent": 24,
+  "balance": 1200000,
+  "kind": "ANN",
+  "type": "MICRO",
+  "month": 12
+}
+
+> {%
+    client.assert(response.status === 201, "Оператор должен иметь право: " + response.status)
+%}
+
+### Невалидный кредит не должен попадать в базу
+POST {{credit.url}}/credit
+Content-Type: application/json
+X-Authorized-Id: {{user_id}}
+
+{
+  "user_id": "{{user_id}}",
+  "percent": 24,
+  "balance": 1200000,
+  "kind": "ANN",
+  "type": "SIMPLE",
+  "month": 0
+}
+
+> {%
+    client.assert(response.status === 400, "Нулевой срок должен отклоняться")
+%}

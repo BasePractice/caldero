@@ -8,7 +8,6 @@
 |---|---|---|
 | T-068 | Отказаться от гранта password | ЗАВЕДЕНА |
 | T-034 | Интеграционные тесты на `testcontainers-go` | ЗАВЕДЕНА |
-| T-035 | Привести `_requests/*.http` в соответствие с API | ЗАВЕДЕНА |
 | T-036 | `/metrics` во всех сервисах, RED-метрики | ЗАВЕДЕНА |
 | T-037 | Инициализация OTel `TracerProvider` | ЗАВЕДЕНА |
 | T-067 | Автоматическое создание партиций транзакций | ЗАВЕДЕНА |
@@ -54,27 +53,6 @@
 3. Тег сборки `//go:build integration`, отдельная цель в `Makefile`.
 
 **Проверка:** `make test-integration` зелёный.
-
----
-
-## T-035. Привести `_requests/*.http` в соответствие с API
-
-**Статус:** ЗАВЕДЕНА
-
-[_requests/credit.http](_requests/credit.http) обращается к
-`GET /credit/{id}/need_payments`, сервис отдаёт `GET /credits/{id}/schedule` → 404.
-[_requests/wallet.http](_requests/wallet.http) передаёт `X-User-Id`,
-код читает `x-authorized-id`.
-
-**План**
-1. Исправить пути и заголовки.
-2. Переписать на маршруты шлюза (`http://localhost:8080/api/v1/...`): порты
-   сервисов больше не публикуются наружу.
-3. Вынести пароль тестового пользователя из
-   [http-client.env.json](_requests/http-client.env.json) в
-   `http-client.private.env.json` (он в `.gitignore` у IDE по умолчанию).
-
-**Проверка:** прогон коллекции против поднятого стенда.
 
 ---
 
