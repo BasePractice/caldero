@@ -53,7 +53,7 @@ func registerHttpHandlers(db Database) http.Handler {
 		// Идентификатор кредита последовательный, поэтому чужой кредит
 		// отдаётся как несуществующий: 403 подтвердил бы, что он есть,
 		// и оставил бы возможность перебора.
-		if c.UserId != operator.Id && c.CreatorId != operator.Id {
+		if !operator.CanActOnBehalfOf(c.UserId) && c.CreatorId != operator.Id {
 			slog.Warn("Attempt to read foreign credit schedule",
 				slog.String("id", id), slog.String("operator", operator.Id.String()))
 			http.Error(w, "Not found", http.StatusNotFound)
@@ -93,6 +93,17 @@ func createCredit(db Database, w http.ResponseWriter, r *http.Request) {
 	if !c.Validate() {
 		slog.Error("Credit validation failed", slog.String("credit", c.String()))
 		http.Error(w, "Credit validation failed", http.StatusBadRequest)
+		return
+	}
+
+	// Схема заложена под сценарий «оператор выдаёт кредит клиенту»
+	// (user_id + creator_id), но роли оператора в системе не было:
+	// любой пользователь мог оформить кредит на любого другого.
+	if !operator.CanActOnBehalfOf(c.UserId) {
+		slog.Warn("Attempt to issue credit to another user without operator role",
+			slog.String("operator", operator.Id.String()))
+		http.Error(w, "Issuing a credit to another user requires the operator role",
+			http.StatusForbidden)
 		return
 	}
 

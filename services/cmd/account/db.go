@@ -28,14 +28,14 @@ type ds struct {
 	db *sql.DB
 }
 
-func (d ds) Create(ctx context.Context, a account.CreateAccount, operator *services.AuthorizedUser) (uuid.UUID, error) {
+func (d ds) Create(ctx context.Context, a account.CreateAccount, _ *services.AuthorizedUser) (uuid.UUID, error) {
 	var id uuid.UUID
 	err := d.db.QueryRowContext(ctx, `
 		INSERT INTO account (user_id, type, credit_id)
 		VALUES ($1, $2, $3) RETURNING id`,
-		operator.Id, a.Type, a.CreditId).Scan(&id)
+		a.UserId, a.Type, a.CreditId).Scan(&id)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("creating %s account for user %s: %w", a.Type, operator.Id, err)
+		return uuid.Nil, fmt.Errorf("creating %s account for user %s: %w", a.Type, a.UserId, err)
 	}
 	return id, nil
 }

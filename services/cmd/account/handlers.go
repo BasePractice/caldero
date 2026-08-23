@@ -53,12 +53,11 @@ func createAccount(db Database, w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Account validation failed", http.StatusBadRequest)
 		return
 	}
-	// Счёт заводится только себе: ролевой модели, которая позволила бы одному
-	// пользователю открывать счета другому, в системе пока нет.
-	if a.UserId != operator.Id {
-		slog.Warn("Attempt to create account for another user",
+	if !operator.CanActOnBehalfOf(a.UserId) {
+		slog.Warn("Attempt to create account for another user without operator role",
 			slog.String("operator", operator.Id.String()))
-		http.Error(w, "Can't create account for another user", http.StatusForbidden)
+		http.Error(w, "Creating an account for another user requires the operator role",
+			http.StatusForbidden)
 		return
 	}
 
@@ -94,7 +93,7 @@ func getAccount(db Database, w http.ResponseWriter, r *http.Request) {
 	}
 	// Идентификатор счёта последовательный, поэтому чужой счёт отдаётся
 	// как несуществующий, чтобы не подтверждать его наличие перебором.
-	if a.UserId != operator.Id {
+	if !operator.CanActOnBehalfOf(a.UserId) {
 		slog.Warn("Attempt to read foreign account",
 			slog.String("id", id.String()), slog.String("operator", operator.Id.String()))
 		http.Error(w, "Not found", http.StatusNotFound)

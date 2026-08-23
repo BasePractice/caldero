@@ -110,7 +110,10 @@ func (s *Service) handleAuthorization(w http.ResponseWriter, r *http.Request) {
 		authorizeRequest.GrantAudience(audience)
 	}
 
-	response, err := s.oauth2Provider.NewAuthorizeResponse(ctx, authorizeRequest, s.newSession(ctx, userId))
+	session := s.newSession(ctx, userId)
+	s.applyRoles(ctx, session)
+
+	response, err := s.oauth2Provider.NewAuthorizeResponse(ctx, authorizeRequest, session)
 	if err != nil {
 		slog.Debug("Authorize response failed", slog.String("err", err.Error()))
 		s.oauth2Provider.WriteAuthorizeError(ctx, w, authorizeRequest, err)

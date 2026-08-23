@@ -17,6 +17,7 @@ services:
       AUTH_HOST: ${AUTH_HOST:-http://keycloak:8080}
       AUTH_JWKS_PATH: ${AUTH_JWKS_PATH:-/realms/krakend/protocol/openid-connect/certs}
       AUTH_TOKEN_PATH: ${AUTH_TOKEN_PATH:-/realms/krakend/protocol/openid-connect/token}
+      AUTH_ROLES_CLAIM: ${AUTH_ROLES_CLAIM:-realm_access.roles}
     depends_on:
       - jaeger
       - influxdb

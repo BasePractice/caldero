@@ -200,6 +200,10 @@ func (s *Service) handleToken(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if session, ok := accessRequest.GetSession().(*jwtSession); ok {
+		s.applyRoles(ctx, session)
+	}
+
 	response, err := s.oauth2Provider.NewAccessResponse(ctx, accessRequest)
 	if err != nil {
 		slog.Debug("Access response failed", slog.String("err", err.Error()))
@@ -207,6 +211,35 @@ func (s *Service) handleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.oauth2Provider.WriteAccessResponse(ctx, w, accessRequest, response)
+}
+
+// applyRoles кладёт роли пользователя в claim токена. Шлюз пробрасывает их
+// в заголовок, и сервисы за ним не ходят за ролями в базу: иначе одни и те же
+// данные пришлось бы держать в каждом сервисе.
+func (s *Service) applyRoles(ctx context.Context, session *jwtSession) {
+	subject := session.GetSubject()
+	if subject == "" {
+		return
+	}
+	userId, err := uuid.Parse(subject)
+	if err != nil {
+		slog.Error("Session subject is not a uuid", slog.String("err", err.Error()))
+		return
+	}
+	roles, err := s.db.GetUserRoles(ctx, userId)
+	if err != nil {
+		// Отсутствие ролей не повод не выдавать токен: пользователь просто
+		// получит права по умолчанию.
+		slog.Error("Can't load user roles", slog.String("err", err.Error()))
+		return
+	}
+	if len(roles) == 0 {
+		return
+	}
+	if session.JWTClaims.Extra == nil {
+		session.JWTClaims.Extra = map[string]any{}
+	}
+	session.JWTClaims.Extra["roles"] = roles
 }
 
 // requesterKey — приватный тип ключа контекста. Строковый ключ "claims"

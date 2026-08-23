@@ -108,6 +108,10 @@
             [
               "sub",
               "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
             ]
           ]
         }
@@ -140,6 +144,10 @@
             [
               "sub",
               "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
             ]
           ]
         }
@@ -173,6 +181,10 @@
             [
               "sub",
               "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
             ]
           ]
         }

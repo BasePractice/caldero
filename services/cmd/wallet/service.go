@@ -25,14 +25,14 @@ func (s service) Information(ctx context.Context, request *wallet.InformationReq
 		return nil, status.Error(codes.Unauthenticated, "not authorized")
 	}
 
+	owner := authorized.Id
 	if request.UserId != nil {
-		requested, err := uuid.Parse(*request.UserId)
-		if err != nil {
+		if owner, err = uuid.Parse(*request.UserId); err != nil {
 			return nil, status.Error(codes.InvalidArgument, "user_id is not a valid uuid")
 		}
-		// Кошелёк доступен только владельцу: без этой проверки достаточно
+		// Чужой кошелёк доступен только оператору: без проверки достаточно
 		// подставить чужой uuid, чтобы прочитать чужой баланс и транзакции.
-		if requested != authorized.Id {
+		if !authorized.CanActOnBehalfOf(owner) {
 			slog.Warn("Attempt to read foreign wallet",
 				slog.String("authorized", authorized.Id.String()))
 			return nil, status.Error(codes.PermissionDenied, "wallet belongs to another user")
@@ -40,7 +40,7 @@ func (s service) Information(ctx context.Context, request *wallet.InformationReq
 	}
 
 	replies := make([]*wallet.InformationReply, 0)
-	if err = s.db.Information(ctx, authorized.Id, func(reply *wallet.InformationReply) {
+	if err = s.db.Information(ctx, owner, func(reply *wallet.InformationReply) {
 		replies = append(replies, reply)
 	}); err != nil {
 		slog.Error("Failed to load wallets", slog.String("err", err.Error()))

@@ -43,6 +43,7 @@ type DatabaseUsers interface {
 	CreateUser(ctx context.Context, username, passwordHash string) (*User, error)
 	GetUser(ctx context.Context, username string) (*User, error)
 	Authenticate(ctx context.Context, username, secret string) (string, error)
+	GetUserRoles(ctx context.Context, userId uuid.UUID) ([]string, error)
 
 	GetLastKey(ctx context.Context) (string, error)
 	GetKey(ctx context.Context, id string) ([]byte, error)
@@ -207,6 +208,30 @@ func (s *ds) Authenticate(ctx context.Context, username, secret string) (string,
 		return "", fosite.ErrNotFound
 	}
 	return user.Id.String(), nil
+}
+
+func (s *ds) GetUserRoles(ctx context.Context, userId uuid.UUID) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT role FROM user_roles WHERE user_id = $1 ORDER BY role", userId)
+	if err != nil {
+		return nil, fmt.Errorf("loading roles of user %s: %w", userId, err)
+	}
+	defer func() {
+		// Настоящая причина сбоя придёт из rows.Err().
+		_ = rows.Close()
+	}()
+
+	var roles []string
+	for rows.Next() {
+		var role string
+		if err = rows.Scan(&role); err != nil {
+			return nil, fmt.Errorf("scanning role of user %s: %w", userId, err)
+		}
+		roles = append(roles, role)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading roles of user %s: %w", userId, err)
+	}
+	return roles, nil
 }
 
 func (s *ds) CreateUser(ctx context.Context, username, passwordHash string) (*User, error) {
