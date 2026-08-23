@@ -183,3 +183,84 @@ func TestUnauthorized(t *testing.T) {
 		t.Errorf("код ответа %d, ожидался %d", recorder.Code, http.StatusUnauthorized)
 	}
 }
+
+func TestDrawHandlers(t *testing.T) {
+	env := newEnvironment(t)
+	handler := registerHttpHandlers(env.caldrons)
+	creator := uuid.New()
+	member := uuid.New()
+	env.wallet.fund(creator, 10_000_00)
+	env.wallet.fund(member, 10_000_00)
+
+	pot := env.fixedCaldron(t, creator, 2_500_00, member)
+	path := "/caldrons/" + pot.Id.String()
+
+	do := func(method string, user uuid.UUID, url, body string) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, authorized(
+			httptest.NewRequest(method, url, strings.NewReader(body)), user))
+		return recorder
+	}
+
+	t.Run("список подарков сохраняется", func(t *testing.T) {
+		gift := cheapGift(t, 2_000_00, "handler-gift")
+		body := fmt.Sprintf(`[{"provider":%q,"product_id":%q}]`, gift.Provider, gift.ProductId)
+		recorder := do(http.MethodPut, creator, path+"/gifts", body)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("код ответа %d (%s)", recorder.Code, recorder.Body)
+		}
+	})
+
+	t.Run("розыгрыш до сбора — 409", func(t *testing.T) {
+		if code := do(http.MethodPost, creator, path+"/draw", "").Code; code != http.StatusConflict {
+			t.Errorf("код ответа %d, ожидался %d", code, http.StatusConflict)
+		}
+	})
+
+	t.Run("результата ещё нет — 404", func(t *testing.T) {
+		if code := do(http.MethodGet, member, path+"/draw", "").Code; code != http.StatusNotFound {
+			t.Errorf("код ответа %d, ожидался %d", code, http.StatusNotFound)
+		}
+	})
+
+	for _, user := range []uuid.UUID{creator, member} {
+		if code := do(http.MethodPost, user, path+"/contribute", "").Code; code != http.StatusOK {
+			t.Fatalf("взнос не прошёл: код %d", code)
+		}
+	}
+
+	t.Run("участник не запускает розыгрыш", func(t *testing.T) {
+		if code := do(http.MethodPost, member, path+"/draw", "").Code; code != http.StatusForbidden {
+			t.Errorf("код ответа %d, ожидался %d", code, http.StatusForbidden)
+		}
+	})
+
+	t.Run("розыгрыш и результат", func(t *testing.T) {
+		recorder := do(http.MethodPost, creator, path+"/draw", "")
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("код ответа %d (%s)", recorder.Code, recorder.Body)
+		}
+		var draw caldron.Draw
+		if err := json.Unmarshal(recorder.Body.Bytes(), &draw); err != nil {
+			t.Fatalf("разбор ответа: %v", err)
+		}
+		// Зерно раскрывается вместе с результатом: без него проверить
+		// розыгрыш нечем.
+		if draw.Seed == "" || draw.Commitment == "" {
+			t.Errorf("результат без зерна или обязательства: %+v", draw)
+		}
+
+		result := do(http.MethodGet, member, path+"/draw", "")
+		if result.Code != http.StatusOK {
+			t.Errorf("участник не получил результат: код %d", result.Code)
+		}
+	})
+
+	t.Run("арбитр назначается только до розыгрыша", func(t *testing.T) {
+		body := fmt.Sprintf(`{"user_id":%q}`, member)
+		// Котёл уже завершён розыгрышем.
+		if code := do(http.MethodPut, creator, path+"/arbiter", body).Code; code != http.StatusConflict {
+			t.Errorf("код ответа %d, ожидался %d", code, http.StatusConflict)
+		}
+	})
+}

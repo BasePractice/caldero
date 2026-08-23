@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 
 	"wish/services/shared/caldron"
 	"wish/services/shared/credit"
+	"wish/services/shared/marketplace"
 	"wish/services/shared/notify"
 	"wish/services/shared/wallets"
 
@@ -22,6 +24,11 @@ var (
 	ErrWalletUnavailable = errors.New("wallet is unavailable")
 	// ErrNotReady — котёл ещё не собран.
 	ErrNotReady = errors.New("caldron is not ready")
+	// ErrMarketplaceUnavailable — площадка не ответила, и цена подарка
+	// неизвестна.
+	ErrMarketplaceUnavailable = errors.New("marketplace is unavailable")
+	// ErrProductNotFound — товара с таким идентификатором нет.
+	ErrProductNotFound = errors.New("product not found")
 )
 
 // Wallet — то, что нужно от сервиса кошелька. Интерфейс объявлен здесь,
@@ -42,10 +49,18 @@ type Caldrons struct {
 	db       Database
 	wallet   Wallet
 	notifier *notify.Client
+	// catalogs нужен котлу подарков: список собирается из карточек
+	// площадки, и перед розыгрышем цены сверяются заново.
+	catalogs *marketplace.Registry
 }
 
-func NewCaldrons(db Database, wallet Wallet, notifier *notify.Client) *Caldrons {
-	return &Caldrons{db: db, wallet: wallet, notifier: notifier}
+func NewCaldrons(
+	db Database,
+	wallet Wallet,
+	notifier *notify.Client,
+	catalogs *marketplace.Registry,
+) *Caldrons {
+	return &Caldrons{db: db, wallet: wallet, notifier: notifier, catalogs: catalogs}
 }
 
 func (c *Caldrons) Create(
@@ -414,4 +429,295 @@ func expectedAmountText(pot caldron.Caldron, individual credit.Amount) string {
 	default:
 		return ""
 	}
+}
+
+// GiftRequest — товар, который участник хочет видеть в своём списке.
+// Название и цена берутся из карточки площадки, а не из запроса: иначе
+// в котёл попадёт подарок с выдуманной ценой, а по ценам считается,
+// что достанется победителю.
+type GiftRequest struct {
+	Provider  marketplace.Provider `json:"provider"`
+	ProductId string               `json:"product_id"`
+}
+
+// SetGifts заменяет список подарков участника целиком.
+//
+// Список правится как единое целое: ограничение «не дороже суммы котла»
+// относится к нему целиком, и проверять его поэлементно нельзя.
+func (c *Caldrons) SetGifts(
+	ctx context.Context,
+	user, id uuid.UUID,
+	requests []GiftRequest,
+) ([]caldron.Gift, error) {
+	pot, err := c.Caldron(ctx, user, id)
+	if err != nil {
+		return nil, err
+	}
+	if pot.Type != caldron.TypeGift {
+		return nil, fmt.Errorf("%w: gifts belong to a %s caldron", ErrForbidden, caldron.TypeGift)
+	}
+	if !pot.IsParticipant(user) {
+		return nil, fmt.Errorf("%w: only participants bring gift lists", ErrForbidden)
+	}
+	if pot.State.Terminal() {
+		return nil, fmt.Errorf("%w: caldron is %s", caldron.ErrInvalidTransition, pot.State)
+	}
+	if len(requests) > caldron.MaxGifts {
+		return nil, fmt.Errorf("%w: %d gifts, at most %d allowed",
+			caldron.ErrTooManyGifts, len(requests), caldron.MaxGifts)
+	}
+
+	gifts := make([]caldron.Gift, 0, len(requests))
+	for _, request := range requests {
+		gift, err := c.fetchGift(ctx, pot.Id, user, request)
+		if err != nil {
+			return nil, err
+		}
+		gifts = append(gifts, gift)
+	}
+
+	// Проверка идёт против расчётной суммы котла: на этапе сбора
+	// фактической ещё нет, а обещать участнику проверку «потом»
+	// значит принять заведомо непроходной список.
+	if err = caldron.ValidateGifts(gifts, pot.ExpectedTotal()); err != nil {
+		return nil, err
+	}
+	return c.db.ReplaceGifts(ctx, id, user, gifts)
+}
+
+// Gifts отдаёт список подарков участника. Чужие списки не показываются:
+// розыгрыш иначе перестаёт быть сюрпризом.
+func (c *Caldrons) Gifts(ctx context.Context, user, id uuid.UUID) ([]caldron.Gift, error) {
+	if _, err := c.Caldron(ctx, user, id); err != nil {
+		return nil, err
+	}
+	return c.db.Gifts(ctx, id, &user)
+}
+
+// SetArbiter назначает участника, который запустит розыгрыш за создателя.
+func (c *Caldrons) SetArbiter(
+	ctx context.Context,
+	creator, id, arbiter uuid.UUID,
+) (caldron.Caldron, error) {
+	pot, err := c.owned(ctx, creator, id)
+	if err != nil {
+		return caldron.Caldron{}, err
+	}
+	// Арбитр выбирается из числа участников: посторонний не должен
+	// решать судьбу чужих денег.
+	if !pot.IsParticipant(arbiter) {
+		return caldron.Caldron{}, fmt.Errorf("%w: arbiter must be a participant", ErrForbidden)
+	}
+	return c.db.SetArbiter(ctx, id, &arbiter)
+}
+
+// Draw проводит розыгрыш и передаёт собранное победителю.
+//
+// Результат неизменяем и идемпотентен: повторный вызов возвращает уже
+// состоявшийся розыгрыш, а не переигрывает его.
+func (c *Caldrons) Draw(ctx context.Context, actor, id uuid.UUID) (caldron.Draw, error) {
+	pot, err := c.Caldron(ctx, actor, id)
+	if err != nil {
+		return caldron.Draw{}, err
+	}
+	if !pot.CanDraw(actor) {
+		return caldron.Draw{}, fmt.Errorf("%w: only the creator or the arbiter draws", ErrForbidden)
+	}
+
+	// Уже разыгранный котёл возвращает свой результат: обрыв связи после
+	// розыгрыша не должен приводить ко второму исходу.
+	if existing, err := c.db.Draw(ctx, id); err == nil {
+		return existing, c.payout(ctx, pot, existing)
+	} else if !errors.Is(err, ErrNoDraw) {
+		return caldron.Draw{}, err
+	}
+
+	if pot.State != caldron.StateReady {
+		return caldron.Draw{}, fmt.Errorf("%w: state is %s", ErrNotReady, pot.State)
+	}
+
+	seed, commitment, err := c.db.Seed(ctx, id)
+	if err != nil {
+		return caldron.Draw{}, err
+	}
+	if len(seed) == 0 {
+		return caldron.Draw{}, fmt.Errorf("caldron %s has no draw seed", id)
+	}
+
+	members := pot.Members()
+	ids := make([]uuid.UUID, 0, len(members))
+	for _, participant := range members {
+		ids = append(ids, participant.UserId)
+	}
+	winner, err := caldron.SelectWinner(seed, ids)
+	if err != nil {
+		return caldron.Draw{}, err
+	}
+
+	draw := caldron.Draw{
+		CaldronId:  id,
+		Commitment: commitment,
+		Seed:       hex.EncodeToString(seed),
+		WinnerId:   winner,
+		Gifts:      []caldron.Gift{},
+		Payout:     pot.Collected,
+	}
+	if pot.Type == caldron.TypeGift {
+		gifts, err := c.db.Gifts(ctx, id, &winner)
+		if err != nil {
+			return caldron.Draw{}, err
+		}
+		// Цены сверяются заново: список мог быть собран неделю назад,
+		// а на площадке цены меняются.
+		gifts = c.refreshPrices(ctx, gifts)
+		draw.Gifts, draw.Total = caldron.SelectGifts(seed, gifts, pot.Collected)
+		draw.Payout = pot.Collected - draw.Total
+	}
+
+	saved, err := c.db.SaveDraw(ctx, draw)
+	if err != nil {
+		return caldron.Draw{}, err
+	}
+
+	c.order(ctx, saved)
+	if err = c.payout(ctx, pot, saved); err != nil {
+		// Розыгрыш состоялся и записан; средства переведёт повторный вызов
+		// с тем же ключом идемпотентности.
+		return saved, err
+	}
+	c.announceDraw(ctx, pot, saved)
+	return saved, nil
+}
+
+// DrawResult отдаёт результат розыгрыша вместе с раскрытым зерном.
+func (c *Caldrons) DrawResult(ctx context.Context, viewer, id uuid.UUID) (caldron.Draw, error) {
+	if _, err := c.Caldron(ctx, viewer, id); err != nil {
+		return caldron.Draw{}, err
+	}
+	return c.db.Draw(ctx, id)
+}
+
+// payout передаёт собранное победителю и завершает котёл.
+//
+// Победителю уходит вся сумма котла, а не только остаток сверх подарков:
+// оформить заказ на площадке от имени покупателя в общем случае нельзя
+// (ADR 0004), и выпавший набор подарков — это то, на что победитель
+// потратит деньги, а не то, что за него уже оплачено.
+func (c *Caldrons) payout(ctx context.Context, pot caldron.Caldron, draw caldron.Draw) error {
+	if pot.State == caldron.StateSettled {
+		return nil
+	}
+	if _, err := c.Settle(ctx, pot.CreatorId, pot.Id, draw.WinnerId); err != nil {
+		return err
+	}
+	return nil
+}
+
+// order пытается оформить заказ на площадке. Невозможность заказа —
+// не ошибка розыгрыша: публичные API площадок ориентированы на продавца,
+// и подарок заказывает сам победитель по ссылке.
+func (c *Caldrons) order(ctx context.Context, draw caldron.Draw) {
+	if c.catalogs == nil {
+		return
+	}
+	for _, gift := range draw.Gifts {
+		catalog, err := c.catalogs.Catalog(marketplace.Provider(gift.Provider))
+		if err != nil {
+			continue
+		}
+		order, err := catalog.Order(ctx, gift.ProductId, "")
+		switch {
+		case errors.Is(err, marketplace.ErrUnsupported):
+			slog.InfoContext(ctx, "Marketplace does not support ordering, order is left to the winner",
+				slog.String("provider", gift.Provider))
+		case err != nil:
+			slog.WarnContext(ctx, "Can't order the gift",
+				slog.String("product", gift.ProductId), slog.String("err", err.Error()))
+		default:
+			slog.InfoContext(ctx, "Gift ordered",
+				slog.String("product", gift.ProductId), slog.String("order", order))
+		}
+	}
+}
+
+// refreshPrices подтягивает актуальные цены. Недоступность площадки
+// не срывает розыгрыш: остаётся снимок цены, и это честнее, чем отменить
+// уже собранный котёл из-за чужого API.
+func (c *Caldrons) refreshPrices(ctx context.Context, gifts []caldron.Gift) []caldron.Gift {
+	if c.catalogs == nil {
+		return gifts
+	}
+
+	refreshed := make([]caldron.Gift, 0, len(gifts))
+	for _, gift := range gifts {
+		catalog, err := c.catalogs.Catalog(marketplace.Provider(gift.Provider))
+		if err != nil {
+			refreshed = append(refreshed, gift)
+			continue
+		}
+		product, err := catalog.Product(ctx, gift.ProductId)
+		if err != nil {
+			slog.WarnContext(ctx, "Can't refresh gift price, using the stored one",
+				slog.String("product", gift.ProductId), slog.String("err", err.Error()))
+			refreshed = append(refreshed, gift)
+			continue
+		}
+		gift.Price = product.Price
+		gift.PriceAt = product.FetchedAt
+		refreshed = append(refreshed, gift)
+	}
+	return refreshed
+}
+
+// announceDraw оповещает участников об итогах.
+func (c *Caldrons) announceDraw(ctx context.Context, pot caldron.Caldron, draw caldron.Draw) {
+	for _, participant := range pot.Participants {
+		// Имени победителя сервис не знает: профили живёт в users,
+		// и ходить туда ради строки в сообщении он не станет. Победителю
+		// сообщается «вы», остальным — короткий идентификатор.
+		winner := draw.WinnerId.String()[:8]
+		if participant.UserId == draw.WinnerId {
+			winner = "вы"
+		}
+		c.publish(ctx, participant.UserId, notify.EventCaldronDrawResult, map[string]string{
+			"caldron": pot.Title,
+			"winner":  winner,
+		}, fmt.Sprintf("caldron:%s:draw:%s", pot.Id, participant.UserId))
+	}
+}
+
+// fetchGift собирает подарок из карточки площадки.
+func (c *Caldrons) fetchGift(
+	ctx context.Context,
+	id, user uuid.UUID,
+	request GiftRequest,
+) (caldron.Gift, error) {
+	if c.catalogs == nil {
+		return caldron.Gift{}, fmt.Errorf("%w: no marketplace is configured", ErrMarketplaceUnavailable)
+	}
+	catalog, err := c.catalogs.Catalog(request.Provider)
+	if err != nil {
+		return caldron.Gift{}, fmt.Errorf("%w: %s", ErrProductNotFound, err)
+	}
+
+	product, err := catalog.Product(ctx, request.ProductId)
+	switch {
+	case errors.Is(err, marketplace.ErrNotFound):
+		return caldron.Gift{}, ErrProductNotFound
+	case err != nil:
+		// Подставлять вместо цены ноль нельзя: подарок попал бы
+		// в розыгрыш как бесплатный.
+		return caldron.Gift{}, fmt.Errorf("%w: %s", ErrMarketplaceUnavailable, err)
+	}
+
+	return caldron.Gift{
+		CaldronId: id,
+		UserId:    user,
+		Provider:  string(product.Provider),
+		ProductId: product.Id,
+		Title:     product.Title,
+		URL:       product.URL,
+		Price:     product.Price,
+		PriceAt:   product.FetchedAt,
+	}, nil
 }

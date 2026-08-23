@@ -1,0 +1,8 @@
+DROP TRIGGER IF EXISTS draw_immutable ON draw;
+DROP FUNCTION IF EXISTS fn_draw_is_immutable();
+DROP TABLE IF EXISTS draw;
+DROP TABLE IF EXISTS gift;
+ALTER TABLE caldron
+    DROP COLUMN IF EXISTS seed,
+    DROP COLUMN IF EXISTS commitment,
+    DROP COLUMN IF EXISTS arbiter_id;

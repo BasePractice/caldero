@@ -165,6 +165,12 @@ type Caldron struct {
 	Amount    credit.Amount `json:"amount,omitempty"`
 	MinAmount credit.Amount `json:"min_amount,omitempty"`
 	MaxAmount credit.Amount `json:"max_amount,omitempty"`
+	// ArbiterId — участник, которому создатель поручил запустить розыгрыш.
+	// Пустое значение означает, что запускает сам создатель.
+	ArbiterId *uuid.UUID `json:"arbiter_id,omitempty"`
+	// Commitment — обязательство розыгрыша: хеш зерна, опубликованный
+	// заранее. Само зерно раскрывается только после розыгрыша.
+	Commitment string `json:"commitment,omitempty"`
 	// WalletId — кошелёк котла. Средства участников лежат на нём,
 	// а не на кошельке создателя: иначе сбор смешивается с его деньгами.
 	WalletId *uuid.UUID `json:"wallet_id,omitempty"`
@@ -336,6 +342,39 @@ func (c Caldron) Complete() bool {
 		}
 	}
 	return true
+}
+
+// CanDraw сообщает, вправе ли пользователь запустить розыгрыш.
+//
+// По README это создатель или назначенный им арбитр из числа участников.
+// Право не зависит от того, участвует ли создатель в сборе: организатор
+// он в любом случае.
+func (c Caldron) CanDraw(user uuid.UUID) bool {
+	if c.CreatorId == user {
+		return true
+	}
+	return c.ArbiterId != nil && *c.ArbiterId == user
+}
+
+// ExpectedTotal — на какую сумму котёл рассчитан.
+//
+// Нужна до того, как все внесли: список подарков проверяется по ней ещё
+// на этапе сбора. Для внёсших берётся фактический взнос, для остальных —
+// то, чего от них ждут; у диапазона это нижняя граница, потому что
+// рассчитывать на верхнюю значит обещать участнику больше, чем он получит.
+func (c Caldron) ExpectedTotal() credit.Amount {
+	var total credit.Amount
+	for _, participant := range c.Members() {
+		switch {
+		case participant.State == ParticipantPaid:
+			total += participant.Contributed
+		case c.Mode == ModeRange:
+			total += c.MinAmount
+		default:
+			total += participant.Expected
+		}
+	}
+	return total
 }
 
 // IsParticipant сообщает, входит ли пользователь в котёл.

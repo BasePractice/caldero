@@ -133,3 +133,70 @@ X-Authorized-Id: {{user_id}}
     client.assert(response.status === 200 || response.status === 409,
         "Неожиданный ответ отмены: " + response.status)
 %}
+
+### Список подарков участника (котёл подарков)
+PUT {{caldron.url}}/caldrons/{{caldron_id}}/gifts
+Content-Type: application/json
+X-Authorized-Id: {{user_id}}
+
+[
+  {
+    "provider": "STUB",
+    "product_id": "coffee-machine"
+  }
+]
+
+> {%
+    client.assert(response.status === 200 || response.status === 400 || response.status === 409,
+        "Неожиданный ответ списка подарков: " + response.status)
+    if (response.status === 200) {
+        client.assert(response.body.length === 1, "Подарков в списке: " + response.body.length)
+        client.assert(response.body[0].price > 0, "Цена не взята из карточки площадки")
+    }
+%}
+
+### Мой список подарков
+GET {{caldron.url}}/caldrons/{{caldron_id}}/gifts
+Accept: application/json
+X-Authorized-Id: {{user_id}}
+
+> {%
+    client.assert(response.status === 200, "Список подарков не отдан")
+%}
+
+### Назначение арбитра
+PUT {{caldron.url}}/caldrons/{{caldron_id}}/arbiter
+Content-Type: application/json
+X-Authorized-Id: {{user_id}}
+
+{
+  "user_id": "00000000-0000-0000-0000-000000000002"
+}
+
+> {%
+    client.assert(response.status === 200 || response.status === 403 || response.status === 409,
+        "Неожиданный ответ назначения арбитра: " + response.status)
+%}
+
+### Запуск розыгрыша
+POST {{caldron.url}}/caldrons/{{caldron_id}}/draw
+X-Authorized-Id: {{user_id}}
+
+> {%
+    client.assert(response.status === 200 || response.status === 409 || response.status === 503,
+        "Неожиданный ответ розыгрыша: " + response.status)
+    if (response.status === 200) {
+        client.assert(response.body.seed !== undefined, "Зерно не раскрыто")
+        client.assert(response.body.commitment !== undefined, "Обязательство не отдано")
+    }
+%}
+
+### Итоги розыгрыша: зерно можно проверить против обязательства
+GET {{caldron.url}}/caldrons/{{caldron_id}}/draw
+Accept: application/json
+X-Authorized-Id: {{user_id}}
+
+> {%
+    client.assert(response.status === 200 || response.status === 404,
+        "Неожиданный ответ итогов: " + response.status)
+%}

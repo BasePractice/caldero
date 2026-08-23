@@ -13,6 +13,7 @@ import (
 
 	"wish/services/shared/caldron"
 	"wish/services/shared/credit"
+	"wish/services/shared/marketplace"
 	"wish/services/shared/notify"
 	"wish/services/shared/wallets"
 
@@ -26,24 +27,127 @@ type memoryDatabase struct {
 	mu           sync.Mutex
 	caldrons     map[uuid.UUID]caldron.Caldron
 	participants map[uuid.UUID][]caldron.Participant
+	gifts        map[uuid.UUID][]caldron.Gift
+	seeds        map[uuid.UUID][]byte
+	draws        map[uuid.UUID]caldron.Draw
 }
 
 func newMemoryDatabase() *memoryDatabase {
 	return &memoryDatabase{
 		caldrons:     make(map[uuid.UUID]caldron.Caldron),
 		participants: make(map[uuid.UUID][]caldron.Participant),
+		gifts:        make(map[uuid.UUID][]caldron.Gift),
+		seeds:        make(map[uuid.UUID][]byte),
+		draws:        make(map[uuid.UUID]caldron.Draw),
 	}
+}
+
+func (m *memoryDatabase) SetArbiter(
+	_ context.Context,
+	id uuid.UUID,
+	arbiter *uuid.UUID,
+) (caldron.Caldron, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	pot, ok := m.caldrons[id]
+	if !ok {
+		return caldron.Caldron{}, ErrNotFound
+	}
+	if pot.State.Terminal() {
+		return caldron.Caldron{}, caldron.ErrInvalidTransition
+	}
+	pot.ArbiterId = arbiter
+	m.caldrons[id] = pot
+	return m.build(id)
+}
+
+func (m *memoryDatabase) ReplaceGifts(
+	_ context.Context,
+	id, user uuid.UUID,
+	gifts []caldron.Gift,
+) ([]caldron.Gift, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	kept := make([]caldron.Gift, 0, len(m.gifts[id]))
+	for _, gift := range m.gifts[id] {
+		if gift.UserId != user {
+			kept = append(kept, gift)
+		}
+	}
+	m.gifts[id] = append(kept, gifts...)
+	return m.giftsOf(id, &user), nil
+}
+
+func (m *memoryDatabase) Gifts(_ context.Context, id uuid.UUID, user *uuid.UUID) ([]caldron.Gift, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.giftsOf(id, user), nil
+}
+
+// giftsOf вызывается под мьютексом.
+func (m *memoryDatabase) giftsOf(id uuid.UUID, user *uuid.UUID) []caldron.Gift {
+	found := make([]caldron.Gift, 0, len(m.gifts[id]))
+	for _, gift := range m.gifts[id] {
+		if user == nil || gift.UserId == *user {
+			found = append(found, gift)
+		}
+	}
+	return found
+}
+
+func (m *memoryDatabase) Seed(_ context.Context, id uuid.UUID) ([]byte, string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	seed, ok := m.seeds[id]
+	if !ok {
+		return nil, "", ErrNotFound
+	}
+	return seed, caldron.Commit(seed), nil
+}
+
+func (m *memoryDatabase) SaveDraw(_ context.Context, draw caldron.Draw) (caldron.Draw, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Розыгрыш бывает один: повтор возвращает уже сохранённый результат.
+	if existing, ok := m.draws[draw.CaldronId]; ok {
+		return existing, nil
+	}
+	draw.CreatedAt = time.Now()
+	m.draws[draw.CaldronId] = draw
+	return draw, nil
+}
+
+func (m *memoryDatabase) Draw(_ context.Context, id uuid.UUID) (caldron.Draw, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	draw, ok := m.draws[id]
+	if !ok {
+		return caldron.Draw{}, ErrNoDraw
+	}
+	return draw, nil
 }
 
 func (m *memoryDatabase) Create(_ context.Context, create caldron.Caldron) (caldron.Caldron, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	seed, err := caldron.NewSeed()
+	if err != nil {
+		return caldron.Caldron{}, err
+	}
+
 	create.Id = uuid.New()
 	create.State = caldron.StatePreparing
+	create.Commitment = caldron.Commit(seed)
 	create.CreatedAt = time.Now()
 	create.UpdatedAt = create.CreatedAt
 	m.caldrons[create.Id] = create
+	m.seeds[create.Id] = seed
 	return create, nil
 }
 
@@ -418,10 +522,11 @@ func newEnvironment(t *testing.T) *environment {
 	db := newMemoryDatabase()
 	wallet := newFakeWallet()
 	return &environment{
-		caldrons: NewCaldrons(db, wallet, notify.NewClient(events.start(t), uuid.New())),
-		db:       db,
-		wallet:   wallet,
-		events:   events,
+		caldrons: NewCaldrons(db, wallet, notify.NewClient(events.start(t), uuid.New()),
+			marketplace.NewRegistry(&marketplace.Stub{})),
+		db:     db,
+		wallet: wallet,
+		events: events,
 	}
 }
 

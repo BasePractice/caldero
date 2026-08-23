@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"wish/services"
 	"wish/services/shared/credit"
 )
 
@@ -88,4 +89,25 @@ func (r *Registry) Providers() []Provider {
 		providers = append(providers, provider)
 	}
 	return providers
+}
+
+// Build собирает реестр подключённых площадок.
+//
+// Каждая оборачивается кэшем: у публичных API есть ограничения частоты,
+// и обращаться к площадке на каждый показ списка или сверку цен нельзя.
+func Build(providers []string, cache services.Cache, ttl time.Duration) (*Registry, error) {
+	catalogs := make([]Catalog, 0, len(providers))
+	for _, provider := range providers {
+		switch Provider(provider) {
+		case ProviderStub:
+			catalogs = append(catalogs, NewCached(&Stub{}, cache, ttl))
+		case ProviderOzon, ProviderWildberry:
+			// Адаптеры площадок — T-076: их нельзя написать, не выяснив,
+			// что доступно стороннему приложению (ADR 0004).
+			return nil, fmt.Errorf("marketplace %s is not implemented yet", provider)
+		default:
+			return nil, fmt.Errorf("unknown marketplace %q", provider)
+		}
+	}
+	return NewRegistry(catalogs...), nil
 }

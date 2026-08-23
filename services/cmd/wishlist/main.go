@@ -46,7 +46,7 @@ func main() {
 		}
 		defer services.Close("cache", cache)
 
-		catalogs, err := buildCatalogs(cfg, cache)
+		catalogs, err := marketplace.Build(cfg.MarketplaceProviders, cache, cfg.MarketplaceCacheTTL)
 		if err != nil {
 			return err
 		}
@@ -95,25 +95,4 @@ func main() {
 
 		return services.ServeHTTP(ctx, cfg, fmt.Sprintf(":%d", *port), registerHttpHandlers(gifts))
 	})
-}
-
-// buildCatalogs собирает реестр площадок. Каждая оборачивается кэшем:
-// у публичных API есть ограничения частоты, и обращаться к площадке
-// на каждый показ списка нельзя.
-func buildCatalogs(cfg services.Config, cache services.Cache) (*marketplace.Registry, error) {
-	catalogs := make([]marketplace.Catalog, 0, len(cfg.MarketplaceProviders))
-	for _, provider := range cfg.MarketplaceProviders {
-		switch marketplace.Provider(provider) {
-		case marketplace.ProviderStub:
-			catalogs = append(catalogs,
-				marketplace.NewCached(&marketplace.Stub{}, cache, cfg.MarketplaceCacheTTL))
-		case marketplace.ProviderOzon, marketplace.ProviderWildberry:
-			// Адаптеры площадок — T-076: их нельзя написать, не выяснив,
-			// что доступно стороннему приложению (ADR 0004).
-			return nil, fmt.Errorf("marketplace %s is not implemented yet", provider)
-		default:
-			return nil, fmt.Errorf("unknown marketplace %q", provider)
-		}
-	}
-	return marketplace.NewRegistry(catalogs...), nil
 }

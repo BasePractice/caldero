@@ -29,6 +29,11 @@ func registerHttpHandlers(caldrons *Caldrons) http.Handler {
 	mux.HandleFunc("POST /caldrons/{id}/contribute", a.contribute)
 	mux.HandleFunc("POST /caldrons/{id}/cancel", a.cancel)
 	mux.HandleFunc("POST /caldrons/{id}/settle", a.settle)
+	mux.HandleFunc("PUT /caldrons/{id}/gifts", a.setGifts)
+	mux.HandleFunc("GET /caldrons/{id}/gifts", a.gifts)
+	mux.HandleFunc("PUT /caldrons/{id}/arbiter", a.setArbiter)
+	mux.HandleFunc("POST /caldrons/{id}/draw", a.draw)
+	mux.HandleFunc("GET /caldrons/{id}/draw", a.drawResult)
 	return services.Measure("caldron", mux)
 }
 
@@ -197,6 +202,96 @@ func (a *api) settle(w http.ResponseWriter, r *http.Request) {
 	writeJSON(r.Context(), w, http.StatusOK, pot)
 }
 
+// setGifts заменяет список подарков участника целиком: ограничение
+// «не дороже суммы котла» относится к списку целиком.
+func (a *api) setGifts(w http.ResponseWriter, r *http.Request) {
+	authorized, id, ok := a.request(w, r)
+	if !ok {
+		return
+	}
+
+	requests, err := services.DecodeJSON[[]GiftRequest](w, r)
+	if err != nil {
+		services.WriteDecodeError(w, err)
+		return
+	}
+
+	gifts, err := a.caldrons.SetGifts(r.Context(), authorized.Id, id, requests)
+	if err != nil {
+		writeError(r.Context(), w, "Can't set gifts", err)
+		return
+	}
+	writeJSON(r.Context(), w, http.StatusOK, gifts)
+}
+
+func (a *api) gifts(w http.ResponseWriter, r *http.Request) {
+	authorized, id, ok := a.request(w, r)
+	if !ok {
+		return
+	}
+
+	gifts, err := a.caldrons.Gifts(r.Context(), authorized.Id, id)
+	if err != nil {
+		writeError(r.Context(), w, "Can't load gifts", err)
+		return
+	}
+	writeJSON(r.Context(), w, http.StatusOK, gifts)
+}
+
+func (a *api) setArbiter(w http.ResponseWriter, r *http.Request) {
+	authorized, id, ok := a.request(w, r)
+	if !ok {
+		return
+	}
+
+	body, err := services.DecodeJSON[struct {
+		UserId uuid.UUID `json:"user_id"`
+	}](w, r)
+	if err != nil {
+		services.WriteDecodeError(w, err)
+		return
+	}
+	if body.UserId == uuid.Nil {
+		http.Error(w, "user_id is required", http.StatusBadRequest)
+		return
+	}
+
+	pot, err := a.caldrons.SetArbiter(r.Context(), authorized.Id, id, body.UserId)
+	if err != nil {
+		writeError(r.Context(), w, "Can't set arbiter", err)
+		return
+	}
+	writeJSON(r.Context(), w, http.StatusOK, pot)
+}
+
+func (a *api) draw(w http.ResponseWriter, r *http.Request) {
+	authorized, id, ok := a.request(w, r)
+	if !ok {
+		return
+	}
+
+	draw, err := a.caldrons.Draw(r.Context(), authorized.Id, id)
+	if err != nil {
+		writeError(r.Context(), w, "Can't draw", err)
+		return
+	}
+	writeJSON(r.Context(), w, http.StatusOK, draw)
+}
+
+func (a *api) drawResult(w http.ResponseWriter, r *http.Request) {
+	authorized, id, ok := a.request(w, r)
+	if !ok {
+		return
+	}
+
+	draw, err := a.caldrons.DrawResult(r.Context(), authorized.Id, id)
+	if err != nil {
+		writeError(r.Context(), w, "Can't load draw", err)
+		return
+	}
+	writeJSON(r.Context(), w, http.StatusOK, draw)
+}
+
 // request разбирает то, что нужно каждому обработчику: кто спрашивает
 // и про какой котёл.
 func (a *api) request(w http.ResponseWriter, r *http.Request) (*services.AuthorizedUser, uuid.UUID, bool) {
@@ -216,11 +311,13 @@ func (a *api) request(w http.ResponseWriter, r *http.Request) (*services.Authori
 // writeError переводит доменную ошибку в код ответа.
 func writeError(ctx context.Context, w http.ResponseWriter, message string, err error) {
 	switch {
-	case errors.Is(err, ErrNotFound), errors.Is(err, ErrParticipantNotFound):
+	case errors.Is(err, ErrNotFound), errors.Is(err, ErrParticipantNotFound),
+		errors.Is(err, ErrNoDraw), errors.Is(err, ErrProductNotFound):
 		http.Error(w, "Not found", http.StatusNotFound)
 	case errors.Is(err, ErrForbidden), errors.Is(err, caldron.ErrForbiddenTransition):
 		http.Error(w, "Forbidden", http.StatusForbidden)
-	case errors.Is(err, caldron.ErrInvalidContribution):
+	case errors.Is(err, caldron.ErrInvalidContribution),
+		errors.Is(err, caldron.ErrTooManyGifts), errors.Is(err, caldron.ErrGiftsTooExpensive):
 		// Сумма не подходит под правила котла — это ошибка в запросе.
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrAlreadyPaid), errors.Is(err, ErrNotReady),
@@ -228,7 +325,7 @@ func writeError(ctx context.Context, w http.ResponseWriter, message string, err 
 		// Состояние котла не позволяет операцию: повтор с тем же телом
 		// ничего не изменит.
 		http.Error(w, err.Error(), http.StatusConflict)
-	case errors.Is(err, ErrWalletUnavailable):
+	case errors.Is(err, ErrWalletUnavailable), errors.Is(err, ErrMarketplaceUnavailable):
 		slog.WarnContext(ctx, message, slog.String("err", err.Error()))
 		w.Header().Set("Retry-After", "5")
 		http.Error(w, "Dependency is unavailable", http.StatusServiceUnavailable)

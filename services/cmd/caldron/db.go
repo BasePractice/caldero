@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -26,6 +28,8 @@ var (
 	ErrParticipantNotFound = errors.New("participant not found")
 	// ErrAlreadyPaid — участник уже внёс средства.
 	ErrAlreadyPaid = errors.New("participant has already contributed")
+	// ErrNoDraw — розыгрыш ещё не состоялся.
+	ErrNoDraw = errors.New("caldron has not been drawn yet")
 )
 
 type Database interface {
@@ -57,6 +61,22 @@ type Database interface {
 	// внёсшим: возврат мог не завершиться из-за сбоя.
 	PendingRefunds(ctx context.Context, limit int) ([]caldron.Caldron, error)
 
+	// SetArbiter назначает участника, который запустит розыгрыш.
+	SetArbiter(ctx context.Context, id uuid.UUID, arbiter *uuid.UUID) (caldron.Caldron, error)
+	// ReplaceGifts заменяет список подарков участника целиком: список
+	// правят как единое целое, а не по одному элементу.
+	ReplaceGifts(ctx context.Context, id, user uuid.UUID, gifts []caldron.Gift) ([]caldron.Gift, error)
+	// Gifts отдаёт подарки участника, а при пустом user — всего котла.
+	Gifts(ctx context.Context, id uuid.UUID, user *uuid.UUID) ([]caldron.Gift, error)
+	// Seed отдаёт зерно розыгрыша. Наружу оно уходит только после
+	// розыгрыша, поэтому и метод отдельный.
+	Seed(ctx context.Context, id uuid.UUID) ([]byte, string, error)
+	// SaveDraw записывает результат розыгрыша. Повторный вызов возвращает
+	// уже сохранённый результат: розыгрыш бывает один.
+	SaveDraw(ctx context.Context, draw caldron.Draw) (caldron.Draw, error)
+	// Draw читает результат розыгрыша.
+	Draw(ctx context.Context, id uuid.UUID) (caldron.Draw, error)
+
 	Close() error
 	Stats() sql.DBStats
 	Ping(ctx context.Context) error
@@ -75,7 +95,8 @@ func NewDatabase(ctx context.Context, cfg services.Config) (Database, error) {
 }
 
 const caldronColumns = `id, creator_id, title, type, state, creator_participates, mode,
-	amount, min_amount, max_amount, wallet_id, settled_at, cancelled_at, created_at, updated_at`
+	amount, min_amount, max_amount, wallet_id, arbiter_id, COALESCE(commitment, ''),
+	settled_at, cancelled_at, created_at, updated_at`
 
 func scanCaldron(scanner interface{ Scan(...any) error }) (caldron.Caldron, error) {
 	var (
@@ -84,13 +105,22 @@ func scanCaldron(scanner interface{ Scan(...any) error }) (caldron.Caldron, erro
 		minAmount   sql.NullInt64
 		maxAmount   sql.NullInt64
 		walletId    sql.NullString
+		arbiterId   sql.NullString
 		settledAt   sql.NullTime
 		cancelledAt sql.NullTime
 	)
 	if err := scanner.Scan(&pot.Id, &pot.CreatorId, &pot.Title, &pot.Type, &pot.State,
 		&pot.CreatorParticipates, &pot.Mode, &amount, &minAmount, &maxAmount, &walletId,
+		&arbiterId, &pot.Commitment,
 		&settledAt, &cancelledAt, &pot.CreatedAt, &pot.UpdatedAt); err != nil {
 		return caldron.Caldron{}, err
+	}
+	if arbiterId.Valid {
+		parsed, err := uuid.Parse(arbiterId.String)
+		if err != nil {
+			return caldron.Caldron{}, fmt.Errorf("parsing arbiter id of caldron %s: %w", pot.Id, err)
+		}
+		pot.ArbiterId = &parsed
 	}
 
 	pot.Amount = credit.Amount(amount.Int64)
@@ -113,14 +143,23 @@ func scanCaldron(scanner interface{ Scan(...any) error }) (caldron.Caldron, erro
 }
 
 func (d ds) Create(ctx context.Context, create caldron.Caldron) (caldron.Caldron, error) {
+	// Зерно розыгрыша заводится вместе с котлом, а обязательство
+	// публикуется сразу: подобрать исход задним числом нельзя, если
+	// хеш зерна известен участникам до розыгрыша.
+	seed, err := caldron.NewSeed()
+	if err != nil {
+		return caldron.Caldron{}, err
+	}
+
 	row := d.db.QueryRowContext(ctx, `
 		INSERT INTO caldron (creator_id, title, type, state, creator_participates, mode,
-		                     amount, min_amount, max_amount)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		                     amount, min_amount, max_amount, seed, commitment)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING `+caldronColumns,
 		create.CreatorId, create.Title, create.Type, caldron.StatePreparing,
 		create.CreatorParticipates, create.Mode,
-		nullAmount(create.Amount), nullAmount(create.MinAmount), nullAmount(create.MaxAmount))
+		nullAmount(create.Amount), nullAmount(create.MinAmount), nullAmount(create.MaxAmount),
+		seed, caldron.Commit(seed))
 
 	pot, err := scanCaldron(row)
 	if err != nil {
@@ -478,6 +517,189 @@ func (d ds) PendingRefunds(ctx context.Context, limit int) ([]caldron.Caldron, e
 	return caldrons, nil
 }
 
+func (d ds) SetArbiter(
+	ctx context.Context,
+	id uuid.UUID,
+	arbiter *uuid.UUID,
+) (caldron.Caldron, error) {
+	var updated caldron.Caldron
+	err := d.inTx(ctx, func(tx *sql.Tx) error {
+		pot, err := d.lock(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		// Менять арбитра после розыгрыша бессмысленно, а до него —
+		// право создателя.
+		if pot.State.Terminal() {
+			return fmt.Errorf("%w: caldron is %s", caldron.ErrInvalidTransition, pot.State)
+		}
+
+		if _, err = tx.ExecContext(ctx, `
+			UPDATE caldron SET arbiter_id = $2, updated_at = current_timestamp
+			WHERE id = $1`, id, nullUUID(arbiter)); err != nil {
+			return fmt.Errorf("setting arbiter of caldron %s: %w", id, err)
+		}
+
+		updated, err = d.reload(ctx, tx, id)
+		return err
+	})
+	return updated, err
+}
+
+func (d ds) ReplaceGifts(
+	ctx context.Context,
+	id, user uuid.UUID,
+	gifts []caldron.Gift,
+) ([]caldron.Gift, error) {
+	var saved []caldron.Gift
+	err := d.inTx(ctx, func(tx *sql.Tx) error {
+		if _, err := d.lock(ctx, tx, id); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM gift WHERE caldron_id = $1 AND user_id = $2`, id, user); err != nil {
+			return fmt.Errorf("clearing gifts of %s: %w", user, err)
+		}
+
+		for _, gift := range gifts {
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO gift (caldron_id, user_id, provider, product_id, title, url, price, price_at)
+				VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''), $7, $8)`,
+				id, user, gift.Provider, gift.ProductId, gift.Title, gift.URL,
+				int64(gift.Price), gift.PriceAt); err != nil {
+				return fmt.Errorf("adding gift %s: %w", gift.ProductId, err)
+			}
+		}
+
+		var err error
+		saved, err = d.gifts(ctx, tx, id, &user)
+		return err
+	})
+	return saved, err
+}
+
+func (d ds) Gifts(ctx context.Context, id uuid.UUID, user *uuid.UUID) ([]caldron.Gift, error) {
+	return d.gifts(ctx, d.db, id, user)
+}
+
+func (d ds) gifts(
+	ctx context.Context,
+	q querier,
+	id uuid.UUID,
+	user *uuid.UUID,
+) ([]caldron.Gift, error) {
+	rows, err := q.QueryContext(ctx, `
+		SELECT caldron_id, user_id, provider, product_id, title, COALESCE(url, ''),
+		       price, price_at, created_at
+		FROM gift
+		WHERE caldron_id = $1 AND ($2::UUID IS NULL OR user_id = $2::UUID)
+		ORDER BY created_at`, id, nullUUID(user))
+	if err != nil {
+		return nil, fmt.Errorf("loading gifts of caldron %s: %w", id, err)
+	}
+	defer func() {
+		// Настоящая причина сбоя придёт из rows.Err().
+		_ = rows.Close()
+	}()
+
+	gifts := make([]caldron.Gift, 0)
+	for rows.Next() {
+		var (
+			gift  caldron.Gift
+			price int64
+		)
+		if err = rows.Scan(&gift.CaldronId, &gift.UserId, &gift.Provider, &gift.ProductId,
+			&gift.Title, &gift.URL, &price, &gift.PriceAt, &gift.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scanning gift: %w", err)
+		}
+		gift.Price = credit.Amount(price)
+		gifts = append(gifts, gift)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading gifts: %w", err)
+	}
+	return gifts, nil
+}
+
+func (d ds) Seed(ctx context.Context, id uuid.UUID) ([]byte, string, error) {
+	var (
+		seed       []byte
+		commitment sql.NullString
+	)
+	err := d.db.QueryRowContext(ctx,
+		`SELECT seed, commitment FROM caldron WHERE id = $1`, id).Scan(&seed, &commitment)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, "", ErrNotFound
+	}
+	if err != nil {
+		return nil, "", fmt.Errorf("loading seed of caldron %s: %w", id, err)
+	}
+	return seed, commitment.String, nil
+}
+
+func (d ds) SaveDraw(ctx context.Context, draw caldron.Draw) (caldron.Draw, error) {
+	gifts, err := json.Marshal(draw.Gifts)
+	if err != nil {
+		return caldron.Draw{}, fmt.Errorf("encoding drawn gifts: %w", err)
+	}
+
+	seed, err := hex.DecodeString(draw.Seed)
+	if err != nil {
+		return caldron.Draw{}, fmt.Errorf("decoding seed: %w", err)
+	}
+
+	result, err := scanDraw(d.db.QueryRowContext(ctx, `
+		INSERT INTO draw (caldron_id, commitment, seed, winner_id, gifts, total, payout)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (caldron_id) DO NOTHING
+		RETURNING caldron_id, commitment, seed, winner_id, gifts, total, payout, created_at`,
+		draw.CaldronId, draw.Commitment, seed, draw.WinnerId, gifts,
+		int64(draw.Total), int64(draw.Payout)))
+	if errors.Is(err, sql.ErrNoRows) {
+		// Розыгрыш уже состоялся: возвращается его результат, а не новый.
+		// Так повтор запроса после обрыва связи не переигрывает исход.
+		return d.Draw(ctx, draw.CaldronId)
+	}
+	if err != nil {
+		return caldron.Draw{}, fmt.Errorf("saving draw of caldron %s: %w", draw.CaldronId, err)
+	}
+	return result, nil
+}
+
+func (d ds) Draw(ctx context.Context, id uuid.UUID) (caldron.Draw, error) {
+	draw, err := scanDraw(d.db.QueryRowContext(ctx, `
+		SELECT caldron_id, commitment, seed, winner_id, gifts, total, payout, created_at
+		FROM draw WHERE caldron_id = $1`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return caldron.Draw{}, ErrNoDraw
+	}
+	if err != nil {
+		return caldron.Draw{}, fmt.Errorf("loading draw of caldron %s: %w", id, err)
+	}
+	return draw, nil
+}
+
+func scanDraw(scanner interface{ Scan(...any) error }) (caldron.Draw, error) {
+	var (
+		draw   caldron.Draw
+		seed   []byte
+		gifts  []byte
+		total  int64
+		payout int64
+	)
+	if err := scanner.Scan(&draw.CaldronId, &draw.Commitment, &seed, &draw.WinnerId,
+		&gifts, &total, &payout, &draw.CreatedAt); err != nil {
+		return caldron.Draw{}, err
+	}
+	if err := json.Unmarshal(gifts, &draw.Gifts); err != nil {
+		return caldron.Draw{}, fmt.Errorf("decoding drawn gifts: %w", err)
+	}
+	draw.Seed = hex.EncodeToString(seed)
+	draw.Total = credit.Amount(total)
+	draw.Payout = credit.Amount(payout)
+	return draw, nil
+}
+
 // lock блокирует строку котла до конца транзакции: без этого два
 // одновременных взноса оба увидят котёл незавершённым, а два одновременных
 // перехода оба сочтут себя допустимыми.
@@ -530,6 +752,13 @@ func (d ds) Stats() sql.DBStats { return d.db.Stats() }
 func (d ds) Ping(ctx context.Context) error { return d.db.PingContext(ctx) }
 
 func (d ds) Close() error { return d.db.Close() }
+
+func nullUUID(value *uuid.UUID) any {
+	if value == nil {
+		return nil
+	}
+	return *value
+}
 
 func nullAmount(amount credit.Amount) any {
 	if amount == 0 {

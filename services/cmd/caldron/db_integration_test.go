@@ -4,9 +4,12 @@ package main
 
 import (
 	"context"
+	"database/sql"
+	"encoding/hex"
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"wish/services/shared/caldron"
 	"wish/services/shared/credit"
@@ -325,5 +328,184 @@ func TestSetWalletOnce(t *testing.T) {
 	}
 	if current.WalletId == nil || *current.WalletId != wallet {
 		t.Errorf("кошелёк котла подменён: %+v", current.WalletId)
+	}
+}
+
+func TestGiftsAndSeed(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDatabase(t)
+	creator := uuid.New()
+	member := uuid.New()
+	pot := createFixed(t, db, creator, 2_500_00)
+
+	seed, commitment, err := db.Seed(ctx, pot.Id)
+	if err != nil {
+		t.Fatalf("чтение зерна: %v", err)
+	}
+	if len(seed) != caldron.SeedSize {
+		t.Fatalf("длина зерна %d, ожидалось %d", len(seed), caldron.SeedSize)
+	}
+	// Обязательство заводится вместе с котлом: подобрать исход задним
+	// числом нельзя, если хеш зерна опубликован до розыгрыша.
+	if commitment != caldron.Commit(seed) {
+		t.Error("обязательство не соответствует зерну")
+	}
+	if pot.Commitment != commitment {
+		t.Errorf("обязательство котла %q не совпало с сохранённым", pot.Commitment)
+	}
+
+	gift := caldron.Gift{
+		Provider: "STUB", ProductId: "coffee-machine", Title: "Кофеварка",
+		URL:   "https://example.invalid/product/coffee-machine",
+		Price: 1_000_00, PriceAt: time.Now(),
+	}
+	saved, err := db.ReplaceGifts(ctx, pot.Id, creator, []caldron.Gift{gift})
+	if err != nil {
+		t.Fatalf("сохранение подарков: %v", err)
+	}
+	if len(saved) != 1 || saved[0].Price != 1_000_00 {
+		t.Fatalf("подарки сохранены неверно: %+v", saved)
+	}
+
+	t.Run("список заменяется целиком", func(t *testing.T) {
+		second := gift
+		second.ProductId = "kettle"
+		second.Title = "Чайник"
+		replaced, err := db.ReplaceGifts(ctx, pot.Id, creator, []caldron.Gift{second})
+		if err != nil {
+			t.Fatalf("замена списка: %v", err)
+		}
+		if len(replaced) != 1 || replaced[0].ProductId != "kettle" {
+			t.Errorf("список не заменён: %+v", replaced)
+		}
+	})
+
+	t.Run("чужие подарки не затрагиваются", func(t *testing.T) {
+		other := gift
+		other.ProductId = "blender"
+		if _, err := db.ReplaceGifts(ctx, pot.Id, member, []caldron.Gift{other}); err != nil {
+			t.Fatalf("сохранение чужих подарков: %v", err)
+		}
+		if _, err := db.ReplaceGifts(ctx, pot.Id, creator, nil); err != nil {
+			t.Fatalf("очистка своего списка: %v", err)
+		}
+
+		all, err := db.Gifts(ctx, pot.Id, nil)
+		if err != nil {
+			t.Fatalf("чтение подарков котла: %v", err)
+		}
+		if len(all) != 1 || all[0].UserId != member {
+			t.Errorf("чужой список пострадал: %+v", all)
+		}
+	})
+}
+
+func TestDrawIsStoredOnce(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDatabase(t)
+	creator := uuid.New()
+	pot := createFixed(t, db, creator, 2_500_00)
+	seed, commitment, err := db.Seed(ctx, pot.Id)
+	if err != nil {
+		t.Fatalf("чтение зерна: %v", err)
+	}
+
+	if _, err = db.Draw(ctx, pot.Id); !errors.Is(err, ErrNoDraw) {
+		t.Errorf("до розыгрыша получено %v, ожидалась %v", err, ErrNoDraw)
+	}
+
+	draw := caldron.Draw{
+		CaldronId: pot.Id, Commitment: commitment, Seed: hex.EncodeToString(seed),
+		WinnerId: creator, Gifts: []caldron.Gift{}, Total: 0, Payout: 2_500_00,
+	}
+	saved, err := db.SaveDraw(ctx, draw)
+	if err != nil {
+		t.Fatalf("сохранение розыгрыша: %v", err)
+	}
+	if saved.WinnerId != creator {
+		t.Errorf("победитель %s, ожидался %s", saved.WinnerId, creator)
+	}
+
+	// Розыгрыш бывает один: повтор возвращает уже состоявшийся результат,
+	// а не переигрывает исход.
+	other := draw
+	other.WinnerId = uuid.New()
+	again, err := db.SaveDraw(ctx, other)
+	if err != nil {
+		t.Fatalf("повторное сохранение: %v", err)
+	}
+	if again.WinnerId != creator {
+		t.Errorf("повтор переиграл исход: %s", again.WinnerId)
+	}
+}
+
+// TestDrawIsImmutable проверяет запрет на правку результата даже мимо
+// сервиса: уникальности мало — она не запрещает переписать первый розыгрыш.
+func TestDrawIsImmutable(t *testing.T) {
+	ctx := context.Background()
+	cfg := testsupport.Prepare(t, "caldron")
+	db, err := NewDatabase(ctx, cfg)
+	if err != nil {
+		t.Fatalf("не удалось открыть репозиторий: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	creator := uuid.New()
+	pot, err := db.Create(ctx, caldron.Caldron{
+		CreatorId: creator, Title: "Юбилей", Type: caldron.TypeGift,
+		CreatorParticipates: true, Mode: caldron.ModeFixed, Amount: 2_500_00,
+	})
+	if err != nil {
+		t.Fatalf("создание котла: %v", err)
+	}
+	seed, commitment, err := db.Seed(ctx, pot.Id)
+	if err != nil {
+		t.Fatalf("чтение зерна: %v", err)
+	}
+	if _, err = db.SaveDraw(ctx, caldron.Draw{
+		CaldronId: pot.Id, Commitment: commitment, Seed: hex.EncodeToString(seed),
+		WinnerId: creator, Gifts: []caldron.Gift{}, Payout: 2_500_00,
+	}); err != nil {
+		t.Fatalf("сохранение розыгрыша: %v", err)
+	}
+
+	raw, err := sql.Open("postgres", cfg.PostgresURL)
+	if err != nil {
+		t.Fatalf("подключение к базе: %v", err)
+	}
+	t.Cleanup(func() { _ = raw.Close() })
+
+	if _, err = raw.ExecContext(ctx,
+		`UPDATE draw SET winner_id = $1 WHERE caldron_id = $2`, uuid.New(), pot.Id); err == nil {
+		t.Error("результат розыгрыша удалось переписать")
+	}
+	if _, err = raw.ExecContext(ctx, `DELETE FROM draw WHERE caldron_id = $1`, pot.Id); err == nil {
+		t.Error("результат розыгрыша удалось удалить")
+	}
+}
+
+func TestSetArbiter(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDatabase(t)
+	creator := uuid.New()
+	member := uuid.New()
+	pot := createFixed(t, db, creator, 2_500_00)
+
+	updated, err := db.SetArbiter(ctx, pot.Id, &member)
+	if err != nil {
+		t.Fatalf("назначение арбитра: %v", err)
+	}
+	if updated.ArbiterId == nil || *updated.ArbiterId != member {
+		t.Fatalf("арбитр не назначен: %+v", updated.ArbiterId)
+	}
+	if !updated.CanDraw(member) || !updated.CanDraw(creator) {
+		t.Error("право на розыгрыш определено неверно")
+	}
+
+	if _, err = db.Transition(ctx, pot.Id, caldron.StateCancelled, caldron.ActorCreator); err != nil {
+		t.Fatalf("отмена: %v", err)
+	}
+	if _, err = db.SetArbiter(ctx, pot.Id, &creator); !errors.Is(err, caldron.ErrInvalidTransition) {
+		t.Errorf("арбитр назначен в отменённом котле: %v", err)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"wish/services"
+	"wish/services/shared/marketplace"
 	"wish/services/shared/notify"
 	"wish/services/shared/wallets"
 )
@@ -55,7 +56,18 @@ func main() {
 			slog.Warn("Notifications are disabled: NOTIFY_ENDPOINT or SERVICE_USER_ID is empty")
 		}
 
-		caldrons := NewCaldrons(db, wallet, notifier)
+		cache, err := services.NewDefaultCache(ctx, cfg)
+		if err != nil {
+			return fmt.Errorf("connecting to cache: %w", err)
+		}
+		defer services.Close("cache", cache)
+
+		catalogs, err := marketplace.Build(cfg.MarketplaceProviders, cache, cfg.MarketplaceCacheTTL)
+		if err != nil {
+			return err
+		}
+
+		caldrons := NewCaldrons(db, wallet, notifier, catalogs)
 		// Возвраты добиваются фоном: сбой посреди отмены иначе оставил бы
 		// средства участников в котле навсегда.
 		go services.RunPeriodic(ctx, "caldron-refunds", cfg.CaldronRefundInterval,

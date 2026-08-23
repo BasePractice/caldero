@@ -1147,6 +1147,189 @@
           ]
         }
       }
+    },
+    {
+      "@comment": "Защищённый: список подарков участника",
+      "endpoint": "/api/v1/caldrons/{id}/gifts",
+      "method": "PUT",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type",
+        "Content-Length"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://caldron:51057"
+          ],
+          "url_pattern": "/caldrons/{id}/gifts",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "@comment": "Защищённый: мой список подарков",
+      "endpoint": "/api/v1/caldrons/{id}/gifts",
+      "method": "GET",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://caldron:51057"
+          ],
+          "url_pattern": "/caldrons/{id}/gifts",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "@comment": "Защищённый: назначение арбитра розыгрыша",
+      "endpoint": "/api/v1/caldrons/{id}/arbiter",
+      "method": "PUT",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type",
+        "Content-Length"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://caldron:51057"
+          ],
+          "url_pattern": "/caldrons/{id}/arbiter",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "@comment": "Защищённый: запуск розыгрыша",
+      "endpoint": "/api/v1/caldrons/{id}/draw",
+      "method": "POST",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type",
+        "Content-Length"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://caldron:51057"
+          ],
+          "url_pattern": "/caldrons/{id}/draw",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "@comment": "Защищённый: итоги розыгрыша с раскрытым зерном",
+      "endpoint": "/api/v1/caldrons/{id}/draw",
+      "method": "GET",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://caldron:51057"
+          ],
+          "url_pattern": "/caldrons/{id}/draw",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+      }
     }
   ],
   "sequential_start": true,
