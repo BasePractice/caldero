@@ -7,6 +7,8 @@ import (
 func registerHttpHandlers(service *Service) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /register", service.handleRegister)
+	mux.HandleFunc("GET /auth", service.handleAuthorization)
+	mux.HandleFunc("POST /auth", service.handleAuthorization)
 	mux.HandleFunc("POST /token", service.handleToken)
 	mux.HandleFunc("GET /me", service.protect(handleUserInformation))
 	mux.HandleFunc("GET /.well-known/jwks.json", service.handleJWKS)

@@ -72,6 +72,10 @@ func newService(ctx context.Context, cfg services.Config) (*Service, error) {
 		IDTokenLifespan:            time.Hour,
 		SendDebugMessagesToClients: cfg.OAuth2Debug,
 		GlobalSecret:               secret,
+		AuthorizeCodeLifespan:      10 * time.Minute,
+		// Публичный клиент не может сохранить секрет, поэтому без PKCE
+		// перехваченный код обменивается на токен кем угодно.
+		EnforcePKCEForPublicClients: true,
 	}
 	db, err := NewDatabaseUsers(cfg)
 	if err != nil {
@@ -92,8 +96,8 @@ func newService(ctx context.Context, cfg services.Config) (*Service, error) {
 			OpenIDConnectTokenStrategy: compose.NewOpenIDConnectStrategy(keyManager.GetPrivateKey, oauth2Config),
 			Signer:                     &jwt.DefaultSigner{GetPrivateKey: keyManager.GetPrivateKey},
 		},
-		// OAuth2AuthorizeExplicitFactory отключена: хранилище кодов авторизации
-		// не реализовано, и с ней любой запрос к /auth заканчивался паникой.
+		compose.OAuth2AuthorizeExplicitFactory,
+		compose.OAuth2PKCEFactory,
 		compose.OAuth2ResourceOwnerPasswordCredentialsFactory,
 		compose.OAuth2RefreshTokenGrantFactory,
 		compose.OAuth2TokenIntrospectionFactory,

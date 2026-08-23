@@ -36,6 +36,10 @@ type DatabaseUsers interface {
 	RevokeRefreshToken(ctx context.Context, requestID string) error
 	RevokeAccessToken(ctx context.Context, requestID string) error
 
+	CreatePKCERequestSession(ctx context.Context, signature string, requester fosite.Requester) error
+	GetPKCERequestSession(ctx context.Context, signature string, session fosite.Session) (fosite.Requester, error)
+	DeletePKCERequestSession(ctx context.Context, signature string) error
+
 	CreateUser(ctx context.Context, username, passwordHash string) (*User, error)
 	GetUser(ctx context.Context, username string) (*User, error)
 	Authenticate(ctx context.Context, username, secret string) (string, error)
@@ -56,21 +60,51 @@ type ds struct {
 	db *sql.DB
 }
 
-// errAuthorizeCodeUnsupported возвращается вместо паники: Authorization Code
-// Flow не реализован, поэтому compose.OAuth2AuthorizeExplicitFactory отключён
-// и до этих методов дойти нельзя. Если фабрику вернут, ошибка укажет причину.
-var errAuthorizeCodeUnsupported = errors.New("authorization code flow is not implemented")
-
-func (s *ds) CreateAuthorizeCodeSession(context.Context, string, fosite.Requester) error {
-	return errAuthorizeCodeUnsupported
+func (s *ds) CreateAuthorizeCodeSession(ctx context.Context, code string, request fosite.Requester) error {
+	return s.createTokenSession(ctx, "code", code, request)
 }
 
-func (s *ds) GetAuthorizeCodeSession(context.Context, string, fosite.Session) (fosite.Requester, error) {
-	return nil, errAuthorizeCodeUnsupported
+// GetAuthorizeCodeSession отличает использованный код от несуществующего:
+// fosite ожидает ErrInvalidatedAuthorizeCode вместе с запросом, чтобы отозвать
+// все токены, выданные по этому запросу. Молчаливое "не найдено" оставило бы
+// перехват кода незамеченным.
+func (s *ds) GetAuthorizeCodeSession(ctx context.Context, code string, session fosite.Session) (fosite.Requester, error) {
+	request, used, err := s.getCodeSession(ctx, code, session)
+	if err != nil {
+		return nil, err
+	}
+	if used {
+		return request, fosite.ErrInvalidatedAuthorizeCode
+	}
+	return request, nil
 }
 
-func (s *ds) InvalidateAuthorizeCodeSession(context.Context, string) error {
-	return errAuthorizeCodeUnsupported
+func (s *ds) InvalidateAuthorizeCodeSession(ctx context.Context, code string) error {
+	result, err := s.db.ExecContext(ctx,
+		"UPDATE oauth_tokens SET used = TRUE WHERE signature = $1 AND token_type = 'code'", code)
+	if err != nil {
+		return fmt.Errorf("invalidating authorize code: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("invalidating authorize code: %w", err)
+	}
+	if affected == 0 {
+		return fosite.ErrNotFound
+	}
+	return nil
+}
+
+func (s *ds) CreatePKCERequestSession(ctx context.Context, signature string, request fosite.Requester) error {
+	return s.createTokenSession(ctx, "pkce", signature, request)
+}
+
+func (s *ds) GetPKCERequestSession(ctx context.Context, signature string, session fosite.Session) (fosite.Requester, error) {
+	return s.getTokenSession(ctx, "pkce", signature, session)
+}
+
+func (s *ds) DeletePKCERequestSession(ctx context.Context, signature string) error {
+	return s.deleteTokenSession(ctx, "pkce", signature)
 }
 
 // RotateRefreshToken вызывается refresh-потоком безусловно, поэтому паника
@@ -322,7 +356,7 @@ func (s *ds) createTokenSession(ctx context.Context, tokenType, signature string
 
 	// Срок жизни берётся по типу токена: у refresh он на порядок длиннее
 	// access, и подстановка чужого срока обрывала refresh-поток через час.
-	expiresAt := request.GetSession().GetExpiresAt(tokenKind(tokenType))
+	expiresAt := expiryOf(request, tokenType)
 	_, err = s.db.ExecContext(ctx,
 		"INSERT INTO oauth_tokens (signature, request_id, session_data, expires_at, token_type) VALUES ($1, $2, $3, $4, $5)",
 		signature,
@@ -338,10 +372,25 @@ func (s *ds) createTokenSession(ctx context.Context, tokenType, signature string
 }
 
 func tokenKind(tokenType string) fosite.TokenType {
-	if tokenType == "refresh" {
+	switch tokenType {
+	case "refresh":
 		return fosite.RefreshToken
+	case "code", "pkce":
+		return fosite.AuthorizeCode
+	default:
+		return fosite.AccessToken
 	}
-	return fosite.AccessToken
+}
+
+// defaultSessionLifespan — запас на случай, когда стратегия не проставила
+// срок жизни в сессии. Без него такая запись считалась бы просроченной сразу.
+const defaultSessionLifespan = 10 * time.Minute
+
+func expiryOf(request fosite.Requester, tokenType string) time.Time {
+	if expires := request.GetSession().GetExpiresAt(tokenKind(tokenType)); !expires.IsZero() {
+		return expires
+	}
+	return time.Now().Add(defaultSessionLifespan)
 }
 
 func (s *ds) getTokenSession(ctx context.Context, tokenType, signature string, session fosite.Session) (fosite.Requester, error) {
@@ -379,6 +428,44 @@ func (s *ds) getTokenSession(ctx context.Context, tokenType, signature string, s
 		return nil, fmt.Errorf("decoding %s token session: %w", tokenType, err)
 	}
 	return request, nil
+}
+
+// getCodeSession отличается от getTokenSession тем, что читает признак
+// использования и не отбрасывает просроченный код молча: fosite сам решает,
+// что делать с найденным, но невалидным кодом.
+func (s *ds) getCodeSession(ctx context.Context, code string, session fosite.Session) (fosite.Requester, bool, error) {
+	var data []byte
+	var expiresAt time.Time
+	var used bool
+
+	err := s.db.QueryRowContext(ctx,
+		"SELECT session_data, expires_at, used FROM oauth_tokens WHERE signature = $1 AND token_type = 'code'",
+		code,
+	).Scan(&data, &expiresAt, &used)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, false, fosite.ErrNotFound
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("loading authorize code session: %w", err)
+	}
+
+	_, clientId, err := decodeTokenSession(data, nil, nil)
+	if err != nil {
+		return nil, false, fmt.Errorf("decoding authorize code session: %w", err)
+	}
+	client, err := s.GetClient(ctx, clientId)
+	if err != nil {
+		return nil, false, fmt.Errorf("loading client %s of authorize code: %w", clientId, err)
+	}
+
+	request, _, err := decodeTokenSession(data, session, client)
+	if err != nil {
+		return nil, false, fmt.Errorf("decoding authorize code session: %w", err)
+	}
+	if !used && expiresAt.Before(time.Now()) {
+		return request, false, fosite.ErrTokenExpired
+	}
+	return request, used, nil
 }
 
 func (s *ds) deleteTokenSession(ctx context.Context, tokenType, signature string) error {

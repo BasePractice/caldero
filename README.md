@@ -32,9 +32,9 @@ curl http://localhost:8080/api/v1/register -d 'username=...&password=...'
 | Keycloak (по умолчанию) | `AUTH_HOST=http://keycloak:8080` | `docker compose --profile keycloak up` |
 | Собственный на fosite | `AUTH_HOST=http://users:51053` | `docker compose up` |
 
-Собственный провайдер поддерживает гранты `password` и `refresh_token`,
-выдаёт RS256 JWT и публикует ключи на `/.well-known/jwks.json`.
-Authorization Code Flow в нём не реализован.
+Собственный провайдер поддерживает гранты `authorization_code` (с PKCE),
+`password` и `refresh_token`, выдаёт RS256 JWT и публикует ключи
+на `/.well-known/jwks.json`. Страница входа отдаётся на `GET /auth`.
 
 ## Основные цели
 
