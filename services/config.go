@@ -140,6 +140,11 @@ type Config struct {
 	// WishlistReleaseInterval — как часто освобождать просроченные резервы.
 	// Ноль отключает освобождение.
 	WishlistReleaseInterval time.Duration
+	// MarketplaceWalletId — кошелёк площадки: покупка это уход средств
+	// из системы к продавцу, и у этого ухода должен быть адресат. Пустое
+	// значение выключает покупки: списывать «в никуда» значило бы нарушить
+	// сходимость средств в системе.
+	MarketplaceWalletId uuid.UUID
 	// FeeWalletId — кошелёк, на который удерживается комиссия. Пустое
 	// значение означает, что комиссия не удерживается: списывать её
 	// «в никуда» значило бы нарушить сходимость средств в системе.
@@ -363,6 +368,14 @@ func LoadConfig() (Config, error) {
 		return Config{}, fmt.Errorf("parsing WISHLIST_RELEASE_INTERVAL: %w", err)
 	}
 	cfg.WishlistReleaseInterval = wishlistRelease
+
+	if id := env("MARKETPLACE_WALLET_ID", ""); id != "" {
+		shopWallet, err := uuid.Parse(id)
+		if err != nil {
+			return Config{}, fmt.Errorf("parsing MARKETPLACE_WALLET_ID: %w", err)
+		}
+		cfg.MarketplaceWalletId = shopWallet
+	}
 
 	if id := env("FEE_WALLET_ID", ""); id != "" {
 		feeWallet, err := uuid.Parse(id)

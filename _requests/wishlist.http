@@ -151,3 +151,72 @@ X-Authorized-Id: {{user_id}}
 > {%
     client.assert(response.status === 204, "Элемент не удалён: " + response.status)
 %}
+
+### Шопоголик: случайный набор покупок в пределах бюджета
+POST {{wishlist.url}}/shopping
+Content-Type: application/json
+X-Authorized-Id: {{user_id}}
+
+{
+  "budget": 1000000,
+  "items": [
+    {
+      "provider": "STUB",
+      "product_id": "coffee-machine"
+    },
+    {
+      "provider": "STUB",
+      "product_id": "kettle"
+    },
+    {
+      "provider": "STUB",
+      "product_id": "blender"
+    }
+  ]
+}
+
+> {%
+    client.assert(response.status === 200 || response.status === 409 || response.status === 503,
+        "Неожиданный ответ шопоголика: " + response.status)
+    if (response.status === 200) {
+        client.assert(response.body.spent <= response.body.budget,
+            "Потрачено больше бюджета: " + response.body.spent)
+        client.global.set("run_id", response.body.id)
+    }
+%}
+
+### Бюджет обязателен
+POST {{wishlist.url}}/shopping
+Content-Type: application/json
+X-Authorized-Id: {{user_id}}
+
+{
+  "items": [
+    {
+      "provider": "STUB",
+      "product_id": "coffee-machine"
+    }
+  ]
+}
+
+> {%
+    client.assert(response.status === 400, "Прогон без бюджета должен отклоняться")
+%}
+
+### История прогонов
+GET {{wishlist.url}}/shopping
+Accept: application/json
+X-Authorized-Id: {{user_id}}
+
+> {%
+    client.assert(response.status === 200, "История не отдана")
+%}
+
+### Чужой прогон не виден
+GET {{wishlist.url}}/shopping/{{run_id}}
+Accept: application/json
+X-Authorized-Id: 00000000-0000-0000-0000-000000000009
+
+> {%
+    client.assert(response.status === 404, "Чужой прогон не должен быть виден")
+%}

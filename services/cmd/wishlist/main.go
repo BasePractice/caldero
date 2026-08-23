@@ -89,10 +89,21 @@ func main() {
 			slog.Warn("Fee is configured but FEE_WALLET_ID is empty: fee will not be charged")
 		}
 
+		var shopWallet *uuid.UUID
+		if cfg.MarketplaceWalletId != uuid.Nil {
+			shopWallet = &cfg.MarketplaceWalletId
+		} else {
+			// Не ошибка старта: список желаний работает и без покупок,
+			// отказ придёт только при запуске шопоголика.
+			slog.Warn("Shopping is disabled: MARKETPLACE_WALLET_ID is empty")
+		}
+
 		gifts := NewGifts(db, catalogs, notifier, wallet, fee, feeWallet, cfg.WishlistReservationTTL)
+		shopaholic := NewShopaholic(db, catalogs, wallet, shopWallet)
 		go services.RunPeriodic(ctx, "reservation-release", cfg.WishlistReleaseInterval,
 			gifts.ReleaseExpired)
 
-		return services.ServeHTTP(ctx, cfg, fmt.Sprintf(":%d", *port), registerHttpHandlers(gifts))
+		return services.ServeHTTP(ctx, cfg, fmt.Sprintf(":%d", *port),
+			registerHttpHandlers(gifts, shopaholic))
 	})
 }

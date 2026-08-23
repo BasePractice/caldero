@@ -4,15 +4,16 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
 
 	"wish/services/shared/credit"
+	"wish/services/shared/pick"
 )
 
 // SeedSize — размер случайного зерна розыгрыша.
@@ -106,134 +107,30 @@ func VerifyCommitment(seed []byte, commitment string) bool {
 	return hmac.Equal(expected, actual)
 }
 
-// stream — детерминированный поток случайных чисел из зерна.
-//
-// HMAC-SHA256 с меткой и счётчиком: два розыгрыша от одного зерна
-// (победитель и набор подарков) не должны использовать одни и те же байты,
-// иначе они окажутся связаны.
-type stream struct {
-	seed    []byte
-	label   string
-	counter uint64
-	buffer  []byte
-}
-
-func newStream(seed []byte, label string) *stream {
-	return &stream{seed: seed, label: label}
-}
-
-func (s *stream) next() uint64 {
-	if len(s.buffer) < 8 {
-		mac := hmac.New(sha256.New, s.seed)
-		// hash.Hash по контракту не возвращает ошибку записи.
-		_, _ = mac.Write([]byte(s.label))
-		var counter [8]byte
-		binary.BigEndian.PutUint64(counter[:], s.counter)
-		_, _ = mac.Write(counter[:])
-		s.counter++
-		s.buffer = mac.Sum(nil)
-	}
-	value := binary.BigEndian.Uint64(s.buffer[:8])
-	s.buffer = s.buffer[8:]
-	return value
-}
-
-// index возвращает равномерно распределённое число от 0 до n-1.
-//
-// Простой остаток от деления смещает распределение: при n, не делящем
-// 2^64 нацело, младшие значения выпадают чаще. Значения из «хвоста»
-// отбрасываются — в розыгрыше с деньгами перекос недопустим.
-func (s *stream) index(n int) int {
-	if n <= 1 {
-		return 0
-	}
-	limit := ^uint64(0) - (^uint64(0) % uint64(n)) - 1
-	for {
-		value := s.next()
-		if value <= limit {
-			return int(value % uint64(n))
-		}
-	}
-}
-
 // SelectWinner выбирает победителя.
 //
 // Порядок участников задаёт результат, поэтому он фиксируется сортировкой
-// по идентификатору: иначе один и тот же seed давал бы разных победителей
+// по идентификатору: иначе одно и то же зерно давало бы разных победителей
 // в зависимости от того, как база вернула строки.
 func SelectWinner(seed []byte, participants []uuid.UUID) (uuid.UUID, error) {
 	if len(participants) == 0 {
 		return uuid.Nil, ErrNoParticipants
 	}
 
-	ordered := sortedIds(participants)
-	return ordered[newStream(seed, "winner").index(len(ordered))], nil
+	ordered := make([]uuid.UUID, len(participants))
+	copy(ordered, participants)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].String() < ordered[j].String() })
+
+	return ordered[pick.NewStream(seed, "winner").Index(len(ordered))], nil
 }
 
 // SelectGifts выбирает набор подарков победителя в пределах суммы котла.
-//
-// Правило описано явно, потому что от него зависит, что человек получит:
-// список перемешивается детерминированно, затем подарки берутся по порядку,
-// пока очередной помещается в остаток бюджета. Пропуск слишком дорогого
-// подарка не прекращает отбор — иначе один дорогой элемент в начале
-// оставлял бы победителя почти ни с чем.
+// Правило отбора общее для всей системы — см. pick.Within.
 func SelectGifts(seed []byte, gifts []Gift, budget credit.Amount) ([]Gift, credit.Amount) {
-	if len(gifts) == 0 || budget <= 0 {
-		return []Gift{}, 0
-	}
-
-	shuffled := shuffle(seed, gifts)
-	selected := make([]Gift, 0, len(shuffled))
-	var total credit.Amount
-	for _, gift := range shuffled {
-		if gift.Price <= 0 || total+gift.Price > budget {
-			continue
-		}
-		selected = append(selected, gift)
-		total += gift.Price
-	}
-	return selected, total
-}
-
-// shuffle перемешивает список детерминированно (Фишер — Йетс).
-func shuffle(seed []byte, gifts []Gift) []Gift {
-	shuffled := make([]Gift, len(gifts))
-	copy(shuffled, sortedGifts(gifts))
-
-	source := newStream(seed, "gifts")
-	for i := len(shuffled) - 1; i > 0; i-- {
-		j := source.index(i + 1)
-		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
-	}
-	return shuffled
-}
-
-// sortedIds и sortedGifts задают исходный порядок. Розыгрыш обязан быть
-// воспроизводимым, а порядок строк из базы такой гарантии не даёт.
-func sortedIds(ids []uuid.UUID) []uuid.UUID {
-	ordered := make([]uuid.UUID, len(ids))
-	copy(ordered, ids)
-	for i := 1; i < len(ordered); i++ {
-		for j := i; j > 0 && ordered[j].String() < ordered[j-1].String(); j-- {
-			ordered[j], ordered[j-1] = ordered[j-1], ordered[j]
-		}
-	}
-	return ordered
-}
-
-func sortedGifts(gifts []Gift) []Gift {
-	ordered := make([]Gift, len(gifts))
-	copy(ordered, gifts)
-	for i := 1; i < len(ordered); i++ {
-		for j := i; j > 0 && giftKey(ordered[j]) < giftKey(ordered[j-1]); j-- {
-			ordered[j], ordered[j-1] = ordered[j-1], ordered[j]
-		}
-	}
-	return ordered
-}
-
-func giftKey(gift Gift) string {
-	return gift.Provider + ":" + gift.ProductId
+	return pick.Within(seed, "gifts", gifts,
+		func(gift Gift) string { return gift.Provider + ":" + gift.ProductId },
+		func(gift Gift) credit.Amount { return gift.Price },
+		budget)
 }
 
 // ValidateGifts проверяет список подарков участника.

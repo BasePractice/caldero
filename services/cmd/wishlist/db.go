@@ -4,11 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
 
 	"wish/services"
+	"wish/services/shared/credit"
+	"wish/services/shared/marketplace"
 	"wish/services/shared/wishlist"
 
 	"github.com/google/uuid"
@@ -52,6 +55,14 @@ type Database interface {
 	Transition(ctx context.Context, id uuid.UUID, transition Transition) (wishlist.Item, error)
 	// ReleaseExpired возвращает в список подарки с просроченным резервом.
 	ReleaseExpired(ctx context.Context) ([]wishlist.Item, error)
+
+	// Шопоголик: прогон, отобранные товары и их судьба.
+	StartRun(ctx context.Context, user uuid.UUID, budget credit.Amount, seed []byte) (wishlist.Run, error)
+	AddPurchase(ctx context.Context, purchase wishlist.Purchase) (wishlist.Purchase, error)
+	SettlePurchase(ctx context.Context, id uuid.UUID, ordered, paid bool, orderId, failure string) error
+	FinishRun(ctx context.Context, id uuid.UUID, spent credit.Amount, state wishlist.RunState) (wishlist.Run, error)
+	Run(ctx context.Context, id uuid.UUID) (wishlist.Run, error)
+	Runs(ctx context.Context, user uuid.UUID, limit int) ([]wishlist.Run, error)
 
 	Close() error
 	Stats() sql.DBStats
@@ -320,3 +331,194 @@ func (d ds) Stats() sql.DBStats { return d.db.Stats() }
 func (d ds) Ping(ctx context.Context) error { return d.db.PingContext(ctx) }
 
 func (d ds) Close() error { return d.db.Close() }
+
+// StartRun заводит прогон шопоголика. Прогон создаётся до обращений
+// к площадке и кошельку: если что-то пойдёт не так, останется запись,
+// по которой видно, что происходило.
+func (d ds) StartRun(
+	ctx context.Context,
+	user uuid.UUID,
+	budget credit.Amount,
+	seed []byte,
+) (wishlist.Run, error) {
+	run, err := scanRun(d.db.QueryRowContext(ctx, `
+		INSERT INTO shopping_run (user_id, budget, seed)
+		VALUES ($1, $2, $3)
+		RETURNING id, user_id, budget, spent, state, seed, created_at`,
+		user, int64(budget), seed))
+	if err != nil {
+		return wishlist.Run{}, fmt.Errorf("starting shopping run for %s: %w", user, err)
+	}
+	return run, nil
+}
+
+// AddPurchase записывает отобранный товар.
+func (d ds) AddPurchase(ctx context.Context, purchase wishlist.Purchase) (wishlist.Purchase, error) {
+	saved, err := scanPurchase(d.db.QueryRowContext(ctx, `
+		INSERT INTO purchase (run_id, provider, product_id, title, url, price)
+		VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6)
+		RETURNING id, run_id, provider, product_id, title, COALESCE(url, ''),
+		          price, ordered, paid, COALESCE(order_id, ''), COALESCE(failure, ''), created_at`,
+		purchase.RunId, string(purchase.Provider), purchase.ProductId,
+		purchase.Title, purchase.URL, int64(purchase.Price)))
+	if err != nil {
+		return wishlist.Purchase{}, fmt.Errorf("adding purchase %s: %w", purchase.ProductId, err)
+	}
+	return saved, nil
+}
+
+// SettlePurchase отмечает судьбу товара: заказан ли он и оплачен ли.
+func (d ds) SettlePurchase(
+	ctx context.Context,
+	id uuid.UUID,
+	ordered, paid bool,
+	orderId, failure string,
+) error {
+	_, err := d.db.ExecContext(ctx, `
+		UPDATE purchase
+		SET ordered = $2, paid = $3, order_id = NULLIF($4, ''), failure = NULLIF($5, '')
+		WHERE id = $1`, id, ordered, paid, orderId, truncateFailure(failure))
+	if err != nil {
+		return fmt.Errorf("settling purchase %s: %w", id, err)
+	}
+	return nil
+}
+
+// FinishRun записывает итог прогона.
+func (d ds) FinishRun(
+	ctx context.Context,
+	id uuid.UUID,
+	spent credit.Amount,
+	state wishlist.RunState,
+) (wishlist.Run, error) {
+	run, err := scanRun(d.db.QueryRowContext(ctx, `
+		UPDATE shopping_run SET spent = $2, state = $3
+		WHERE id = $1
+		RETURNING id, user_id, budget, spent, state, seed, created_at`,
+		id, int64(spent), state))
+	if err != nil {
+		return wishlist.Run{}, fmt.Errorf("finishing shopping run %s: %w", id, err)
+	}
+
+	if run.Purchases, err = d.purchases(ctx, id); err != nil {
+		return wishlist.Run{}, err
+	}
+	return run, nil
+}
+
+// Run читает прогон вместе с покупками.
+func (d ds) Run(ctx context.Context, id uuid.UUID) (wishlist.Run, error) {
+	run, err := scanRun(d.db.QueryRowContext(ctx, `
+		SELECT id, user_id, budget, spent, state, seed, created_at
+		FROM shopping_run WHERE id = $1`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return wishlist.Run{}, ErrNotFound
+	}
+	if err != nil {
+		return wishlist.Run{}, fmt.Errorf("loading shopping run %s: %w", id, err)
+	}
+
+	if run.Purchases, err = d.purchases(ctx, id); err != nil {
+		return wishlist.Run{}, err
+	}
+	return run, nil
+}
+
+// Runs отдаёт историю прогонов пользователя.
+func (d ds) Runs(ctx context.Context, user uuid.UUID, limit int) ([]wishlist.Run, error) {
+	rows, err := d.db.QueryContext(ctx, `
+		SELECT id, user_id, budget, spent, state, seed, created_at
+		FROM shopping_run WHERE user_id = $1
+		ORDER BY created_at DESC
+		LIMIT $2`, user, limit)
+	if err != nil {
+		return nil, fmt.Errorf("loading shopping runs of %s: %w", user, err)
+	}
+	defer func() {
+		// Настоящая причина сбоя придёт из rows.Err().
+		_ = rows.Close()
+	}()
+
+	runs := make([]wishlist.Run, 0)
+	for rows.Next() {
+		run, err := scanRun(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scanning shopping run: %w", err)
+		}
+		runs = append(runs, run)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading shopping runs: %w", err)
+	}
+	return runs, nil
+}
+
+func (d ds) purchases(ctx context.Context, run uuid.UUID) ([]wishlist.Purchase, error) {
+	rows, err := d.db.QueryContext(ctx, `
+		SELECT id, run_id, provider, product_id, title, COALESCE(url, ''),
+		       price, ordered, paid, COALESCE(order_id, ''), COALESCE(failure, ''), created_at
+		FROM purchase WHERE run_id = $1 ORDER BY created_at`, run)
+	if err != nil {
+		return nil, fmt.Errorf("loading purchases of run %s: %w", run, err)
+	}
+	defer func() {
+		// Настоящая причина сбоя придёт из rows.Err().
+		_ = rows.Close()
+	}()
+
+	purchases := make([]wishlist.Purchase, 0)
+	for rows.Next() {
+		purchase, err := scanPurchase(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scanning purchase: %w", err)
+		}
+		purchases = append(purchases, purchase)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading purchases: %w", err)
+	}
+	return purchases, nil
+}
+
+func scanRun(scanner interface{ Scan(...any) error }) (wishlist.Run, error) {
+	var (
+		run    wishlist.Run
+		budget int64
+		spent  int64
+		seed   []byte
+	)
+	if err := scanner.Scan(&run.Id, &run.UserId, &budget, &spent,
+		&run.State, &seed, &run.CreatedAt); err != nil {
+		return wishlist.Run{}, err
+	}
+	run.Budget = credit.Amount(budget)
+	run.Spent = credit.Amount(spent)
+	run.Seed = hex.EncodeToString(seed)
+	return run, nil
+}
+
+func scanPurchase(scanner interface{ Scan(...any) error }) (wishlist.Purchase, error) {
+	var (
+		purchase wishlist.Purchase
+		provider string
+		price    int64
+	)
+	if err := scanner.Scan(&purchase.Id, &purchase.RunId, &provider, &purchase.ProductId,
+		&purchase.Title, &purchase.URL, &price, &purchase.Ordered, &purchase.Paid,
+		&purchase.OrderId, &purchase.Failure, &purchase.CreatedAt); err != nil {
+		return wishlist.Purchase{}, err
+	}
+	purchase.Provider = marketplace.Provider(provider)
+	purchase.Price = credit.Amount(price)
+	return purchase, nil
+}
+
+// truncateFailure укорачивает текст ошибки: он приходит от площадки,
+// и его длину задаёт не наш код.
+func truncateFailure(failure string) string {
+	const limit = 300
+	if len(failure) <= limit {
+		return failure
+	}
+	return failure[:limit]
+}

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"wish/services/shared/credit"
 	"wish/services/shared/marketplace"
 	"wish/services/shared/notify"
 	"wish/services/shared/payment"
@@ -24,12 +26,115 @@ import (
 // на пару методов: операции ходят по нескольким методам подряд, и подмена
 // одного из них проверяла бы не сценарий, а сам мок.
 type memoryDatabase struct {
-	mu    sync.Mutex
-	items map[uuid.UUID]wishlist.Item
+	mu        sync.Mutex
+	items     map[uuid.UUID]wishlist.Item
+	runs      map[uuid.UUID]wishlist.Run
+	purchases map[uuid.UUID][]wishlist.Purchase
 }
 
 func newMemoryDatabase() *memoryDatabase {
-	return &memoryDatabase{items: make(map[uuid.UUID]wishlist.Item)}
+	return &memoryDatabase{
+		items:     make(map[uuid.UUID]wishlist.Item),
+		runs:      make(map[uuid.UUID]wishlist.Run),
+		purchases: make(map[uuid.UUID][]wishlist.Purchase),
+	}
+}
+
+func (m *memoryDatabase) StartRun(
+	_ context.Context,
+	user uuid.UUID,
+	budget credit.Amount,
+	seed []byte,
+) (wishlist.Run, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	run := wishlist.Run{
+		Id: uuid.New(), UserId: user, Budget: budget,
+		State: "PENDING", Seed: hex.EncodeToString(seed), CreatedAt: time.Now(),
+	}
+	m.runs[run.Id] = run
+	return run, nil
+}
+
+func (m *memoryDatabase) AddPurchase(
+	_ context.Context,
+	purchase wishlist.Purchase,
+) (wishlist.Purchase, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	purchase.Id = uuid.New()
+	purchase.CreatedAt = time.Now()
+	m.purchases[purchase.RunId] = append(m.purchases[purchase.RunId], purchase)
+	return purchase, nil
+}
+
+func (m *memoryDatabase) SettlePurchase(
+	_ context.Context,
+	id uuid.UUID,
+	ordered, paid bool,
+	orderId, failure string,
+) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for run, purchases := range m.purchases {
+		for i, purchase := range purchases {
+			if purchase.Id == id {
+				m.purchases[run][i].Ordered = ordered
+				m.purchases[run][i].Paid = paid
+				m.purchases[run][i].OrderId = orderId
+				m.purchases[run][i].Failure = failure
+			}
+		}
+	}
+	return nil
+}
+
+func (m *memoryDatabase) FinishRun(
+	_ context.Context,
+	id uuid.UUID,
+	spent credit.Amount,
+	state wishlist.RunState,
+) (wishlist.Run, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	run, ok := m.runs[id]
+	if !ok {
+		return wishlist.Run{}, ErrNotFound
+	}
+	run.Spent = spent
+	run.State = state
+	run.Purchases = append([]wishlist.Purchase(nil), m.purchases[id]...)
+	m.runs[id] = run
+	return run, nil
+}
+
+func (m *memoryDatabase) Run(_ context.Context, id uuid.UUID) (wishlist.Run, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	run, ok := m.runs[id]
+	if !ok {
+		return wishlist.Run{}, ErrNotFound
+	}
+	run.Purchases = append([]wishlist.Purchase(nil), m.purchases[id]...)
+	return run, nil
+}
+
+func (m *memoryDatabase) Runs(_ context.Context, user uuid.UUID, limit int) ([]wishlist.Run, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	runs := make([]wishlist.Run, 0, len(m.runs))
+	for _, run := range m.runs {
+		if run.UserId == user && len(runs) < limit {
+			runs = append(runs, run)
+		}
+	}
+	return runs, nil
 }
 
 func (m *memoryDatabase) Create(_ context.Context, item wishlist.Item) (wishlist.Item, error) {
@@ -169,32 +274,96 @@ func (m *memoryDatabase) Close() error               { return nil }
 func (m *memoryDatabase) Stats() sql.DBStats         { return sql.DBStats{} }
 func (m *memoryDatabase) Ping(context.Context) error { return nil }
 
-// fakeWallet подменяет сервис кошелька.
+// fakeWallet ведёт балансы кошельков и, как настоящий кошелёк, отсекает
+// повтор по ключу идемпотентности: иначе проверять сходимость средств
+// было бы не на чем.
 type fakeWallet struct {
 	mu        sync.Mutex
-	wallets   map[uuid.UUID]wallets.Info
+	owners    map[uuid.UUID]uuid.UUID
+	balances  map[uuid.UUID]credit.Amount
+	applied   map[string]bool
 	transfers []wallets.TransferParams
 	failFee   bool
+}
+
+func newFakeWallet() *fakeWallet {
+	return &fakeWallet{
+		owners:   make(map[uuid.UUID]uuid.UUID),
+		balances: make(map[uuid.UUID]credit.Amount),
+		applied:  make(map[string]bool),
+	}
+}
+
+// fund заводит кошелёк с деньгами и возвращает его идентификатор.
+func (f *fakeWallet) fund(owner uuid.UUID, amount credit.Amount) uuid.UUID {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	wallet := uuid.New()
+	f.owners[owner] = wallet
+	f.balances[wallet] = amount
+	return wallet
 }
 
 func (f *fakeWallet) Wallet(_ context.Context, user uuid.UUID) (wallets.Info, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	info, ok := f.wallets[user]
+
+	wallet, ok := f.owners[user]
 	if !ok {
-		return wallets.Info{}, errors.New("нет кошелька")
+		// Кошелёк заводится при первом обращении — как в настоящем сервисе.
+		wallet = uuid.New()
+		f.owners[user] = wallet
 	}
-	return info, nil
+	return wallets.Info{
+		Id:        wallet,
+		Balance:   f.balances[wallet],
+		Available: f.balances[wallet],
+	}, nil
 }
 
 func (f *fakeWallet) Transfer(_ context.Context, _ uuid.UUID, params wallets.TransferParams) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
 	if f.failFee && params.Message == "Комиссия за денежный подарок" {
 		return errors.New("кошелёк недоступен")
 	}
+	if f.applied[params.IdempotencyKey] {
+		// Повтор с тем же ключом денег не двигает.
+		return nil
+	}
+	if f.balances[params.Source] < params.Value {
+		return errors.New("недостаточно средств")
+	}
+	f.balances[params.Source] -= params.Value
+	f.balances[params.Target] += params.Value
+	f.applied[params.IdempotencyKey] = true
 	f.transfers = append(f.transfers, params)
 	return nil
+}
+
+func (f *fakeWallet) balanceOf(owner uuid.UUID) credit.Amount {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.balances[f.owners[owner]]
+}
+
+func (f *fakeWallet) walletBalance(wallet uuid.UUID) credit.Amount {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.balances[wallet]
+}
+
+func (f *fakeWallet) total() credit.Amount {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	var total credit.Amount
+	for _, balance := range f.balances {
+		total += balance
+	}
+	return total
 }
 
 // notifyStub принимает оповещения вместо сервиса notify.
@@ -227,11 +396,14 @@ func (n *notifyStub) received() []notify.PublishEvent {
 }
 
 type testEnvironment struct {
-	gifts  *Gifts
-	db     *memoryDatabase
-	wallet *fakeWallet
-	events *notifyStub
-	stub   *marketplace.Stub
+	gifts      *Gifts
+	shopaholic *Shopaholic
+	db         *memoryDatabase
+	wallet     *fakeWallet
+	events     *notifyStub
+	stub       *marketplace.Stub
+	// shop — кошелёк площадки: покупка это уход средств к продавцу.
+	shop uuid.UUID
 }
 
 func newTestEnvironment(t *testing.T, fee payment.Fee, feeWallet *uuid.UUID) *testEnvironment {
@@ -240,11 +412,22 @@ func newTestEnvironment(t *testing.T, fee payment.Fee, feeWallet *uuid.UUID) *te
 	events := &notifyStub{}
 	stub := &marketplace.Stub{}
 	db := newMemoryDatabase()
-	wallet := &fakeWallet{wallets: make(map[uuid.UUID]wallets.Info)}
+	wallet := newFakeWallet()
 
-	gifts := NewGifts(db, marketplace.NewRegistry(stub),
-		notify.NewClient(events.start(t), uuid.New()), wallet, fee, feeWallet, time.Hour)
-	return &testEnvironment{gifts: gifts, db: db, wallet: wallet, events: events, stub: stub}
+	catalogs := marketplace.NewRegistry(stub)
+	gifts := NewGifts(db, catalogs, notify.NewClient(events.start(t), uuid.New()),
+		wallet, fee, feeWallet, time.Hour)
+
+	shop := uuid.New()
+	return &testEnvironment{
+		gifts:      gifts,
+		shopaholic: NewShopaholic(db, catalogs, wallet, &shop),
+		db:         db,
+		wallet:     wallet,
+		events:     events,
+		stub:       stub,
+		shop:       shop,
+	}
 }
 
 func (e *testEnvironment) addProduct(t *testing.T, owner uuid.UUID) wishlist.Item {
@@ -520,10 +703,8 @@ func TestAcceptMoneyTransfersWithFee(t *testing.T) {
 	owner := uuid.New()
 	giver := uuid.New()
 
-	giverWallet := uuid.New()
-	ownerWallet := uuid.New()
-	env.wallet.wallets[giver] = wallets.Info{Id: giverWallet, Available: 10_000_00}
-	env.wallet.wallets[owner] = wallets.Info{Id: ownerWallet, Available: 0}
+	env.wallet.fund(giver, 10_000_00)
+	ownerWallet := env.wallet.fund(owner, 0)
 
 	item, err := env.gifts.Add(ctx, owner, wishlist.CreateItem{
 		Kind: wishlist.KindMoney, Priority: 1, Amount: 1_000_00, Title: "На велосипед",
@@ -548,6 +729,14 @@ func TestAcceptMoneyTransfersWithFee(t *testing.T) {
 	if gift.Target != ownerWallet || gift.Value != 1_000_00 {
 		t.Errorf("подарок: %+v", gift)
 	}
+	// Средства действительно перешли: одаряемому пришёл подарок,
+	// у дарителя списан подарок вместе с комиссией.
+	if env.wallet.balanceOf(owner) != 1_000_00 {
+		t.Errorf("одаряемому пришло %s", env.wallet.balanceOf(owner))
+	}
+	if env.wallet.balanceOf(giver) != 10_000_00-1_000_00-25_00 {
+		t.Errorf("у дарителя осталось %s", env.wallet.balanceOf(giver))
+	}
 	if fee.Target != feeWallet || fee.Value != 25_00 {
 		t.Errorf("комиссия: %+v", fee)
 	}
@@ -566,8 +755,8 @@ func TestAcceptMoneyChecksFunds(t *testing.T) {
 	giver := uuid.New()
 
 	// Средств хватает на подарок, но не на подарок вместе с комиссией.
-	env.wallet.wallets[giver] = wallets.Info{Id: uuid.New(), Available: 1_000_00}
-	env.wallet.wallets[owner] = wallets.Info{Id: uuid.New()}
+	env.wallet.fund(giver, 1_000_00)
+	env.wallet.fund(owner, 0)
 
 	item, err := env.gifts.Add(ctx, owner, wishlist.CreateItem{
 		Kind: wishlist.KindMoney, Priority: 1, Amount: 1_000_00, Title: "На велосипед",
@@ -609,8 +798,8 @@ func TestAcceptMoneyKeepsGiftWhenFeeFails(t *testing.T) {
 	env.wallet.failFee = true
 	owner := uuid.New()
 	giver := uuid.New()
-	env.wallet.wallets[giver] = wallets.Info{Id: uuid.New(), Available: 10_000_00}
-	env.wallet.wallets[owner] = wallets.Info{Id: uuid.New()}
+	env.wallet.fund(giver, 10_000_00)
+	env.wallet.fund(owner, 0)
 
 	item, err := env.gifts.Add(ctx, owner, wishlist.CreateItem{
 		Kind: wishlist.KindMoney, Priority: 1, Amount: 1_000_00, Title: "На велосипед",

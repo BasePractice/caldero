@@ -3,7 +3,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"sync"
 	"testing"
@@ -338,5 +340,96 @@ func TestDeleteOnlyUnchosen(t *testing.T) {
 	free := createProduct(t, db, owner)
 	if err := db.Delete(ctx, free.Id, owner); err != nil {
 		t.Errorf("невыбранный элемент не удалился: %v", err)
+	}
+}
+
+func TestShoppingRunLifecycle(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDatabase(t)
+	user := uuid.New()
+	seed := bytes.Repeat([]byte{0x5a}, 32)
+
+	run, err := db.StartRun(ctx, user, 10_000_00, seed)
+	if err != nil {
+		t.Fatalf("начало прогона: %v", err)
+	}
+	if run.State != "PENDING" {
+		t.Errorf("состояние %s, ожидалось PENDING", run.State)
+	}
+	if run.Seed != hex.EncodeToString(seed) {
+		t.Error("зерно отбора не сохранено")
+	}
+
+	purchase, err := db.AddPurchase(ctx, wishlist.Purchase{
+		RunId: run.Id, Provider: marketplace.ProviderStub, ProductId: "kettle",
+		Title: "Чайник", URL: "https://example.invalid/product/kettle", Price: 3_000_00,
+	})
+	if err != nil {
+		t.Fatalf("запись покупки: %v", err)
+	}
+	if purchase.Ordered || purchase.Paid {
+		t.Errorf("новая покупка сразу отмечена оформленной: %+v", purchase)
+	}
+
+	if err = db.SettlePurchase(ctx, purchase.Id, true, true, "order-1", ""); err != nil {
+		t.Fatalf("отметка покупки: %v", err)
+	}
+
+	finished, err := db.FinishRun(ctx, run.Id, 3_000_00, wishlist.RunDone)
+	if err != nil {
+		t.Fatalf("завершение прогона: %v", err)
+	}
+	if finished.Spent != 3_000_00 || finished.State != wishlist.RunDone {
+		t.Errorf("итог прогона: %+v", finished)
+	}
+	if len(finished.Purchases) != 1 || !finished.Purchases[0].Paid {
+		t.Errorf("покупки не подгружены: %+v", finished.Purchases)
+	}
+
+	t.Run("история пользователя", func(t *testing.T) {
+		runs, err := db.Runs(ctx, user, 10)
+		if err != nil {
+			t.Fatalf("история: %v", err)
+		}
+		if len(runs) != 1 || runs[0].Id != run.Id {
+			t.Errorf("в истории %d прогонов", len(runs))
+		}
+
+		foreign, err := db.Runs(ctx, uuid.New(), 10)
+		if err != nil {
+			t.Fatalf("чужая история: %v", err)
+		}
+		if len(foreign) != 0 {
+			t.Errorf("посторонний видит %d прогонов", len(foreign))
+		}
+	})
+}
+
+// TestSchemaGuardsShopping проверяет, что схема не даст записать
+// потраченное сверх бюджета и оплату неоформленного заказа.
+func TestSchemaGuardsShopping(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDatabase(t)
+	user := uuid.New()
+
+	run, err := db.StartRun(ctx, user, 1_000_00, bytes.Repeat([]byte{0x01}, 32))
+	if err != nil {
+		t.Fatalf("начало прогона: %v", err)
+	}
+
+	if _, err = db.FinishRun(ctx, run.Id, 2_000_00, wishlist.RunDone); err == nil {
+		t.Error("записано потраченное сверх бюджета")
+	}
+
+	purchase, err := db.AddPurchase(ctx, wishlist.Purchase{
+		RunId: run.Id, Provider: marketplace.ProviderStub, ProductId: "kettle",
+		Title: "Чайник", Price: 500_00,
+	})
+	if err != nil {
+		t.Fatalf("запись покупки: %v", err)
+	}
+	// Платить за неоформленный заказ не за что.
+	if err = db.SettlePurchase(ctx, purchase.Id, false, true, "", ""); err == nil {
+		t.Error("оплачен неоформленный заказ")
 	}
 }

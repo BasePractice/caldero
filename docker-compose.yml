@@ -387,6 +387,7 @@ services:
       WISHLIST_RELEASE_INTERVAL: ${WISHLIST_RELEASE_INTERVAL:-5m}
       PAYMENT_FEE_BASIS_POINTS: ${PAYMENT_FEE_BASIS_POINTS:-0}
       FEE_WALLET_ID: ${FEE_WALLET_ID:-}
+      MARKETPLACE_WALLET_ID: ${MARKETPLACE_WALLET_ID:-}
       LOG_FILE: /logs/wishlist.log
     volumes:
       - ./.logs/wishlist:/logs

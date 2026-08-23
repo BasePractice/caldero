@@ -14,11 +14,12 @@ import (
 )
 
 type api struct {
-	gifts *Gifts
+	gifts      *Gifts
+	shopaholic *Shopaholic
 }
 
-func registerHttpHandlers(gifts *Gifts) http.Handler {
-	a := &api{gifts: gifts}
+func registerHttpHandlers(gifts *Gifts, shopaholic *Shopaholic) http.Handler {
+	a := &api{gifts: gifts, shopaholic: shopaholic}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /wishlist/items", a.add)
 	mux.HandleFunc("GET /wishlist/items", a.list)
@@ -32,6 +33,9 @@ func registerHttpHandlers(gifts *Gifts) http.Handler {
 	mux.HandleFunc("POST /wishlist/items/{id}/confirm", a.act(actionConfirm))
 	mux.HandleFunc("POST /wishlist/items/{id}/reject", a.act(actionReject))
 	mux.HandleFunc("POST /wishlist/items/{id}/accept", a.act(actionAccept))
+	mux.HandleFunc("POST /shopping", a.shop)
+	mux.HandleFunc("GET /shopping", a.shoppingHistory)
+	mux.HandleFunc("GET /shopping/{id}", a.shoppingRun)
 	return services.Measure("wishlist", mux)
 }
 
@@ -134,6 +138,70 @@ func (a *api) remove(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// shop запускает шопоголика: случайный набор покупок в пределах бюджета.
+func (a *api) shop(w http.ResponseWriter, r *http.Request) {
+	authorized, err := services.HttpAuthorized(r)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	request, err := services.DecodeJSON[wishlist.StartShopping](w, r)
+	if err != nil {
+		services.WriteDecodeError(w, err)
+		return
+	}
+	if err = request.Validate(); err != nil {
+		slog.DebugContext(r.Context(), "Shopping validation failed",
+			slog.String("request", request.String()), slog.String("reason", err.Error()))
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	run, err := a.shopaholic.Shop(r.Context(), authorized.Id, request)
+	if err != nil {
+		writeError(r.Context(), w, "Can't go shopping", err)
+		return
+	}
+	w.Header().Set("X-Run-Id", run.Id.String())
+	writeJSON(r.Context(), w, http.StatusOK, run)
+}
+
+func (a *api) shoppingHistory(w http.ResponseWriter, r *http.Request) {
+	authorized, err := services.HttpAuthorized(r)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	runs, err := a.shopaholic.History(r.Context(), authorized.Id)
+	if err != nil {
+		writeError(r.Context(), w, "Can't load shopping history", err)
+		return
+	}
+	writeJSON(r.Context(), w, http.StatusOK, runs)
+}
+
+func (a *api) shoppingRun(w http.ResponseWriter, r *http.Request) {
+	authorized, err := services.HttpAuthorized(r)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "Invalid id", http.StatusBadRequest)
+		return
+	}
+
+	run, err := a.shopaholic.Run(r.Context(), authorized.Id, id)
+	if err != nil {
+		writeError(r.Context(), w, "Can't load shopping run", err)
+		return
+	}
+	writeJSON(r.Context(), w, http.StatusOK, run)
+}
+
 // action — операция над элементом. Обработчики у них одинаковы во всём,
 // кроме одного вызова, поэтому различие вынесено в тип, а не размножено
 // по семи почти одинаковым функциям.
@@ -203,7 +271,8 @@ func writeError(ctx context.Context, w http.ResponseWriter, message string, err 
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrInsufficientFunds):
 		http.Error(w, err.Error(), http.StatusConflict)
-	case errors.Is(err, ErrMarketplaceUnavailable), errors.Is(err, ErrWalletUnavailable):
+	case errors.Is(err, ErrMarketplaceUnavailable), errors.Is(err, ErrWalletUnavailable),
+		errors.Is(err, ErrShopUnavailable):
 		slog.WarnContext(ctx, message, slog.String("err", err.Error()))
 		w.Header().Set("Retry-After", "5")
 		http.Error(w, "Dependency is unavailable", http.StatusServiceUnavailable)

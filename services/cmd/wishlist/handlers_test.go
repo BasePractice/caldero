@@ -23,7 +23,7 @@ func authorized(request *http.Request, user uuid.UUID) *http.Request {
 
 func TestAddItemHandler(t *testing.T) {
 	env := newTestEnvironment(t, payment.Fee{}, nil)
-	handler := registerHttpHandlers(env.gifts)
+	handler := registerHttpHandlers(env.gifts, env.shopaholic)
 	owner := uuid.New()
 
 	body := `{"kind":"PRODUCT","priority":1,"provider":"STUB","product_id":"coffee-machine"}`
@@ -48,7 +48,7 @@ func TestAddItemHandler(t *testing.T) {
 
 func TestAddItemValidation(t *testing.T) {
 	env := newTestEnvironment(t, payment.Fee{}, nil)
-	handler := registerHttpHandlers(env.gifts)
+	handler := registerHttpHandlers(env.gifts, env.shopaholic)
 
 	// Цена и название от клиента не принимаются: они берутся из карточки.
 	body := `{"kind":"PRODUCT","priority":1,"provider":"STUB","product_id":"x","price":1}`
@@ -64,7 +64,7 @@ func TestAddItemValidation(t *testing.T) {
 func TestActionStatusCodes(t *testing.T) {
 	ctx := context.Background()
 	env := newTestEnvironment(t, payment.Fee{}, nil)
-	handler := registerHttpHandlers(env.gifts)
+	handler := registerHttpHandlers(env.gifts, env.shopaholic)
 	owner := uuid.New()
 	giver := uuid.New()
 	item := env.addProduct(t, owner)
@@ -127,7 +127,7 @@ func TestMoneyGiftWithoutWallet(t *testing.T) {
 	ctx := context.Background()
 	env := newTestEnvironment(t, payment.Fee{}, nil)
 	env.gifts.wallet = nil
-	handler := registerHttpHandlers(env.gifts)
+	handler := registerHttpHandlers(env.gifts, env.shopaholic)
 	owner := uuid.New()
 	giver := uuid.New()
 
@@ -160,7 +160,7 @@ func TestMoneyGiftWithoutWallet(t *testing.T) {
 func TestForeignListHandler(t *testing.T) {
 	ctx := context.Background()
 	env := newTestEnvironment(t, payment.Fee{}, nil)
-	handler := registerHttpHandlers(env.gifts)
+	handler := registerHttpHandlers(env.gifts, env.shopaholic)
 	owner := uuid.New()
 	giver := uuid.New()
 	item := env.addProduct(t, owner)
@@ -186,7 +186,7 @@ func TestForeignListHandler(t *testing.T) {
 
 func TestUnauthorized(t *testing.T) {
 	env := newTestEnvironment(t, payment.Fee{}, nil)
-	handler := registerHttpHandlers(env.gifts)
+	handler := registerHttpHandlers(env.gifts, env.shopaholic)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/wishlist/items", nil))
