@@ -5,13 +5,17 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"wish/services"
 	"wish/services/shared/notify"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -27,12 +31,13 @@ const (
 // уже четыре, и передавать их каждому обработчику отдельно значит
 // повторять один и тот же список.
 type api struct {
-	db       Database
-	hub      *Hub
-	telegram *Telegram
-	// botName нужен только для ссылки привязки; пустое значение означает,
-	// что канал Telegram не настроен.
-	botName   string
+	db  Database
+	hub *Hub
+	// messengers — подключённые боты по каналам. Привязка у них общая,
+	// различаются только адреса и имена полей.
+	messengers map[notify.Channel]*Messenger
+	// email нужен обработчику отписки: ссылку подписывает он же.
+	email     *Email
 	codeTTL   time.Duration
 	wsOrigins []string
 }
@@ -43,8 +48,9 @@ func registerHttpHandlers(a *api) http.Handler {
 	mux.HandleFunc("GET /notify/messages", a.messages)
 	mux.HandleFunc("GET /notify/preferences", a.preferences)
 	mux.HandleFunc("PUT /notify/preferences", a.setPreferences)
-	mux.HandleFunc("POST /notify/telegram/link", a.linkTelegram)
-	mux.HandleFunc("GET /notify/telegram", a.telegramState)
+	mux.HandleFunc("POST /notify/messengers/{provider}/link", a.linkMessenger)
+	mux.HandleFunc("GET /notify/messengers/{provider}", a.messengerState)
+	mux.HandleFunc("GET /notify/unsubscribe", a.unsubscribe)
 	mux.HandleFunc("GET /notify/ws", func(w http.ResponseWriter, r *http.Request) {
 		serveWebSocket(a.hub, a.wsOrigins, w, r)
 	})
@@ -234,14 +240,14 @@ func (a *api) setPreferences(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (a *api) linkTelegram(w http.ResponseWriter, r *http.Request) {
+func (a *api) linkMessenger(w http.ResponseWriter, r *http.Request) {
 	authorized, err := services.HttpAuthorized(r)
 	if err != nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if a.telegram == nil {
-		http.Error(w, "Telegram channel is not configured", http.StatusServiceUnavailable)
+	messenger, ok := a.messenger(w, r)
+	if !ok {
 		return
 	}
 
@@ -252,34 +258,39 @@ func (a *api) linkTelegram(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	expires := time.Now().Add(a.codeTTL)
-	if err = a.db.StartTelegramBinding(r.Context(), authorized.Id,
-		a.telegram.BindingCodeHash(code), expires); err != nil {
-		slog.ErrorContext(r.Context(), "Can't start telegram binding", slog.String("err", err.Error()))
+	if err = a.db.StartMessengerBinding(r.Context(), messenger.Channel(), authorized.Id,
+		messenger.BindingCodeHash(code), expires); err != nil {
+		slog.ErrorContext(r.Context(), "Can't start messenger binding", slog.String("err", err.Error()))
 		http.Error(w, "Can't start binding", http.StatusInternalServerError)
 		return
 	}
 
 	writeJSON(r.Context(), w, http.StatusOK, map[string]any{
+		"provider":   messenger.Channel(),
 		"code":       code,
-		"link":       BindingLink(a.botName, code),
+		"link":       BindingLink(messenger.config.BotName, code),
 		"expires_at": expires,
 	})
 }
 
-func (a *api) telegramState(w http.ResponseWriter, r *http.Request) {
+func (a *api) messengerState(w http.ResponseWriter, r *http.Request) {
 	authorized, err := services.HttpAuthorized(r)
 	if err != nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
+	messenger, ok := a.messenger(w, r)
+	if !ok {
+		return
+	}
 
-	binding, err := a.db.TelegramBinding(r.Context(), authorized.Id)
+	binding, err := a.db.MessengerBinding(r.Context(), messenger.Channel(), authorized.Id)
 	if errors.Is(err, ErrNotFound) {
 		writeJSON(r.Context(), w, http.StatusOK, map[string]any{"bound": false})
 		return
 	}
 	if err != nil {
-		slog.ErrorContext(r.Context(), "Can't load telegram binding", slog.String("err", err.Error()))
+		slog.ErrorContext(r.Context(), "Can't load messenger binding", slog.String("err", err.Error()))
 		http.Error(w, "Can't load binding", http.StatusInternalServerError)
 		return
 	}
@@ -290,6 +301,60 @@ func (a *api) telegramState(w http.ResponseWriter, r *http.Request) {
 		"blocked":  binding.Blocked,
 		"bound_at": binding.BoundAt,
 	})
+}
+
+// unsubscribe выключает письма по ссылке из письма.
+//
+// Ссылка подписана: без подписи достаточно подставить чужой идентификатор,
+// чтобы отписать постороннего. Метод GET намеренно поддержан вместе
+// с POST — почтовые клиенты открывают ссылку обычным переходом.
+func (a *api) unsubscribe(w http.ResponseWriter, r *http.Request) {
+	if a.email == nil {
+		http.Error(w, "Email channel is not configured", http.StatusNotFound)
+		return
+	}
+
+	user, err := uuid.Parse(r.URL.Query().Get("user"))
+	if err != nil {
+		http.Error(w, "Invalid link", http.StatusBadRequest)
+		return
+	}
+	if !a.email.VerifyUnsubscribe(user, r.URL.Query().Get("sign")) {
+		slog.WarnContext(r.Context(), "Unsubscribe link with a wrong signature",
+			slog.String("user", user.String()))
+		http.Error(w, "Invalid link", http.StatusBadRequest)
+		return
+	}
+
+	// Отписка выключает канал целиком для всех событий: человек, нажавший
+	// «отписаться», просит не писать ему больше, а не настроить фильтры.
+	for _, eventType := range notify.EventTypes() {
+		if err = a.db.SetPreference(r.Context(), user, notify.Preference{
+			Type: eventType, Channel: notify.ChannelEmail, Enabled: false,
+		}); err != nil {
+			slog.ErrorContext(r.Context(), "Can't unsubscribe", slog.String("err", err.Error()))
+			http.Error(w, "Can't unsubscribe", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, `<!doctype html><html lang="ru"><head><meta charset="utf-8">`+
+		`<title>Отписка</title></head><body>`+
+		`<p>Письма отключены. Включить их снова можно в настройках оповещений.</p>`+
+		`</body></html>`)
+}
+
+// messenger достаёт бота из пути. Неизвестный и ненастроенный канал —
+// одно и то же для клиента.
+func (a *api) messenger(w http.ResponseWriter, r *http.Request) (*Messenger, bool) {
+	provider := notify.Channel(strings.ToUpper(r.PathValue("provider")))
+	messenger, ok := a.messengers[provider]
+	if !ok {
+		http.Error(w, "Messenger is not configured", http.StatusNotFound)
+		return nil, false
+	}
+	return messenger, true
 }
 
 func intParam(r *http.Request, name string, fallback int64) (int64, error) {

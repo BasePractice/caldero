@@ -34,7 +34,7 @@ type fakeDatabase struct {
 	feed              []notify.Message
 	saved             []notify.Preference
 
-	binding       TelegramBinding
+	binding       MessengerBinding
 	bindingErr    error
 	blocked       bool
 	completedHash []byte
@@ -100,20 +100,29 @@ func (f *fakeDatabase) SetPreference(_ context.Context, _ uuid.UUID, preference 
 	return nil
 }
 
-func (f *fakeDatabase) TelegramBinding(_ context.Context, _ uuid.UUID) (TelegramBinding, error) {
+func (f *fakeDatabase) MessengerBinding(
+	_ context.Context,
+	_ notify.Channel,
+	_ uuid.UUID,
+) (MessengerBinding, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.binding, f.bindingErr
 }
 
-func (f *fakeDatabase) BlockTelegram(_ context.Context, _ uuid.UUID) error {
+func (f *fakeDatabase) BlockMessenger(_ context.Context, _ notify.Channel, _ uuid.UUID) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.blocked = true
 	return nil
 }
 
-func (f *fakeDatabase) CompleteTelegramBinding(_ context.Context, codeHash []byte, chatId int64) (uuid.UUID, error) {
+func (f *fakeDatabase) CompleteMessengerBinding(
+	_ context.Context,
+	_ notify.Channel,
+	codeHash []byte,
+	chatId int64,
+) (uuid.UUID, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.completedHash = codeHash

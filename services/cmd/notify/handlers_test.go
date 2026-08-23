@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -229,7 +230,7 @@ func TestPreferences(t *testing.T) {
 
 func TestUnauthorized(t *testing.T) {
 	handler := newTestAPI(&fakeDatabase{}, NewHub())
-	for _, path := range []string{"/notify/messages", "/notify/preferences", "/notify/telegram"} {
+	for _, path := range []string{"/notify/messages", "/notify/preferences", "/notify/messengers/telegram"} {
 		t.Run(path, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
@@ -240,17 +241,62 @@ func TestUnauthorized(t *testing.T) {
 	}
 }
 
-func TestTelegramLinkWithoutChannel(t *testing.T) {
+func TestUnsubscribeByLink(t *testing.T) {
+	db := &fakeDatabase{}
+	email := newTestEmail(t, Contact{}, &sentMail{})
+	handler := registerHttpHandlers(&api{
+		db: db, hub: NewHub(), email: email, codeTTL: 15 * time.Minute,
+	})
+	user := uuid.New()
+
+	link := email.UnsubscribeLink(user)
+	parsed, err := url.Parse(link)
+	if err != nil {
+		t.Fatalf("разбор ссылки: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	// Ссылку из письма открывают обычным переходом, без токена.
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet,
+		"/notify/unsubscribe?"+parsed.RawQuery, nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("код ответа %d (%s)", recorder.Code, recorder.Body)
+	}
+	// Отписка выключает канал для всех событий: человек просит
+	// не писать ему больше, а не настроить фильтры.
+	if len(db.saved) != len(notify.EventTypes()) {
+		t.Errorf("сохранено %d настроек, ожидалось %d", len(db.saved), len(notify.EventTypes()))
+	}
+	for _, preference := range db.saved {
+		if preference.Channel != notify.ChannelEmail || preference.Enabled {
+			t.Errorf("настройка после отписки: %+v", preference)
+		}
+	}
+
+	t.Run("чужая ссылка не отписывает", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet,
+			"/notify/unsubscribe?user="+uuid.NewString()+"&sign="+parsed.Query().Get("sign"), nil))
+		if recorder.Code != http.StatusBadRequest {
+			t.Errorf("код ответа %d, ожидался %d", recorder.Code, http.StatusBadRequest)
+		}
+	})
+}
+
+func TestMessengerLinkWithoutChannel(t *testing.T) {
 	handler := newTestAPI(&fakeDatabase{}, NewHub())
 	user := uuid.New()
 
-	request := authorized(httptest.NewRequest(http.MethodPost, "/notify/telegram/link", nil), user, "")
+	request := authorized(httptest.NewRequest(http.MethodPost,
+		"/notify/messengers/telegram/link", nil), user, "")
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 
 	// Канал не настроен — честный отказ вместо кода, который никуда
-	// не приведёт.
-	if recorder.Code != http.StatusServiceUnavailable {
-		t.Errorf("код ответа %d, ожидался %d", recorder.Code, http.StatusServiceUnavailable)
+	// не приведёт. Неизвестный и ненастроенный мессенджер для клиента
+	// неразличимы.
+	if recorder.Code != http.StatusNotFound {
+		t.Errorf("код ответа %d, ожидался %d", recorder.Code, http.StatusNotFound)
 	}
 }

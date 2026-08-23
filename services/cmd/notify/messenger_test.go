@@ -41,15 +41,15 @@ func (s *telegramStub) handler() http.HandlerFunc {
 	}
 }
 
-func newTestTelegram(t *testing.T, db Database, stub *telegramStub) *Telegram {
+func newTestTelegram(t *testing.T, db Database, stub *telegramStub) *Messenger {
 	t.Helper()
 	server := httptest.NewServer(stub.handler())
 	t.Cleanup(server.Close)
-	return NewTelegram(db, "test-token", server.URL)
+	return NewMessenger(db, TelegramConfig("test-token", server.URL, "wish_bot"))
 }
 
 func TestTelegramSend(t *testing.T) {
-	db := &fakeDatabase{binding: TelegramBinding{UserId: uuid.New(), ChatId: 4242}}
+	db := &fakeDatabase{binding: MessengerBinding{UserId: uuid.New(), ChatId: 4242}}
 	stub := &telegramStub{}
 	telegram := newTestTelegram(t, db, stub)
 
@@ -74,7 +74,7 @@ func TestTelegramSend(t *testing.T) {
 }
 
 func TestTelegramBlocked(t *testing.T) {
-	db := &fakeDatabase{binding: TelegramBinding{UserId: uuid.New(), ChatId: 1}}
+	db := &fakeDatabase{binding: MessengerBinding{UserId: uuid.New(), ChatId: 1}}
 	stub := &telegramStub{
 		status:   http.StatusForbidden,
 		response: `{"ok":false,"error_code":403,"description":"bot was blocked by the user"}`,
@@ -93,7 +93,7 @@ func TestTelegramBlocked(t *testing.T) {
 }
 
 func TestTelegramUnavailable(t *testing.T) {
-	db := &fakeDatabase{binding: TelegramBinding{UserId: uuid.New(), ChatId: 1}}
+	db := &fakeDatabase{binding: MessengerBinding{UserId: uuid.New(), ChatId: 1}}
 	stub := &telegramStub{
 		status:   http.StatusTooManyRequests,
 		response: `{"ok":false,"error_code":429,"description":"Too Many Requests"}`,

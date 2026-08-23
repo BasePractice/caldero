@@ -351,6 +351,28 @@ services:
       NOTIFY_WS_ORIGINS: ${NOTIFY_WS_ORIGINS:-}
       NOTIFY_RATE_LIMIT: ${NOTIFY_RATE_LIMIT:-10}
       NOTIFY_RATE_WINDOW: ${NOTIFY_RATE_WINDOW:-1m}
+      # Адрес почты берётся из профиля: держать вторую копию контактов
+      # значит разойтись с ним при первой же смене адреса.
+      USERS_ENDPOINT: ${USERS_ENDPOINT:-http://users:51053}
+      SERVICE_USER_ID: ${SERVICE_USER_ID:-11111111-1111-1111-1111-111111111111}
+      # Пустой SMTP_HOST выключает канал почты целиком.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      EMAIL_UNSUBSCRIBE_URL: ${EMAIL_UNSUBSCRIBE_URL:-http://localhost:8080/api/v1/notify/unsubscribe}
+      EMAIL_SECRET: ${EMAIL_SECRET:-}
+      # Мессенджер МАКС: протокол задаётся конфигурацией по документации
+      # площадки, пустой токен выключает канал.
+      NOTIFY_MAX_TOKEN: ${NOTIFY_MAX_TOKEN:-}
+      NOTIFY_MAX_BOT: ${NOTIFY_MAX_BOT:-}
+      NOTIFY_MAX_API: ${NOTIFY_MAX_API:-}
+      NOTIFY_MAX_METHOD_PATH: ${NOTIFY_MAX_METHOD_PATH:-}
+      NOTIFY_MAX_SEND_METHOD: ${NOTIFY_MAX_SEND_METHOD:-}
+      NOTIFY_MAX_UPDATES_METHOD: ${NOTIFY_MAX_UPDATES_METHOD:-}
+      NOTIFY_MAX_CHAT_FIELD: ${NOTIFY_MAX_CHAT_FIELD:-}
+      NOTIFY_MAX_TEXT_FIELD: ${NOTIFY_MAX_TEXT_FIELD:-}
       LOG_FILE: /logs/notify.log
     volumes:
       - ./.logs/notify:/logs

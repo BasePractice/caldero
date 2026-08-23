@@ -343,8 +343,8 @@
       }
     },
     {
-      "@comment": "Защищённый: код привязки Telegram",
-      "endpoint": "/api/v1/notify/telegram/link",
+      "@comment": "Защищённый: код привязки мессенджера",
+      "endpoint": "/api/v1/notify/messengers/{provider}/link",
       "method": "POST",
       "output_encoding": "no-op",
       "input_headers": [
@@ -356,7 +356,7 @@
           "host": [
             "http://notify:51055"
           ],
-          "url_pattern": "/notify/telegram/link",
+          "url_pattern": "/notify/messengers/{provider}/link",
           "encoding": "no-op"
         }
       ],
@@ -380,8 +380,8 @@
       }
     },
     {
-      "@comment": "Защищённый: состояние привязки Telegram",
-      "endpoint": "/api/v1/notify/telegram",
+      "@comment": "Защищённый: состояние привязки мессенджера",
+      "endpoint": "/api/v1/notify/messengers/{provider}",
       "method": "GET",
       "output_encoding": "no-op",
       "input_headers": [
@@ -392,7 +392,7 @@
           "host": [
             "http://notify:51055"
           ],
-          "url_pattern": "/notify/telegram",
+          "url_pattern": "/notify/messengers/{provider}",
           "encoding": "no-op"
         }
       ],
@@ -1702,6 +1702,38 @@
               "X-Roles"
             ]
           ]
+        }
+      }
+    },
+    {
+      "@comment": "Публичный: отписка от писем по ссылке из письма",
+      "endpoint": "/api/v1/notify/unsubscribe",
+      "method": "GET",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type"
+      ],
+      "input_query_strings": [
+        "user",
+        "sign"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://notify:51055"
+          ],
+          "url_pattern": "/notify/unsubscribe",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "qos/ratelimit/router": {
+          "@comment": "Ссылка отписки открывается без токена: она приходит в письме.",
+          "max_rate": 20,
+          "capacity": 20,
+          "client_max_rate": 2,
+          "client_capacity": 2,
+          "strategy": "ip"
         }
       }
     }

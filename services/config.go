@@ -187,6 +187,26 @@ type Config struct {
 	// которого входит интерфейс.
 	WebClientId string
 
+	// UsersEndpoint — адрес сервиса пользователей. Сервису оповещений
+	// он нужен, чтобы узнать адрес почты: держать вторую копию контактов
+	// значит разойтись с профилем при первой же смене адреса.
+	UsersEndpoint string
+	// Отправка писем. Пустой SMTPHost выключает канал целиком.
+	SMTPHost     string
+	SMTPPort     int
+	SMTPUsername string
+	SMTPPassword string
+	// EmailFrom — адрес отправителя. Для него должны быть настроены SPF,
+	// DKIM и DMARC, иначе письма уходят в спам и канал бесполезен.
+	EmailFrom string
+	// EmailUnsubscribeURL — база ссылки отписки. Рассылка без отписки
+	// нарушает правила почтовых провайдеров, поэтому пустое значение
+	// выключает канал.
+	EmailUnsubscribeURL string
+	// EmailSecret подписывает ссылку отписки: без подписи достаточно
+	// подставить чужой идентификатор, чтобы отписать постороннего.
+	EmailSecret string
+
 	// DebugStatsviz открывает страницу состояния рантайма на порту метрик.
 	// По умолчанию выключено: страница не аутентифицирована.
 	DebugStatsviz bool
@@ -451,6 +471,20 @@ func LoadConfig() (Config, error) {
 	cfg.ConfirmationRateWindow = confirmationWindow
 
 	cfg.PublicBaseURL = env("PUBLIC_BASE_URL", "")
+	cfg.UsersEndpoint = env("USERS_ENDPOINT", "")
+	cfg.SMTPHost = env("SMTP_HOST", "")
+	cfg.SMTPUsername = env("SMTP_USERNAME", "")
+	cfg.SMTPPassword = env("SMTP_PASSWORD", "")
+	cfg.EmailFrom = env("EMAIL_FROM", "")
+	cfg.EmailUnsubscribeURL = env("EMAIL_UNSUBSCRIBE_URL", "")
+	cfg.EmailSecret = env("EMAIL_SECRET", "")
+
+	smtpPort, err := strconv.Atoi(env("SMTP_PORT", "587"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing SMTP_PORT: %w", err)
+	}
+	cfg.SMTPPort = smtpPort
+
 	cfg.WebAPIBase = env("WEB_API_BASE", "http://localhost:8080/api/v1")
 	cfg.WebClientId = env("WEB_CLIENT_ID", "web")
 	cfg.SocialProviders = splitList(env("SOCIAL_PROVIDERS", ""))

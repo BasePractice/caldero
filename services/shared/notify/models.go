@@ -82,11 +82,21 @@ const (
 	ChannelInApp Channel = "IN_APP"
 	// ChannelTelegram — сообщение ботом в Telegram.
 	ChannelTelegram Channel = "TELEGRAM"
+	// ChannelMax — сообщение ботом в мессенджере МАКС.
+	ChannelMax Channel = "MAX"
+	// ChannelEmail — письмо на подтверждённый адрес.
+	ChannelEmail Channel = "EMAIL"
 )
+
+// Messengers перечисляет каналы, которые работают через бота: у них
+// одинаковая привязка аккаунта и одинаковое понятие «бот заблокирован».
+func Messengers() []Channel {
+	return []Channel{ChannelTelegram, ChannelMax}
+}
 
 // Channels перечисляет известные каналы.
 func Channels() []Channel {
-	return []Channel{ChannelInApp, ChannelTelegram}
+	return []Channel{ChannelInApp, ChannelTelegram, ChannelMax, ChannelEmail}
 }
 
 func (c Channel) Valid() bool {
@@ -196,12 +206,13 @@ func (p Preference) Validate() error {
 // Код подтверждения по умолчанию не уходит в Telegram: до подтверждения
 // привязки бот может быть чужим, а код — это доступ к учётной записи.
 func DefaultEnabled(eventType EventType, channel Channel) bool {
-	if channel != ChannelTelegram {
-		return true
-	}
 	switch eventType {
 	case EventConfirmationCode, EventConfirmationLink:
-		return false
+		// Код подтверждения не уходит в мессенджер: до подтверждения
+		// привязки бот может быть чужим, а код — это доступ к учётной
+		// записи. Почта — исключение: код подтверждения адреса иначе
+		// доставить некуда.
+		return channel != ChannelTelegram && channel != ChannelMax
 	default:
 		return true
 	}

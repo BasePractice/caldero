@@ -11,14 +11,16 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
+	"sort"
 	"strings"
 	"time"
 
 	"wish/services/shared/notify"
 )
 
-// TelegramAPI — база адресов Bot API. Вынесена, чтобы тест мог подставить
-// свой сервер: обращаться к настоящему Telegram из тестов нельзя.
+// TelegramAPI — база адресов Bot API Telegram. Вынесена, чтобы тест мог
+// подставить свой сервер: обращаться к настоящему Telegram из тестов нельзя.
 const TelegramAPI = "https://api.telegram.org"
 
 const (
@@ -31,29 +33,82 @@ const (
 	maxMessageLength = 4096
 )
 
-// Telegram — доставка ботом и привязка аккаунта.
-type Telegram struct {
-	db     Database
-	token  string
-	api    string
-	client *http.Client
+// MessengerConfig описывает бота конкретного мессенджера.
+//
+// Протокол задаётся конфигурацией, а не кодом: у ботов один и тот же
+// набор действий — отправить сообщение, забрать обновления, узнать
+// о блокировке, — но адреса и имена полей у каждой площадки свои.
+// Выдумывать чужой формат нельзя, поэтому он приходит извне, а значения
+// по умолчанию заданы только для Telegram, где они известны.
+type MessengerConfig struct {
+	Channel notify.Channel
+	// API — база адресов, Token — токен бота, BotName нужен для ссылки
+	// привязки.
+	API     string
+	Token   string
+	BotName string
+	// MethodPath — шаблон пути метода. Подстановки: {token} и {method}.
+	MethodPath string
+	// SendMethod и UpdatesMethod — имена методов отправки и получения
+	// обновлений.
+	SendMethod    string
+	UpdatesMethod string
+	// ChatField и TextField — имена полей в запросе отправки.
+	ChatField string
+	TextField string
 }
 
-func NewTelegram(db Database, token, api string) *Telegram {
+// TelegramConfig собирает настройки Telegram: у него формат известен,
+// и повторять его в конфигурации стенда незачем.
+func TelegramConfig(token, api, botName string) MessengerConfig {
 	if api == "" {
 		api = TelegramAPI
 	}
-	return &Telegram{
-		db:    db,
-		token: token,
-		api:   api,
+	return MessengerConfig{
+		Channel: notify.ChannelTelegram, API: api, Token: token, BotName: botName,
+		MethodPath: "/bot{token}/{method}",
+		SendMethod: "sendMessage", UpdatesMethod: "getUpdates",
+		ChatField: "chat_id", TextField: "text",
+	}
+}
+
+// Validate проверяет, что бота можно поднять: без адреса и токена
+// он не отправит ничего, и узнать об этом лучше при старте.
+func (c MessengerConfig) Validate() error {
+	missing := make([]string, 0, 4)
+	for field, value := range map[string]string{
+		"API": c.API, "TOKEN": c.Token, "METHOD_PATH": c.MethodPath,
+		"SEND_METHOD": c.SendMethod, "CHAT_FIELD": c.ChatField, "TEXT_FIELD": c.TextField,
+	} {
+		if value == "" {
+			missing = append(missing, field)
+		}
+	}
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		return fmt.Errorf("messenger %s is missing: %s", c.Channel, strings.Join(missing, ", "))
+	}
+	return nil
+}
+
+// Messenger — доставка ботом и привязка аккаунта.
+type Messenger struct {
+	db     Database
+	config MessengerConfig
+	client *http.Client
+}
+
+func NewMessenger(db Database, config MessengerConfig) *Messenger {
+	return &Messenger{
+		db:     db,
+		config: config,
 		// Таймаут запроса больше времени длинного опроса: иначе клиент
 		// обрывал бы каждое ожидание обновлений.
 		client: &http.Client{Timeout: telegramPollTimeout + telegramTimeout},
 	}
 }
 
-func (t *Telegram) Channel() notify.Channel { return notify.ChannelTelegram }
+func (t *Messenger) Channel() notify.Channel { return t.config.Channel }
 
 // BindingCodeHash считает хеш кода привязки.
 //
@@ -61,15 +116,15 @@ func (t *Telegram) Channel() notify.Channel { return notify.ChannelTelegram }
 // готовых способов привязать чужой аккаунт к своему боту. Ключом служит
 // токен бота: смена токена обесценивает старые коды, и это правильно —
 // они всё равно живут минуты.
-func (t *Telegram) BindingCodeHash(code string) []byte {
-	mac := hmac.New(sha256.New, []byte(t.token))
+func (t *Messenger) BindingCodeHash(code string) []byte {
+	mac := hmac.New(sha256.New, []byte(t.config.Token))
 	// hash.Hash по контракту не возвращает ошибку записи.
 	_, _ = mac.Write([]byte(strings.ToUpper(code)))
 	return mac.Sum(nil)
 }
 
-func (t *Telegram) Send(ctx context.Context, task Task, title, body string) error {
-	binding, err := t.db.TelegramBinding(ctx, task.UserId)
+func (t *Messenger) Send(ctx context.Context, task Task, title, body string) error {
+	binding, err := t.db.MessengerBinding(ctx, t.config.Channel, task.UserId)
 	if errors.Is(err, ErrNotFound) {
 		return ErrChannelUnbound
 	}
@@ -87,18 +142,17 @@ func (t *Telegram) Send(ctx context.Context, task Task, title, body string) erro
 		text = text[:maxMessageLength]
 	}
 
-	err = t.call(ctx, "sendMessage", map[string]any{
-		"chat_id":                  binding.ChatId,
-		"text":                     text,
-		"disable_web_page_preview": true,
+	err = t.call(ctx, t.config.SendMethod, map[string]any{
+		t.config.ChatField: binding.ChatId,
+		t.config.TextField: text,
 	}, nil)
 
 	var api *telegramError
 	if errors.As(err, &api) && api.Code == http.StatusForbidden {
 		// Бот заблокирован пользователем. Отмечаем это, иначе каждое
 		// следующее событие будет заново упираться в тот же отказ.
-		if blockErr := t.db.BlockTelegram(ctx, task.UserId); blockErr != nil {
-			slog.ErrorContext(ctx, "Can't mark telegram blocked",
+		if blockErr := t.db.BlockMessenger(ctx, t.config.Channel, task.UserId); blockErr != nil {
+			slog.ErrorContext(ctx, "Can't mark messenger blocked",
 				slog.String("user", task.UserId.String()), slog.String("err", blockErr.Error()))
 		}
 		return ErrChannelBlocked
@@ -108,7 +162,7 @@ func (t *Telegram) Send(ctx context.Context, task Task, title, body string) erro
 
 // Run обрабатывает обновления бота до отмены контекста: по команде
 // /start с кодом привязывает чат к пользователю.
-func (t *Telegram) Run(ctx context.Context) error {
+func (t *Messenger) Run(ctx context.Context) error {
 	var offset int64
 	for {
 		if ctx.Err() != nil {
@@ -120,7 +174,8 @@ func (t *Telegram) Run(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return nil
 			}
-			slog.WarnContext(ctx, "Can't read telegram updates", slog.String("err", err.Error()))
+			slog.WarnContext(ctx, "Can't read messenger updates",
+				slog.String("channel", string(t.config.Channel)), slog.String("err", err.Error()))
 			// Пауза после сбоя: без неё цикл превращается в непрерывный
 			// поток запросов к недоступному API.
 			select {
@@ -143,7 +198,7 @@ func (t *Telegram) Run(ctx context.Context) error {
 	}
 }
 
-func (t *Telegram) handleCommand(ctx context.Context, chatId int64, text string) {
+func (t *Messenger) handleCommand(ctx context.Context, chatId int64, text string) {
 	fields := strings.Fields(text)
 	if len(fields) == 0 || !strings.HasPrefix(fields[0], "/start") {
 		t.reply(ctx, chatId, "Чтобы получать оповещения, откройте привязку в приложении и пришлите команду /start с кодом.")
@@ -154,7 +209,7 @@ func (t *Telegram) handleCommand(ctx context.Context, chatId int64, text string)
 		return
 	}
 
-	user, err := t.db.CompleteTelegramBinding(ctx, t.BindingCodeHash(fields[1]), chatId)
+	user, err := t.db.CompleteMessengerBinding(ctx, t.config.Channel, t.BindingCodeHash(fields[1]), chatId)
 	if errors.Is(err, ErrNotFound) {
 		// Причина не уточняется: по разнице ответов «код не найден»
 		// и «код просрочен» подбирать код удобнее.
@@ -162,21 +217,23 @@ func (t *Telegram) handleCommand(ctx context.Context, chatId int64, text string)
 		return
 	}
 	if err != nil {
-		slog.ErrorContext(ctx, "Can't complete telegram binding", slog.String("err", err.Error()))
+		slog.ErrorContext(ctx, "Can't complete messenger binding",
+			slog.String("channel", string(t.config.Channel)), slog.String("err", err.Error()))
 		t.reply(ctx, chatId, "Не получилось привязать аккаунт. Попробуйте позже.")
 		return
 	}
 
-	slog.InfoContext(ctx, "Telegram bound", slog.String("user", user.String()))
+	slog.InfoContext(ctx, "Messenger bound",
+		slog.String("channel", string(t.config.Channel)), slog.String("user", user.String()))
 	t.reply(ctx, chatId, "Аккаунт привязан. Оповещения будут приходить сюда.")
 }
 
-func (t *Telegram) reply(ctx context.Context, chatId int64, text string) {
-	if err := t.call(ctx, "sendMessage", map[string]any{
-		"chat_id": chatId,
-		"text":    text,
+func (t *Messenger) reply(ctx context.Context, chatId int64, text string) {
+	if err := t.call(ctx, t.config.SendMethod, map[string]any{
+		t.config.ChatField: chatId,
+		t.config.TextField: text,
 	}, nil); err != nil {
-		slog.WarnContext(ctx, "Can't reply in telegram", slog.String("err", err.Error()))
+		slog.WarnContext(ctx, "Can't reply in messenger", slog.String("err", err.Error()))
 	}
 }
 
@@ -190,9 +247,9 @@ type telegramUpdate struct {
 	} `json:"message"`
 }
 
-func (t *Telegram) updates(ctx context.Context, offset int64) ([]telegramUpdate, error) {
+func (t *Messenger) updates(ctx context.Context, offset int64) ([]telegramUpdate, error) {
 	var updates []telegramUpdate
-	err := t.call(ctx, "getUpdates", map[string]any{
+	err := t.call(ctx, t.config.UpdatesMethod, map[string]any{
 		"offset":          offset,
 		"timeout":         int(telegramPollTimeout.Seconds()),
 		"allowed_updates": []string{"message"},
@@ -210,13 +267,15 @@ func (e *telegramError) Error() string {
 	return fmt.Sprintf("telegram api error %d: %s", e.Code, e.Description)
 }
 
-func (t *Telegram) call(ctx context.Context, method string, params map[string]any, result any) error {
+func (t *Messenger) call(ctx context.Context, method string, params map[string]any, result any) error {
 	body, err := json.Marshal(params)
 	if err != nil {
 		return fmt.Errorf("encoding %s request: %w", method, err)
 	}
 
-	url := fmt.Sprintf("%s/bot%s/%s", t.api, t.token, method)
+	path := strings.ReplaceAll(t.config.MethodPath, "{token}", t.config.Token)
+	path = strings.ReplaceAll(path, "{method}", method)
+	url := t.config.API + path
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("creating %s request: %w", method, err)
@@ -295,4 +354,41 @@ func BindingLink(botName, code string) string {
 		return ""
 	}
 	return fmt.Sprintf("https://t.me/%s?start=%s", botName, code)
+}
+
+// LoadMessengers читает настройки ботов из окружения.
+//
+// Разбор живёт в сервисе, а не в общей конфигурации: набор переменных
+// зависит от числа мессенджеров и нужен только здесь. Telegram описан
+// значениями по умолчанию — его формат известен; для остальных площадок
+// формат задаётся явно, потому что выдумывать чужой протокол нельзя.
+func LoadMessengers(db Database, telegramToken, telegramAPI, telegramBot string) (map[notify.Channel]*Messenger, error) {
+	messengers := make(map[notify.Channel]*Messenger, 2)
+
+	if telegramToken != "" {
+		config := TelegramConfig(telegramToken, telegramAPI, telegramBot)
+		if err := config.Validate(); err != nil {
+			return nil, err
+		}
+		messengers[notify.ChannelTelegram] = NewMessenger(db, config)
+	}
+
+	if token := os.Getenv("NOTIFY_MAX_TOKEN"); token != "" {
+		config := MessengerConfig{
+			Channel:       notify.ChannelMax,
+			API:           os.Getenv("NOTIFY_MAX_API"),
+			Token:         token,
+			BotName:       os.Getenv("NOTIFY_MAX_BOT"),
+			MethodPath:    os.Getenv("NOTIFY_MAX_METHOD_PATH"),
+			SendMethod:    os.Getenv("NOTIFY_MAX_SEND_METHOD"),
+			UpdatesMethod: os.Getenv("NOTIFY_MAX_UPDATES_METHOD"),
+			ChatField:     os.Getenv("NOTIFY_MAX_CHAT_FIELD"),
+			TextField:     os.Getenv("NOTIFY_MAX_TEXT_FIELD"),
+		}
+		if err := config.Validate(); err != nil {
+			return nil, err
+		}
+		messengers[notify.ChannelMax] = NewMessenger(db, config)
+	}
+	return messengers, nil
 }

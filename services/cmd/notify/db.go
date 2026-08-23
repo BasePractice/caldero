@@ -36,12 +36,13 @@ type Task struct {
 	Created  time.Time
 }
 
-// TelegramBinding — привязка Telegram к пользователю.
-type TelegramBinding struct {
-	UserId  uuid.UUID
-	ChatId  int64
-	Blocked bool
-	BoundAt time.Time
+// MessengerBinding — привязка мессенджера к пользователю.
+type MessengerBinding struct {
+	Provider notify.Channel
+	UserId   uuid.UUID
+	ChatId   int64
+	Blocked  bool
+	BoundAt  time.Time
 }
 
 type Database interface {
@@ -79,15 +80,15 @@ type Database interface {
 	// Messages отдаёт ленту по курсору.
 	Messages(ctx context.Context, user uuid.UUID, after int64, limit int) ([]notify.Message, error)
 
-	// StartTelegramBinding заводит код привязки и возвращает его хеш.
-	StartTelegramBinding(ctx context.Context, user uuid.UUID, codeHash []byte, expires time.Time) error
-	// CompleteTelegramBinding связывает чат с пользователем по коду.
-	CompleteTelegramBinding(ctx context.Context, codeHash []byte, chatId int64) (uuid.UUID, error)
-	// TelegramBinding возвращает привязку пользователя.
-	TelegramBinding(ctx context.Context, user uuid.UUID) (TelegramBinding, error)
-	// BlockTelegram помечает бота заблокированным: слать в такой чат
+	// StartMessengerBinding заводит код привязки и возвращает его хеш.
+	StartMessengerBinding(ctx context.Context, provider notify.Channel, user uuid.UUID, codeHash []byte, expires time.Time) error
+	// CompleteMessengerBinding связывает чат с пользователем по коду.
+	CompleteMessengerBinding(ctx context.Context, provider notify.Channel, codeHash []byte, chatId int64) (uuid.UUID, error)
+	// MessengerBinding возвращает привязку пользователя.
+	MessengerBinding(ctx context.Context, provider notify.Channel, user uuid.UUID) (MessengerBinding, error)
+	// BlockMessenger помечает бота заблокированным: слать в такой чат
 	// бессмысленно, пока пользователь не разблокирует бота.
-	BlockTelegram(ctx context.Context, user uuid.UUID) error
+	BlockMessenger(ctx context.Context, provider notify.Channel, user uuid.UUID) error
 
 	Close() error
 	Stats() sql.DBStats
@@ -485,58 +486,69 @@ func (d ds) Messages(
 	return messages, nil
 }
 
-func (d ds) StartTelegramBinding(
+func (d ds) StartMessengerBinding(
 	ctx context.Context,
+	provider notify.Channel,
 	user uuid.UUID,
 	codeHash []byte,
 	expires time.Time,
 ) error {
 	_, err := d.db.ExecContext(ctx, `
-		INSERT INTO telegram_binding (user_id, code_hash, code_expires_at)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (user_id) DO UPDATE
+		INSERT INTO messenger_binding (provider, user_id, code_hash, code_expires_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (provider, user_id) DO UPDATE
 		SET code_hash = EXCLUDED.code_hash,
 		    code_expires_at = EXCLUDED.code_expires_at,
-		    updated_at = current_timestamp`, user, codeHash, expires)
+		    updated_at = current_timestamp`, provider, user, codeHash, expires)
 	if err != nil {
-		return fmt.Errorf("starting telegram binding for user %s: %w", user, err)
+		return fmt.Errorf("starting %s binding for user %s: %w", provider, user, err)
 	}
 	return nil
 }
 
-func (d ds) CompleteTelegramBinding(ctx context.Context, codeHash []byte, chatId int64) (uuid.UUID, error) {
+func (d ds) CompleteMessengerBinding(
+	ctx context.Context,
+	provider notify.Channel,
+	codeHash []byte,
+	chatId int64,
+) (uuid.UUID, error) {
 	var user uuid.UUID
 	err := d.db.QueryRowContext(ctx, `
-		UPDATE telegram_binding
-		SET chat_id = $2, bound_at = current_timestamp, blocked = FALSE,
+		UPDATE messenger_binding
+		SET chat_id = $3, bound_at = current_timestamp, blocked = FALSE,
 		    code_hash = NULL, code_expires_at = NULL, updated_at = current_timestamp
-		WHERE code_hash = $1 AND code_expires_at > current_timestamp
-		RETURNING user_id`, codeHash, chatId).Scan(&user)
+		WHERE provider = $1 AND code_hash = $2 AND code_expires_at > current_timestamp
+		RETURNING user_id`, provider, codeHash, chatId).Scan(&user)
 	if errors.Is(err, sql.ErrNoRows) {
 		return uuid.Nil, ErrNotFound
 	}
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("completing telegram binding: %w", err)
+		return uuid.Nil, fmt.Errorf("completing %s binding: %w", provider, err)
 	}
 	return user, nil
 }
 
-func (d ds) TelegramBinding(ctx context.Context, user uuid.UUID) (TelegramBinding, error) {
-	var binding TelegramBinding
+func (d ds) MessengerBinding(
+	ctx context.Context,
+	provider notify.Channel,
+	user uuid.UUID,
+) (MessengerBinding, error) {
+	binding := MessengerBinding{Provider: provider}
 	var chatId sql.NullInt64
 	var boundAt sql.NullTime
 	err := d.db.QueryRowContext(ctx, `
-		SELECT user_id, chat_id, blocked, bound_at FROM telegram_binding WHERE user_id = $1`, user).
+		SELECT user_id, chat_id, blocked, bound_at FROM messenger_binding
+		WHERE provider = $1 AND user_id = $2`, provider, user).
 		Scan(&binding.UserId, &chatId, &binding.Blocked, &boundAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return TelegramBinding{}, ErrNotFound
+		return MessengerBinding{}, ErrNotFound
 	}
 	if err != nil {
-		return TelegramBinding{}, fmt.Errorf("loading telegram binding of user %s: %w", user, err)
+		return MessengerBinding{}, fmt.Errorf("loading %s binding of user %s: %w", provider, user, err)
 	}
 	if !chatId.Valid {
 		// Привязка начата, но не завершена: чата ещё нет.
-		return TelegramBinding{}, ErrNotFound
+		return MessengerBinding{}, ErrNotFound
 	}
 	binding.ChatId = chatId.Int64
 	if boundAt.Valid {
@@ -545,12 +557,12 @@ func (d ds) TelegramBinding(ctx context.Context, user uuid.UUID) (TelegramBindin
 	return binding, nil
 }
 
-func (d ds) BlockTelegram(ctx context.Context, user uuid.UUID) error {
+func (d ds) BlockMessenger(ctx context.Context, provider notify.Channel, user uuid.UUID) error {
 	_, err := d.db.ExecContext(ctx, `
-		UPDATE telegram_binding SET blocked = TRUE, updated_at = current_timestamp
-		WHERE user_id = $1`, user)
+		UPDATE messenger_binding SET blocked = TRUE, updated_at = current_timestamp
+		WHERE provider = $1 AND user_id = $2`, provider, user)
 	if err != nil {
-		return fmt.Errorf("marking telegram blocked for user %s: %w", user, err)
+		return fmt.Errorf("marking %s blocked for user %s: %w", provider, user, err)
 	}
 	return nil
 }

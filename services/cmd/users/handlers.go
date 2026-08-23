@@ -23,6 +23,7 @@ func registerHttpHandlers(service *Service) http.Handler {
 	mux.HandleFunc("POST /profile/identities/{provider}", service.protect(service.handleLinkIdentity))
 	mux.HandleFunc("DELETE /profile/identities/{provider}", service.protect(service.handleUnlinkIdentity))
 	mux.HandleFunc("GET /users/{id}", service.handlePublicProfile)
+	mux.HandleFunc("GET /users/{id}/contacts", service.handleContacts)
 	mux.HandleFunc("GET /.well-known/jwks.json", service.handleJWKS)
 	mux.HandleFunc("POST /clients", service.handleCreateClient)
 	mux.HandleFunc("POST /rotate-keys", service.handleRotateKeys)

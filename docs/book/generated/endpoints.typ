@@ -20,8 +20,8 @@
   [GET], [/api/v1/notify/messages], [notify], [по токену],
   [GET], [/api/v1/notify/preferences], [notify], [по токену],
   [PUT], [/api/v1/notify/preferences], [notify], [по токену],
-  [POST], [/api/v1/notify/telegram/link], [notify], [по токену],
-  [GET], [/api/v1/notify/telegram], [notify], [по токену],
+  [POST], [/api/v1/notify/messengers/{provider}/link], [notify], [по токену],
+  [GET], [/api/v1/notify/messengers/{provider}], [notify], [по токену],
   [POST], [/api/v1/wishlist/items], [wishlist], [по токену],
   [GET], [/api/v1/wishlist/items], [wishlist], [по токену],
   [GET], [/api/v1/wishlist/chosen], [wishlist], [по токену],
@@ -57,5 +57,6 @@
   [GET], [/api/v1/profile/identities], [users], [по токену],
   [POST], [/api/v1/profile/identities/{provider}], [users], [по токену],
   [DELETE], [/api/v1/profile/identities/{provider}], [users], [по токену],
+  [GET], [/api/v1/notify/unsubscribe], [notify], [публичный],
 )
 

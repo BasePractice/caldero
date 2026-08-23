@@ -248,13 +248,19 @@ func TestPreferencesFilterChannels(t *testing.T) {
 	db := newTestDatabase(t)
 	user := uuid.New()
 
-	// По умолчанию код подтверждения в Telegram не уходит: до подтверждения
-	// привязки бот может быть чужим.
+	// По умолчанию код подтверждения в мессенджеры не уходит: до
+	// подтверждения привязки бот может быть чужим. Почта — исключение:
+	// код подтверждения адреса иначе доставить некуда.
 	channels, err := db.EnabledChannels(ctx, user, notify.EventConfirmationCode)
 	if err != nil {
 		t.Fatalf("каналы по умолчанию: %v", err)
 	}
-	if len(channels) != 1 || channels[0] != notify.ChannelInApp {
+	for _, channel := range channels {
+		if channel == notify.ChannelTelegram || channel == notify.ChannelMax {
+			t.Errorf("код подтверждения уходит в мессенджер %s", channel)
+		}
+	}
+	if !containsChannel(channels, notify.ChannelInApp) || !containsChannel(channels, notify.ChannelEmail) {
 		t.Errorf("каналы по умолчанию для кода подтверждения: %v", channels)
 	}
 
@@ -267,8 +273,11 @@ func TestPreferencesFilterChannels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("каналы после настройки: %v", err)
 	}
-	if len(channels) != 1 || channels[0] != notify.ChannelInApp {
+	if containsChannel(channels, notify.ChannelTelegram) {
 		t.Errorf("выключенный канал остался в списке: %v", channels)
+	}
+	if !containsChannel(channels, notify.ChannelInApp) {
+		t.Errorf("настройка одного канала выключила остальные: %v", channels)
 	}
 
 	preferences, err := db.Preferences(ctx, user)
@@ -280,29 +289,29 @@ func TestPreferencesFilterChannels(t *testing.T) {
 	}
 }
 
-func TestTelegramBindingLifecycle(t *testing.T) {
+func TestMessengerBindingLifecycle(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDatabase(t)
 	user := uuid.New()
-	telegram := NewTelegram(db, "test-token", "")
+	telegram := NewMessenger(db, TelegramConfig("test-token", "", "wish_bot"))
 
-	if _, err := db.TelegramBinding(ctx, user); err == nil {
+	if _, err := db.MessengerBinding(ctx, notify.ChannelTelegram, user); err == nil {
 		t.Error("привязка найдена до её создания")
 	}
 
 	code := "ABCD2345"
-	if err := db.StartTelegramBinding(ctx, user, telegram.BindingCodeHash(code),
+	if err := db.StartMessengerBinding(ctx, notify.ChannelTelegram, user, telegram.BindingCodeHash(code),
 		time.Now().Add(time.Minute)); err != nil {
 		t.Fatalf("начало привязки: %v", err)
 	}
 
 	t.Run("чужой код не подходит", func(t *testing.T) {
-		if _, err := db.CompleteTelegramBinding(ctx, telegram.BindingCodeHash("WRONGCOD"), 1); err == nil {
+		if _, err := db.CompleteMessengerBinding(ctx, notify.ChannelTelegram, telegram.BindingCodeHash("WRONGCOD"), 1); err == nil {
 			t.Error("привязка завершена чужим кодом")
 		}
 	})
 
-	bound, err := db.CompleteTelegramBinding(ctx, telegram.BindingCodeHash(code), 4242)
+	bound, err := db.CompleteMessengerBinding(ctx, notify.ChannelTelegram, telegram.BindingCodeHash(code), 4242)
 	if err != nil {
 		t.Fatalf("завершение привязки: %v", err)
 	}
@@ -310,7 +319,7 @@ func TestTelegramBindingLifecycle(t *testing.T) {
 		t.Errorf("привязан пользователь %s, ожидался %s", bound, user)
 	}
 
-	binding, err := db.TelegramBinding(ctx, user)
+	binding, err := db.MessengerBinding(ctx, notify.ChannelTelegram, user)
 	if err != nil {
 		t.Fatalf("чтение привязки: %v", err)
 	}
@@ -319,16 +328,16 @@ func TestTelegramBindingLifecycle(t *testing.T) {
 	}
 
 	t.Run("код одноразовый", func(t *testing.T) {
-		if _, err := db.CompleteTelegramBinding(ctx, telegram.BindingCodeHash(code), 9); err == nil {
+		if _, err := db.CompleteMessengerBinding(ctx, notify.ChannelTelegram, telegram.BindingCodeHash(code), 9); err == nil {
 			t.Error("код сработал повторно")
 		}
 	})
 
 	t.Run("блокировка бота запоминается", func(t *testing.T) {
-		if err := db.BlockTelegram(ctx, user); err != nil {
+		if err := db.BlockMessenger(ctx, notify.ChannelTelegram, user); err != nil {
 			t.Fatalf("отметка блокировки: %v", err)
 		}
-		binding, err := db.TelegramBinding(ctx, user)
+		binding, err := db.MessengerBinding(ctx, notify.ChannelTelegram, user)
 		if err != nil {
 			t.Fatalf("чтение привязки: %v", err)
 		}
@@ -414,4 +423,16 @@ func TestDeliveryStates(t *testing.T) {
 			}
 		}
 	})
+}
+
+// containsChannel — проверка вхождения: каналов стало четыре, и сравнивать
+// список целиком в каждом тесте значит переписывать их при добавлении
+// следующего.
+func containsChannel(channels []notify.Channel, channel notify.Channel) bool {
+	for _, candidate := range channels {
+		if candidate == channel {
+			return true
+		}
+	}
+	return false
 }

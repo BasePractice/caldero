@@ -40,6 +40,52 @@ func (s *Service) handlePublicProfile(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, r, user.PublicProfile())
 }
 
+// handleContacts отдаёт контакты пользователя служебному вызову.
+//
+// Нужен сервису оповещений: чтобы отправить письмо, надо знать адрес,
+// а хранить вторую копию контактов у себя он не должен — она разойдётся
+// с профилем при первой же смене адреса.
+//
+// Доступно только с ролью оператора: контакты — это персональные данные,
+// и отдавать их по идентификатору кому угодно нельзя.
+func (s *Service) handleContacts(w http.ResponseWriter, r *http.Request) {
+	operator, err := services.HttpAuthorized(r)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if !operator.HasRole(services.RoleOperator) {
+		slog.WarnContext(r.Context(), "Attempt to read contacts without the operator role",
+			slog.String("operator", operator.Id.String()))
+		http.Error(w, "Reading contacts requires the operator role", http.StatusForbidden)
+		return
+	}
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "Invalid id", http.StatusBadRequest)
+		return
+	}
+
+	user, err := s.db.GetUserById(r.Context(), id)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		slog.ErrorContext(r.Context(), "Loading contacts", slog.String("err", err.Error()))
+		http.Error(w, "Can't load contacts", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, r, map[string]any{
+		"user_id":         user.Id,
+		"phone":           user.Phone.String,
+		"phone_confirmed": user.PhoneConfirmed,
+		"email":           user.Email.String,
+		"email_confirmed": user.EmailConfirmed,
+	})
+}
+
 // handleProfile отдаёт полный профиль владельца токена.
 func (s *Service) handleProfile(w http.ResponseWriter, r *http.Request) {
 	user, ok := s.currentUser(w, r)
