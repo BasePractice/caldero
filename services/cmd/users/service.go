@@ -98,11 +98,9 @@ func newService(ctx context.Context, cfg services.Config) (*Service, error) {
 		},
 		compose.OAuth2AuthorizeExplicitFactory,
 		compose.OAuth2PKCEFactory,
-		// ROPC помечен устаревшим и исключён из OAuth 2.1: клиент видит пароль
-		// пользователя. Грант оставлен для отладочных сценариев и коллекций
-		// в _requests; снятие — отдельная задача.
-		//nolint:staticcheck // SA1019, осознанное решение
-		compose.OAuth2ResourceOwnerPasswordCredentialsFactory,
+		// Грант password (ROPC) не подключается намеренно: клиент получает
+		// пароль пользователя в открытом виде. Его роль выполняет
+		// Authorization Code Flow с PKCE.
 		compose.OAuth2RefreshTokenGrantFactory,
 		compose.OAuth2TokenIntrospectionFactory,
 		compose.OAuth2TokenRevocationFactory,
@@ -224,30 +222,14 @@ func (s *Service) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) handleToken(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	// Пользователя аутентифицирует сам password-грант через
-	// DatabaseUsers.Authenticate. Раньше это делалось вручную после разбора
-	// запроса, причём фабрика гранта вообще не была зарегистрирована,
-	// и эндпоинт не поддерживал ни одного гранта, кроме refresh_token.
+	// Гранты authorization_code и refresh_token сами восстанавливают scope
+	// из сохранённого запроса, поэтому выдавать их здесь не нужно.
 	session := s.newSession(ctx, uuid.Nil)
 	accessRequest, err := s.oauth2Provider.NewAccessRequest(ctx, r, session)
 	if err != nil {
 		slog.Debug("Access request rejected", slog.String("err", err.Error()))
 		s.oauth2Provider.WriteAccessError(ctx, w, accessRequest, err)
 		return
-	}
-
-	// fosite проверяет запрошенные scope против клиента, но не выдаёт их:
-	// решение, какие scope выдать, остаётся за сервером авторизации.
-	// У остальных грантов это делают их собственные обработчики — refresh
-	// восстанавливает исходный набор, authorization_code берёт его из
-	// сохранённого запроса, — а password-грант оставлял granted scope пустым.
-	if accessRequest.GetGrantTypes().ExactOne("password") {
-		for _, scope := range accessRequest.GetRequestedScopes() {
-			accessRequest.GrantScope(scope)
-		}
-		for _, audience := range accessRequest.GetRequestedAudience() {
-			accessRequest.GrantAudience(audience)
-		}
 	}
 
 	if session, ok := accessRequest.GetSession().(*jwtSession); ok {

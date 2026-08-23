@@ -247,8 +247,9 @@ func (s *ds) GetUser(ctx context.Context, username string) (*User, error) {
 	return &u, nil
 }
 
-// Authenticate требуется password-грантом. Неизвестный пользователь и неверный
-// пароль дают один и тот же ответ: различие позволило бы перебирать логины.
+// Authenticate проверяет учётные данные на форме входа. Неизвестный
+// пользователь и неверный пароль дают один и тот же ответ: различие
+// позволило бы перебирать логины.
 func (s *ds) Authenticate(ctx context.Context, username, secret string) (string, error) {
 	user, err := s.GetUser(ctx, username)
 	if errors.Is(err, sql.ErrNoRows) {

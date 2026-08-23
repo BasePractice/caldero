@@ -21,28 +21,14 @@ username={{username}}&password={{password}}
     }
 %}
 
-### Токен по паролю (грант устарел, см. задачу T-068)
-POST {{users.url}}/token
-Content-Type: application/x-www-form-urlencoded
-Authorization: Basic {{client_id}} {{client_secret}}
-
-grant_type=password&username={{username}}&password={{password}}&scope={{scopes}}
-
-> {%
-    client.assert(response.status === 200, "Токен не выдан: " + response.body.error_description)
-    client.global.set("access_token", response.body.access_token)
-    // sub токена — это и есть идентификатор пользователя, который шлюз
-    // проставляет сервисам в X-Authorized-Id.
-    const payload = JSON.parse(atob(response.body.access_token.split(".")[1]))
-    client.global.set("user_id", payload.sub)
-    client.log("Пользователь " + payload.sub + ", scope: " + response.body.scope)
-%}
-
-### Страница входа Authorization Code Flow
-# Открывается в браузере: форма отправляет учётные данные на этот же адрес.
-# code_challenge посчитан заранее от code_verifier ниже — коллекция отладочная,
+### Вход и получение кода авторизации
+# Форма входа отдаётся на GET того же адреса; здесь она отправляется сразу,
+# чтобы коллекция проходила без браузера. @no-redirect нужен, чтобы прочитать
+# код из заголовка Location, а не уйти на redirect_uri.
+# Пара verifier и challenge взята из примера RFC 7636: коллекция отладочная,
 # в реальном клиенте verifier генерируется на каждый запрос.
-GET {{users.url}}/auth
+// @no-redirect
+POST {{users.url}}/auth
     ?client_id={{client_id}}
     &response_type=code
     &redirect_uri={{redirect_uri}}
@@ -50,18 +36,56 @@ GET {{users.url}}/auth
     &scope=openid read
     &code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM
     &code_challenge_method=S256
+Content-Type: application/x-www-form-urlencoded
+
+username={{username}}&password={{password}}
 
 > {%
-    client.assert(response.status === 200, "Форма входа не отдана")
+    client.assert(response.status === 302, "Ожидался редирект с кодом, получено " + response.status)
+    const location = response.headers.valueOf("Location")
+    const code = new URL(location).searchParams.get("code")
+    client.assert(code, "В редиректе нет кода: " + location)
+    client.global.set("authorization_code", code)
 %}
 
 ### Обмен кода на токен
-# Подставьте code из адресной строки после входа на предыдущем шаге.
 POST {{users.url}}/token
 Content-Type: application/x-www-form-urlencoded
 Authorization: Basic {{client_id}} {{client_secret}}
 
 grant_type=authorization_code&code={{authorization_code}}&redirect_uri={{redirect_uri}}&code_verifier=dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk
+
+> {%
+    client.assert(response.status === 200, "Токен не выдан: " + response.body.error_description)
+    client.global.set("access_token", response.body.access_token)
+    // sub токена — это и есть идентификатор, который шлюз проставляет
+    // сервисам в X-Authorized-Id.
+    const payload = JSON.parse(atob(response.body.access_token.split(".")[1]))
+    client.global.set("user_id", payload.sub)
+    client.log("Пользователь " + payload.sub + ", scope: " + response.body.scope)
+%}
+
+### Повторное предъявление кода отклоняется
+POST {{users.url}}/token
+Content-Type: application/x-www-form-urlencoded
+Authorization: Basic {{client_id}} {{client_secret}}
+
+grant_type=authorization_code&code={{authorization_code}}&redirect_uri={{redirect_uri}}&code_verifier=dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk
+
+> {%
+    client.assert(response.status === 400, "Одноразовый код принят повторно")
+%}
+
+### Грант password больше не поддерживается
+POST {{users.url}}/token
+Content-Type: application/x-www-form-urlencoded
+Authorization: Basic {{client_id}} {{client_secret}}
+
+grant_type=password&username={{username}}&password={{password}}
+
+> {%
+    client.assert(response.status === 400, "Устаревший грант должен отклоняться")
+%}
 
 ### Данные владельца токена
 GET {{users.url}}/me
