@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -41,6 +42,14 @@ func Run(name string, run func(ctx context.Context, cfg Config) error) {
 	defer stop()
 
 	logBuildInfo(name)
+
+	stopTracing, err := InitTracing(ctx, name, cfg)
+	if err != nil {
+		slog.Error("Can't initialize tracing", slog.String("err", err.Error()))
+		os.Exit(1)
+	}
+	defer stopTracing(ctx)
+
 	if err = run(ctx, cfg); err != nil {
 		slog.Error("Service stopped with error",
 			slog.String("service", name), slog.String("err", err.Error()))
@@ -54,8 +63,16 @@ func Run(name string, run func(ctx context.Context, cfg Config) error) {
 // и соединения обрывались на середине.
 func ServeHTTP(ctx context.Context, addr string, handler http.Handler) error {
 	srv := &http.Server{
-		Addr:    addr,
-		Handler: Recover(handler),
+		Addr: addr,
+		// otelhttp снаружи: спан должен охватывать и восстановление после
+		// паники, и измерение, иначе упавший запрос не попадёт в трассу.
+		Handler: otelhttp.NewHandler(Recover(handler), "http",
+			otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
+				if r.Pattern != "" {
+					return r.Pattern
+				}
+				return r.Method + " unmatched"
+			})),
 		// Без таймаутов сервер по умолчанию держит соединение сколько угодно:
 		// открытых, но не отправленных запросов достаточно, чтобы исчерпать
 		// ресурсы (Slowloris).

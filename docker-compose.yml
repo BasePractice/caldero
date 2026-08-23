@@ -52,9 +52,14 @@ services:
       - "8086:8086"
   jaeger:
     image: jaegertracing/all-in-one:1
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
     ports:
       - "16686:16686"
       - "14268:14268"
+      # Приёмник OTLP: сервисы отправляют трассы сюда.
+      - "4317:4317"
+      - "4318:4318"
   elasticsearch:
     image: elasticsearch:8.18.0
     environment:
@@ -168,6 +173,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      jaeger:
+        condition: service_started
     # Порт наружу не публикуется: доступ к сервису только через шлюз (T-001).
     # Для локальной отладки поднимайте профиль debug или пробрасывайте порт вручную.
     expose:
@@ -182,6 +189,8 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres-db:5432/wish?sslmode=disable&search_path=wallet
       REDIS_URL: redis://redis:6379/10?protocol=3
       LOG_COLOR: "false"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}
+      OTEL_TRACES_SAMPLER_ARG: ${OTEL_TRACES_SAMPLER_ARG:-1.0}
 #      LOG_FILE: /logs/wallet.log
     volumes:
       - ./.logs/wallet:/logs
@@ -197,6 +206,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      jaeger:
+        condition: service_started
     # Порт наружу не публикуется: доступ к сервису только через шлюз (T-001).
     # Для локальной отладки поднимайте профиль debug или пробрасывайте порт вручную.
     expose:
@@ -211,6 +222,8 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres-db:5432/wish?sslmode=disable&search_path=credit
       REDIS_URL: redis://redis:6379/10?protocol=3
       LOG_COLOR: "false"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}
+      OTEL_TRACES_SAMPLER_ARG: ${OTEL_TRACES_SAMPLER_ARG:-1.0}
 #      LOG_FILE: /logs/credit.log
     volumes:
       - ./.logs/credit:/logs
@@ -226,6 +239,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      jaeger:
+        condition: service_started
     # Порт наружу не публикуется: доступ к сервису только через шлюз (T-001).
     # Для локальной отладки поднимайте профиль debug или пробрасывайте порт вручную.
     expose:
@@ -240,6 +255,8 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres-db:5432/wish?sslmode=disable&search_path=users
       REDIS_URL: redis://redis:6379/10?protocol=3
       LOG_COLOR: "false"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}
+      OTEL_TRACES_SAMPLER_ARG: ${OTEL_TRACES_SAMPLER_ARG:-1.0}
       OAUTH2_GLOBAL_SECRET: ${OAUTH2_GLOBAL_SECRET:?OAUTH2_GLOBAL_SECRET не задан, нужно ровно 32 байта}
       OAUTH2_ISSUER: ${OAUTH2_ISSUER:-http://localhost:8080/api/v1}
       ADMIN_TOKEN: ${ADMIN_TOKEN:-}
@@ -259,6 +276,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      jaeger:
+        condition: service_started
     # Порт наружу не публикуется: доступ к сервису только через шлюз (T-001).
     # Для локальной отладки поднимайте профиль debug или пробрасывайте порт вручную.
     expose:
@@ -273,6 +292,8 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres-db:5432/wish?sslmode=disable&search_path=account
       REDIS_URL: redis://redis:6379/10?protocol=3
       LOG_COLOR: "false"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}
+      OTEL_TRACES_SAMPLER_ARG: ${OTEL_TRACES_SAMPLER_ARG:-1.0}
     #      LOG_FILE: /logs/users.log
     volumes:
       - ./.logs/account:/logs

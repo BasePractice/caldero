@@ -10,6 +10,7 @@ import (
 	"wish/middleware/wallet"
 	"wish/services"
 
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 )
 
@@ -47,6 +48,9 @@ func main() {
 		services.RegisterDBStats("wallet", db)
 
 		grpcServer := grpc.NewServer(
+			// Обработчик статистики otelgrpc: интерсепторы для трассировки
+			// в новых версиях помечены устаревшими.
+			grpc.StatsHandler(otelgrpc.NewServerHandler()),
 			grpc.ChainUnaryInterceptor(
 				services.MeasureUnaryInterceptor("wallet"),
 				services.RecoverUnaryInterceptor,

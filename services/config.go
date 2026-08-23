@@ -48,6 +48,12 @@ type Config struct {
 	// Нулевое значение отключает очистку.
 	TokenCleanupInterval time.Duration
 
+	// OTelEndpoint — адрес приёмника трасс по OTLP/HTTP.
+	// Пустое значение отключает трассировку.
+	OTelEndpoint string
+	// OTelSampleRatio — доля трасс, которые выгружаются.
+	OTelSampleRatio float64
+
 	// DebugStatsviz открывает страницу состояния рантайма на порту метрик.
 	// По умолчанию выключено: страница не аутентифицирована.
 	DebugStatsviz bool
@@ -81,6 +87,17 @@ func LoadConfig() (Config, error) {
 		OAuth2Issuer:       env("OAUTH2_ISSUER", "http://localhost:8080/api/v1"),
 		KeyMasterKey:       env("KEY_MASTER_KEY", ""),
 	}
+
+	cfg.OTelEndpoint = env("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+
+	sampleRatio, err := strconv.ParseFloat(env("OTEL_TRACES_SAMPLER_ARG", "1.0"), 64)
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing OTEL_TRACES_SAMPLER_ARG: %w", err)
+	}
+	if sampleRatio < 0 || sampleRatio > 1 {
+		return Config{}, fmt.Errorf("OTEL_TRACES_SAMPLER_ARG must be between 0 and 1, got %v", sampleRatio)
+	}
+	cfg.OTelSampleRatio = sampleRatio
 
 	debugStatsviz, err := strconv.ParseBool(env("DEBUG_STATSVIZ", "false"))
 	if err != nil {
