@@ -960,3 +960,122 @@ func TestParticipantsCannotBeAddedAfterReady(t *testing.T) {
 		t.Errorf("получено %v, ожидалась %v", err, caldron.ErrInvalidTransition)
 	}
 }
+
+// TestExpectedAmountText фиксирует, что участнику сообщают о взносе:
+// у диапазона точной суммы нет, и подставлять ноль было бы враньём.
+func TestExpectedAmountText(t *testing.T) {
+	tests := []struct {
+		name       string
+		pot        caldron.Caldron
+		individual credit.Amount
+		want       string
+	}{
+		{
+			name: "точная сумма",
+			pot:  caldron.Caldron{Mode: caldron.ModeFixed, Amount: 2_500_00},
+			want: "2500.00",
+		},
+		{
+			name:       "индивидуальная сумма",
+			pot:        caldron.Caldron{Mode: caldron.ModeIndividual},
+			individual: 1_000_00,
+			want:       "1000.00",
+		},
+		{
+			name: "диапазон",
+			pot:  caldron.Caldron{Mode: caldron.ModeRange, MinAmount: 500_00, MaxAmount: 5_000_00},
+			want: "от 500.00 до 5000.00",
+		},
+		{
+			name: "неизвестный режим",
+			pot:  caldron.Caldron{Mode: "WHATEVER"},
+			want: "",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := expectedAmountText(test.pot, test.individual); got != test.want {
+				t.Errorf("получено %q, ожидалось %q", got, test.want)
+			}
+		})
+	}
+}
+
+// TestGiftFromUnavailableMarketplace: подставлять вместо цены ноль нельзя —
+// подарок попал бы в розыгрыш как бесплатный.
+func TestGiftFromUnavailableMarketplace(t *testing.T) {
+	ctx := context.Background()
+	events := &notifyStub{}
+	db := newMemoryDatabase()
+	creator := uuid.New()
+
+	unavailable := NewCaldrons(db, newFakeWallet(),
+		notify.NewClient(events.start(t), uuid.New()),
+		marketplace.NewRegistry(&marketplace.Stub{Unavailable: true}))
+
+	pot, err := unavailable.Create(ctx, creator, caldron.CreateCaldron{
+		Title: "Юбилей", Type: caldron.TypeGift, Mode: caldron.ModeFixed,
+		CreatorParticipates: true, Amount: 100_000_00,
+	})
+	if err != nil {
+		t.Fatalf("создание котла: %v", err)
+	}
+
+	_, err = unavailable.SetGifts(ctx, creator, pot.Id, []GiftRequest{
+		{Provider: marketplace.ProviderStub, ProductId: "coffee-machine"},
+	})
+	if !errors.Is(err, ErrMarketplaceUnavailable) {
+		t.Errorf("получено %v, ожидалась ErrMarketplaceUnavailable", err)
+	}
+}
+
+// TestGiftFromUnknownProvider: площадка, которой нет в реестре, — это
+// ненайденный товар, а не сбой сервиса.
+func TestGiftFromUnknownProvider(t *testing.T) {
+	ctx := context.Background()
+	env := newEnvironment(t)
+	creator := uuid.New()
+
+	pot, err := env.caldrons.Create(ctx, creator, caldron.CreateCaldron{
+		Title: "Юбилей", Type: caldron.TypeGift, Mode: caldron.ModeFixed,
+		CreatorParticipates: true, Amount: 100_000_00,
+	})
+	if err != nil {
+		t.Fatalf("создание котла: %v", err)
+	}
+
+	_, err = env.caldrons.SetGifts(ctx, creator, pot.Id, []GiftRequest{
+		{Provider: "WHATEVER", ProductId: "x"},
+	})
+	if !errors.Is(err, ErrProductNotFound) {
+		t.Errorf("получено %v, ожидалась ErrProductNotFound", err)
+	}
+}
+
+// TestGiftsWithoutMarketplace: сервис без единой подключённой площадки
+// не должен делать вид, что подарок добавлен.
+func TestGiftsWithoutMarketplace(t *testing.T) {
+	ctx := context.Background()
+	events := &notifyStub{}
+	db := newMemoryDatabase()
+	creator := uuid.New()
+
+	bare := NewCaldrons(db, newFakeWallet(),
+		notify.NewClient(events.start(t), uuid.New()), nil)
+
+	pot, err := bare.Create(ctx, creator, caldron.CreateCaldron{
+		Title: "Юбилей", Type: caldron.TypeGift, Mode: caldron.ModeFixed,
+		CreatorParticipates: true, Amount: 100_000_00,
+	})
+	if err != nil {
+		t.Fatalf("создание котла: %v", err)
+	}
+
+	_, err = bare.SetGifts(ctx, creator, pot.Id, []GiftRequest{
+		{Provider: marketplace.ProviderStub, ProductId: "coffee-machine"},
+	})
+	if !errors.Is(err, ErrMarketplaceUnavailable) {
+		t.Errorf("получено %v, ожидалась ErrMarketplaceUnavailable", err)
+	}
+}

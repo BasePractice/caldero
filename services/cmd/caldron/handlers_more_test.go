@@ -296,3 +296,105 @@ func TestAddParticipantErrors(t *testing.T) {
 		}
 	})
 }
+
+func TestSettleAndCancelHandlerErrors(t *testing.T) {
+	env := newEnvironment(t)
+	handler := registerHttpHandlers(env.caldrons)
+	creator := uuid.New()
+	member := uuid.New()
+	pot := env.fixedCaldron(t, creator, 2_500_00, member)
+	path := "/caldrons/" + pot.Id.String()
+
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		body   string
+		user   uuid.UUID
+		want   int
+	}{
+		{
+			name: "завершение без токена", method: http.MethodPost, path: path + "/settle",
+			body: `{"winner":"` + member.String() + `"}`, user: uuid.Nil, want: http.StatusUnauthorized,
+		},
+		{
+			name: "нечитаемое тело завершения", method: http.MethodPost, path: path + "/settle",
+			body: `{"winner":`, user: creator, want: http.StatusBadRequest,
+		},
+		{
+			// Победитель обязателен: без него непонятно, кому передавать
+			// собранное.
+			name: "завершение без победителя", method: http.MethodPost, path: path + "/settle",
+			body: `{}`, user: creator, want: http.StatusBadRequest,
+		},
+		{
+			// Котёл ещё не собран: повтор с тем же телом ничего не изменит.
+			name: "завершение несобранного котла", method: http.MethodPost, path: path + "/settle",
+			body: `{"winner":"` + member.String() + `"}`, user: creator, want: http.StatusConflict,
+		},
+		{
+			name: "отмена без токена", method: http.MethodPost, path: path + "/cancel",
+			user: uuid.Nil, want: http.StatusUnauthorized,
+		},
+		{
+			name: "отмена посторонним", method: http.MethodPost, path: path + "/cancel",
+			user: uuid.New(), want: http.StatusNotFound,
+		},
+		{
+			name: "создание без токена", method: http.MethodPost, path: "/caldrons",
+			body: `{"title":"Юбилей","type":"GIFT","mode":"FIXED","amount":250000}`,
+			user: uuid.Nil, want: http.StatusUnauthorized,
+		},
+		{
+			name: "нечитаемое тело создания", method: http.MethodPost, path: "/caldrons",
+			body: `{"title":`, user: creator, want: http.StatusBadRequest,
+		},
+		{
+			name: "розыгрыш без токена", method: http.MethodPost, path: path + "/draw",
+			user: uuid.Nil, want: http.StatusUnauthorized,
+		},
+		{
+			name: "итог розыгрыша до розыгрыша", method: http.MethodGet, path: path + "/draw",
+			user: creator, want: http.StatusNotFound,
+		},
+		{
+			name: "взнос без токена", method: http.MethodPost, path: path + "/contribute",
+			user: uuid.Nil, want: http.StatusUnauthorized,
+		},
+		{
+			name: "нечитаемое тело взноса", method: http.MethodPost, path: path + "/contribute",
+			body: `{"amount":`, user: creator, want: http.StatusBadRequest,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := call(handler, test.method, test.path, test.body, test.user)
+			if recorder.Code != test.want {
+				t.Errorf("код ответа %d, ожидался %d (%s)", recorder.Code, test.want, recorder.Body)
+			}
+		})
+	}
+}
+
+// TestCancelHandler: отменённый котёл возвращает взносы, и это видно
+// по состоянию в ответе.
+func TestCancelHandler(t *testing.T) {
+	env := newEnvironment(t)
+	handler := registerHttpHandlers(env.caldrons)
+	creator := uuid.New()
+	env.wallet.fund(creator, 100_000_00)
+	pot := env.fixedCaldron(t, creator, 2_500_00, uuid.New())
+
+	recorder := call(handler, http.MethodPost, "/caldrons/"+pot.Id.String()+"/cancel", "", creator)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("код ответа %d (%s)", recorder.Code, recorder.Body)
+	}
+	var cancelled caldron.Caldron
+	if err := json.Unmarshal(recorder.Body.Bytes(), &cancelled); err != nil {
+		t.Fatalf("разбор ответа: %v", err)
+	}
+	if cancelled.State != caldron.StateCancelled {
+		t.Errorf("состояние %s, ожидалось %s", cancelled.State, caldron.StateCancelled)
+	}
+}

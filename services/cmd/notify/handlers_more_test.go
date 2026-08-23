@@ -387,3 +387,129 @@ func TestUnsubscribeStorageFailure(t *testing.T) {
 		t.Errorf("код ответа %d, ожидался %d", recorder.Code, http.StatusInternalServerError)
 	}
 }
+
+func TestPublishHandlerFailures(t *testing.T) {
+	user := uuid.New()
+	body := `{"user_id":"` + user.String() + `","type":"PAYMENT_SETTLED"}`
+
+	t.Run("каналы не читаются", func(t *testing.T) {
+		handler := newTestAPI(&channelsFailingDatabase{err: errors.New("connection refused")}, NewHub())
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, authorized(
+			httptest.NewRequest(http.MethodPost, "/notify/events", strings.NewReader(body)), user, ""))
+		if recorder.Code != http.StatusInternalServerError {
+			t.Errorf("код ответа %d, ожидался %d", recorder.Code, http.StatusInternalServerError)
+		}
+	})
+
+	t.Run("событие не публикуется", func(t *testing.T) {
+		db := &fakeDatabase{publishErr: errors.New("connection refused")}
+		handler := newTestAPI(db, NewHub())
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, authorized(
+			httptest.NewRequest(http.MethodPost, "/notify/events", strings.NewReader(body)), user, ""))
+		if recorder.Code != http.StatusInternalServerError {
+			t.Errorf("код ответа %d, ожидался %d", recorder.Code, http.StatusInternalServerError)
+		}
+	})
+
+	t.Run("нечитаемое тело", func(t *testing.T) {
+		handler := newTestAPI(&fakeDatabase{}, NewHub())
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, authorized(
+			httptest.NewRequest(http.MethodPost, "/notify/events", strings.NewReader(`{"user_id":`)), user, ""))
+		if recorder.Code != http.StatusBadRequest {
+			t.Errorf("код ответа %d, ожидался %d", recorder.Code, http.StatusBadRequest)
+		}
+	})
+}
+
+// channelsFailingDatabase отвечает отказом на чтение включённых каналов:
+// без списка каналов публиковать событие некуда.
+type channelsFailingDatabase struct {
+	Database
+	err error
+}
+
+func (c *channelsFailingDatabase) EnabledChannels(
+	context.Context,
+	uuid.UUID,
+	notify.EventType,
+) ([]notify.Channel, error) {
+	return nil, c.err
+}
+
+// TestSenderChannels фиксирует, за какой канал отвечает каждый отправитель:
+// диспетчер выбирает его по этому значению, и ошибка здесь означает
+// доставку не туда.
+func TestSenderChannels(t *testing.T) {
+	inApp := NewInApp(&fakeDatabase{}, &Bus{})
+	if inApp.Channel() != notify.ChannelInApp {
+		t.Errorf("канал приложения %s", inApp.Channel())
+	}
+
+	email := newTestEmail(t, Contact{}, &sentMail{})
+	if email.Channel() != notify.ChannelEmail {
+		t.Errorf("канал почты %s", email.Channel())
+	}
+
+	messenger := testMessenger(t, &fakeDatabase{}, func(http.ResponseWriter, *http.Request) {})
+	if messenger.Channel() != notify.ChannelTelegram {
+		t.Errorf("канал бота %s", messenger.Channel())
+	}
+}
+
+// TestBackoffGrowsAndIsCapped: канал, который не отвечает сейчас, чаще
+// всего не ответит и через секунду, но расти задержка бесконечно не должна.
+func TestBackoffGrowsAndIsCapped(t *testing.T) {
+	dispatcher := newTestDispatcher(t, &fakeDatabase{})
+
+	first := dispatcher.backoff(0)
+	second := dispatcher.backoff(1)
+	if second <= first {
+		t.Errorf("задержка не растёт: %s и %s", first, second)
+	}
+	if capped := dispatcher.backoff(30); capped != dispatcher.RetryMax {
+		t.Errorf("задержка %s, ожидался предел %s", capped, dispatcher.RetryMax)
+	}
+}
+
+// TestWithinRateDisabled: нулевой предел выключает ограничение частоты,
+// и обращения к базе за счётчиком в этом случае быть не должно.
+func TestWithinRateDisabled(t *testing.T) {
+	dispatcher := newTestDispatcher(t, &fakeDatabase{})
+	dispatcher.RateLimit = 0
+
+	allowed, err := dispatcher.withinRate(context.Background(), testTask(0))
+	if err != nil {
+		t.Fatalf("проверка частоты: %v", err)
+	}
+	if !allowed {
+		t.Error("выключенное ограничение частоты отклонило доставку")
+	}
+}
+
+// TestMessagesLongPollCancelled: клиент, оборвавший длинный опрос, не должен
+// оставлять после себя ни горутины, ни ответа.
+func TestMessagesLongPollCancelled(t *testing.T) {
+	db := &fakeDatabase{}
+	handler := newTestAPI(db, NewHub())
+	user := uuid.New()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	request := authorized(httptest.NewRequest(http.MethodGet,
+		"/notify/messages?wait=20", nil), user, "").WithContext(ctx)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		handler.ServeHTTP(httptest.NewRecorder(), request)
+	}()
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("обработчик не завершился после обрыва соединения")
+	}
+}

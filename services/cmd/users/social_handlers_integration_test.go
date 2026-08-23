@@ -486,3 +486,51 @@ func TestLoginPageShowsSocialLinks(t *testing.T) {
 		t.Errorf("на форме нет ссылки внешнего входа: %s", recorder.Body)
 	}
 }
+
+// TestUnlinkLastIdentityOverHTTP: у пользователя без пароля внешний вход —
+// единственный способ войти, и отвязать его значит отобрать доступ.
+func TestUnlinkLastIdentityOverHTTP(t *testing.T) {
+	provider := newFakeProvider(t)
+	_, handler := newSocialHandlerService(t, provider)
+	clientId := createClient(t, handler)
+
+	authorizeQuery := url.Values{
+		"response_type":         {"code"},
+		"client_id":             {clientId},
+		"redirect_uri":          {redirectURI},
+		"scope":                 {"openid read"},
+		"state":                 {"state-1234567890"},
+		"code_challenge":        {challenge()},
+		"code_challenge_method": {"S256"},
+	}.Encode()
+
+	start := get(handler, "/auth/social/demo?"+authorizeQuery, nil)
+	if start.Code != http.StatusFound {
+		t.Fatalf("начало входа: %d (%s)", start.Code, start.Body)
+	}
+	callback := get(handler, "/auth/social/demo/callback?code=provider-code&state="+
+		stateFrom(t, start.Header().Get("Location")), nil)
+	if callback.Code != http.StatusFound && callback.Code != http.StatusSeeOther {
+		t.Fatalf("возврат от провайдера: %d (%s)", callback.Code, callback.Body)
+	}
+	location, err := url.Parse(callback.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("разбор Location: %v", err)
+	}
+
+	token := exchange(t, handler, clientId, url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {location.Query().Get("code")},
+		"redirect_uri":  {redirectURI},
+		"code_verifier": {verifier},
+	})
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodDelete, "/profile/identities/demo", nil)
+	request.Header.Set("Authorization", "Bearer "+token.AccessToken)
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusConflict {
+		t.Errorf("код ответа %d, ожидался %d (%s)", recorder.Code, http.StatusConflict, recorder.Body)
+	}
+}

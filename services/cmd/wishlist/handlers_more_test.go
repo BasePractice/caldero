@@ -258,3 +258,96 @@ func TestForeignListHidesGivers(t *testing.T) {
 		t.Errorf("даритель виден владельцу списка: %s", recorder.Body)
 	}
 }
+
+// TestItemActions проходит по операциям над элементом: обработчики
+// у них одинаковы во всём, кроме одного вызова, и различие сведено
+// в один тип — проверять его нужно целиком.
+func TestItemActions(t *testing.T) {
+	env := newTestEnvironment(t, payment.Fee{}, nil)
+	handler := registerHttpHandlers(env.gifts, env.shopaholic)
+	owner := uuid.New()
+	giver := uuid.New()
+	item := env.addProduct(t, owner)
+	path := "/wishlist/items/" + item.Id.String() + "/"
+
+	t.Run("владелец скрывает и возвращает элемент", func(t *testing.T) {
+		if code := do(handler, http.MethodPost, path+"hide", "", owner).Code; code != http.StatusOK {
+			t.Fatalf("скрытие: код ответа %d", code)
+		}
+		// Скрытый элемент для дарителя не существует.
+		if code := do(handler, http.MethodPost, path+"reserve", "", giver).Code; code != http.StatusNotFound {
+			t.Errorf("резерв скрытого: код ответа %d, ожидался %d", code, http.StatusNotFound)
+		}
+		if code := do(handler, http.MethodPost, path+"show", "", owner).Code; code != http.StatusOK {
+			t.Fatalf("возврат в список: код ответа %d", code)
+		}
+	})
+
+	t.Run("даритель резервирует и снимает резерв", func(t *testing.T) {
+		if code := do(handler, http.MethodPost, path+"reserve", "", giver).Code; code != http.StatusOK {
+			t.Fatalf("резерв: код ответа %d", code)
+		}
+		if code := do(handler, http.MethodPost, path+"cancel", "", giver).Code; code != http.StatusOK {
+			t.Fatalf("снятие резерва: код ответа %d", code)
+		}
+		// После снятия резерва элемент снова доступен другому дарителю.
+		if code := do(handler, http.MethodPost, path+"reserve", "", uuid.New()).Code; code != http.StatusOK {
+			t.Errorf("повторный резерв: код ответа %d", code)
+		}
+	})
+
+	tests := []struct {
+		name   string
+		action string
+		user   uuid.UUID
+		want   int
+	}{
+		{"скрытие без токена", "hide", uuid.Nil, http.StatusUnauthorized},
+		{"резерв чужого своим владельцем", "reserve", owner, http.StatusForbidden},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if code := do(handler, http.MethodPost, path+test.action, "", test.user).Code; code != test.want {
+				t.Errorf("код ответа %d, ожидался %d", code, test.want)
+			}
+		})
+	}
+
+	t.Run("неразбираемый идентификатор", func(t *testing.T) {
+		code := do(handler, http.MethodPost, "/wishlist/items/не-uuid/hide", "", owner).Code
+		if code != http.StatusBadRequest {
+			t.Errorf("код ответа %d, ожидался %d", code, http.StatusBadRequest)
+		}
+	})
+}
+
+// TestAddItemErrors закрывает разбор заявки: цена и название берутся
+// из карточки площадки, а не из запроса.
+func TestAddItemErrors(t *testing.T) {
+	env := newTestEnvironment(t, payment.Fee{}, nil)
+	handler := registerHttpHandlers(env.gifts, env.shopaholic)
+	owner := uuid.New()
+
+	tests := []struct {
+		name string
+		body string
+		user uuid.UUID
+		want int
+	}{
+		{"без токена", `{"kind":"MONEY","priority":1,"amount":1000}`, uuid.Nil, http.StatusUnauthorized},
+		{"нечитаемое тело", `{"kind":`, owner, http.StatusBadRequest},
+		{"неизвестный вид", `{"kind":"WHATEVER","priority":1}`, owner, http.StatusBadRequest},
+		{"товар несуществующей площадки", `{"kind":"PRODUCT","priority":1,"provider":"WHATEVER","product_id":"x"}`,
+			owner, http.StatusNotFound},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := do(handler, http.MethodPost, "/wishlist/items", test.body, test.user)
+			if recorder.Code != test.want {
+				t.Errorf("код ответа %d, ожидался %d (%s)", recorder.Code, test.want, recorder.Body)
+			}
+		})
+	}
+}

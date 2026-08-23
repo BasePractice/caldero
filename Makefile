@@ -3,7 +3,10 @@
 SERVICES := wallet credit account users notify wishlist caldron web
 BIN      := .bin
 COVER    := .cover
-COVER_MIN ?= 0
+# COVER_MIN — минимально допустимое покрытие. Порог отражает достигнутое,
+# а не желаемое: недостижимый порог отключают в первый же спорный день.
+# Поднимать по мере роста; переопределяется в командной строке.
+COVER_MIN ?= 90
 GOFLAGS  := -trimpath
 VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 REVISION ?= $(shell git rev-parse HEAD 2>/dev/null)
@@ -56,9 +59,8 @@ test-integration: ## Прогнать интеграционные тесты (�
 	go test -race -tags=integration ./...
 
 # Покрытие считается одним прогоном с тегом integration: репозитории покрыты
-# именно интеграционными тестами, и без них картина занижена вдвое. Порог
-# берётся из COVER_MIN, чтобы CI поднимал его по мере роста, не трогая цель.
-cover: ## Посчитать покрытие по объединённому профилю (нужен docker)
+# именно интеграционными тестами, и без них картина занижена вдвое.
+cover: ## Посчитать покрытие по объединённому профилю и проверить порог (нужен docker)
 	@mkdir -p $(COVER)
 	go test -tags=integration -coverprofile=$(COVER)/all.out ./...
 	@go run ./tools/cover -profile $(COVER)/all.out -min $(COVER_MIN)

@@ -368,6 +368,60 @@ func TestWalletErrorBranches(t *testing.T) {
 	})
 }
 
+// TestTransferToBlockedWallet: перевод на заблокированный кошелёк
+// отклоняется целиком — списать у отправителя и не зачислить получателю
+// значило бы потерять деньги.
+func TestTransferToBlockedWallet(t *testing.T) {
+	ctx := context.Background()
+	db, err := NewDatabaseWallet(ctx, testsupport.Prepare(t, "wallet"))
+	if err != nil {
+		t.Fatalf("не удалось открыть репозиторий: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	sender := uuid.New()
+	receiver := uuid.New()
+	walletOf := func(t *testing.T, owner uuid.UUID) uuid.UUID {
+		t.Helper()
+		var id uuid.UUID
+		if err := db.Information(ctx, owner, func(reply *wallet.InformationReply) {
+			id = uuid.MustParse(reply.Id)
+		}); err != nil {
+			t.Fatalf("получение кошелька: %v", err)
+		}
+		return id
+	}
+
+	source := walletOf(t, sender)
+	target := walletOf(t, receiver)
+	if _, err := db.Debit(ctx, sender, OperationParams{
+		IdempotencyKey: "fill-blocked", WalletId: source, Value: 10_000,
+	}); err != nil {
+		t.Fatalf("пополнение: %v", err)
+	}
+	if err := db.ChangeState(ctx, receiver, target, "BLOCKED"); err != nil {
+		t.Fatalf("блокировка кошелька: %v", err)
+	}
+
+	_, err = db.Transfer(ctx, sender, TransferParams{
+		IdempotencyKey: "to-blocked", SourceId: source, TargetId: target, Value: 1_000,
+	})
+	if !errors.Is(err, ErrWalletNotActive) {
+		t.Fatalf("получено %v, ожидалась ErrWalletNotActive", err)
+	}
+
+	// Средства отправителя остались на месте: перевод не прошёл частично.
+	var balance int64
+	if err := db.Information(ctx, sender, func(reply *wallet.InformationReply) {
+		balance = reply.Balance
+	}); err != nil {
+		t.Fatalf("чтение баланса: %v", err)
+	}
+	if balance != 10_000 {
+		t.Errorf("баланс отправителя %d, ожидался 10000", balance)
+	}
+}
+
 func TestWalletReservations(t *testing.T) {
 	ctx := context.Background()
 	db, err := NewDatabaseWallet(ctx, testsupport.Prepare(t, "wallet"))

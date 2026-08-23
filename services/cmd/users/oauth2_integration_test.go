@@ -614,3 +614,32 @@ func TestPublicProfileAndContacts(t *testing.T) {
 		}
 	})
 }
+
+// TestAuthorizeRequestRejected: запрос авторизации без обязательных
+// параметров отвергается до показа формы — иначе пользователь ввёл бы
+// пароль в форму, которая никуда не ведёт.
+func TestAuthorizeRequestRejected(t *testing.T) {
+	_, handler := newOAuth2Service(t)
+	createClient(t, handler)
+
+	tests := []struct {
+		name  string
+		query string
+	}{
+		{"без параметров", ""},
+		{"неизвестный клиент", "?response_type=code&client_id=нет-такого&redirect_uri=" +
+			url.QueryEscape(redirectURI) + "&state=state-0123456789"},
+		{"чужой адрес возврата", "?response_type=code&client_id=web&redirect_uri=" +
+			url.QueryEscape("https://attacker.example/callback") + "&state=state-0123456789"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/auth"+test.query, nil))
+			if recorder.Code == http.StatusOK {
+				t.Errorf("форма входа показана на некорректный запрос: %s", recorder.Body)
+			}
+		})
+	}
+}

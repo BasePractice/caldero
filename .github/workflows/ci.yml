@@ -87,6 +87,30 @@ jobs:
       - name: Тесты репозиториев
         run: make test-integration
 
+  coverage:
+    name: Покрытие тестами
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Порог живёт в Makefile: там же, где список исключений, и меняется
+      # вместе с ним одним коммитом. Отдельная задача, а не шаг соседней:
+      # прогон с покрытием идёт без детектора гонок и параллельно с ним.
+      - name: Порог покрытия
+        run: make cover
+
+      - name: Публикация профиля
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: .cover/all.out
+          if-no-files-found: warn
+
   lint:
     name: Линтер
     runs-on: ubuntu-latest

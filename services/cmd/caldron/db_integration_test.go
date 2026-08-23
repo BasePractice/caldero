@@ -509,3 +509,54 @@ func TestSetArbiter(t *testing.T) {
 		t.Errorf("арбитр назначен в отменённом котле: %v", err)
 	}
 }
+
+// TestContributionRejections закрывает отказы взноса, до которых
+// не доходит обычный сценарий: посторонний, повторный взнос и котёл,
+// в котором сбор уже закончился.
+func TestContributionRejections(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDatabase(t)
+
+	creator := uuid.New()
+	member := uuid.New()
+	pot := createFixed(t, db, creator, 2_500_00)
+	if _, err := db.AddParticipant(ctx, pot.Id, caldron.AddParticipant{UserId: member}); err != nil {
+		t.Fatalf("добавление участника: %v", err)
+	}
+
+	t.Run("посторонний не вносит", func(t *testing.T) {
+		if _, _, err := db.StartContribution(ctx, pot.Id, uuid.New(), 2_500_00); !errors.Is(err, ErrParticipantNotFound) {
+			t.Errorf("получено %v, ожидалась ErrParticipantNotFound", err)
+		}
+	})
+
+	if _, _, err := db.StartContribution(ctx, pot.Id, member, 2_500_00); err != nil {
+		t.Fatalf("начало взноса: %v", err)
+	}
+	if _, err := db.MarkPaid(ctx, pot.Id, member, 2_500_00); err != nil {
+		t.Fatalf("фиксация взноса: %v", err)
+	}
+
+	// Своё состояние проверяется раньше состояния котла: участнику,
+	// который уже внёс, понятнее «вы уже внесли», чем «котёл собран».
+	t.Run("повторный взнос отклоняется", func(t *testing.T) {
+		if _, _, err := db.StartContribution(ctx, pot.Id, member, 2_500_00); !errors.Is(err, ErrAlreadyPaid) {
+			t.Errorf("получено %v, ожидалась ErrAlreadyPaid", err)
+		}
+	})
+
+	t.Run("взнос в несуществующий котёл", func(t *testing.T) {
+		if _, _, err := db.StartContribution(ctx, uuid.New(), member, 2_500_00); !errors.Is(err, ErrNotFound) {
+			t.Errorf("получено %v, ожидалась ErrNotFound", err)
+		}
+	})
+
+	t.Run("взнос после отмены котла", func(t *testing.T) {
+		if _, err := db.Transition(ctx, pot.Id, caldron.StateCancelled, caldron.ActorCreator); err != nil {
+			t.Fatalf("отмена котла: %v", err)
+		}
+		if _, _, err := db.StartContribution(ctx, pot.Id, creator, 2_500_00); err == nil {
+			t.Error("взнос в отменённый котёл прошёл")
+		}
+	})
+}
