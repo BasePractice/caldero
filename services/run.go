@@ -122,6 +122,32 @@ func ServeGRPC(ctx context.Context, listener net.Listener, srv *grpc.Server) err
 	}
 }
 
+// RunPeriodic выполняет задачу по расписанию до отмены контекста.
+// Горутина завершается вместе с контекстом: горутина без пути выхода —
+// это утечка, а не стилистика.
+func RunPeriodic(ctx context.Context, name string, interval time.Duration, task func(context.Context) error) {
+	if interval <= 0 {
+		slog.Info("Periodic task disabled", slog.String("task", name))
+		return
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			slog.Info("Periodic task stopped", slog.String("task", name))
+			return
+		case <-ticker.C:
+			if err := task(ctx); err != nil {
+				// Сбой одного прогона не повод останавливать расписание.
+				slog.Error("Periodic task failed",
+					slog.String("task", name), slog.String("err", err.Error()))
+			}
+		}
+	}
+}
+
 // Close закрывает ресурс и логирует ошибку: в defer её уже некому вернуть,
 // а молчаливое игнорирование скрыло бы, например, незакрытый пул соединений.
 func Close(name string, closer io.Closer) {

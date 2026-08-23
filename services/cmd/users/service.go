@@ -112,6 +112,18 @@ func newService(ctx context.Context, cfg services.Config) (*Service, error) {
 	}, nil
 }
 
+// CleanupExpiredTokens удаляет просроченные токены по расписанию.
+func (s *Service) CleanupExpiredTokens(ctx context.Context) error {
+	deleted, err := s.db.DeleteExpiredTokens(ctx)
+	if err != nil {
+		return err
+	}
+	if deleted > 0 {
+		slog.Info("Expired tokens removed", slog.Int64("count", deleted))
+	}
+	return nil
+}
+
 // Close освобождает ресурсы сервиса.
 func (s *Service) Close() error {
 	return s.db.Close()

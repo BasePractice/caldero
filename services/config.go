@@ -41,6 +41,10 @@ type Config struct {
 	DBMaxIdleConns    int
 	DBConnMaxLifetime time.Duration
 
+	// TokenCleanupInterval — как часто удалять просроченные токены.
+	// Нулевое значение отключает очистку.
+	TokenCleanupInterval time.Duration
+
 	// DebugStatsviz открывает страницу состояния рантайма на порту метрик.
 	// По умолчанию выключено: страница не аутентифицирована.
 	DebugStatsviz bool
@@ -85,6 +89,12 @@ func LoadConfig() (Config, error) {
 		return Config{}, fmt.Errorf("parsing OAUTH2_DEBUG: %w", err)
 	}
 	cfg.OAuth2Debug = oauth2Debug
+
+	cleanupInterval, err := time.ParseDuration(env("TOKEN_CLEANUP_INTERVAL", "15m"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing TOKEN_CLEANUP_INTERVAL: %w", err)
+	}
+	cfg.TokenCleanupInterval = cleanupInterval
 
 	rotationInterval, err := time.ParseDuration(env("KEY_ROTATION_MIN_INTERVAL", "1h"))
 	if err != nil {

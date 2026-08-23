@@ -21,6 +21,9 @@ func main() {
 		}
 		defer services.Close("service", service)
 
+		go services.RunPeriodic(ctx, "token-cleanup", cfg.TokenCleanupInterval,
+			service.CleanupExpiredTokens)
+
 		return services.ServeHTTP(ctx, fmt.Sprintf(":%d", *port),
 			registerHttpHandlers(service))
 	})

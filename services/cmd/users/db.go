@@ -43,6 +43,7 @@ type DatabaseUsers interface {
 	GetUser(ctx context.Context, username string) (*User, error)
 	Authenticate(ctx context.Context, username, secret string) (string, error)
 	GetUserRoles(ctx context.Context, userId uuid.UUID) ([]string, error)
+	DeleteExpiredTokens(ctx context.Context) (int64, error)
 
 	GetLastKey(ctx context.Context) (string, error)
 	GetKey(ctx context.Context, id string) ([]byte, error)
@@ -207,6 +208,22 @@ func (s *ds) Authenticate(ctx context.Context, username, secret string) (string,
 		return "", fosite.ErrNotFound
 	}
 	return user.Id.String(), nil
+}
+
+// DeleteExpiredTokens убирает просроченные записи: таблица росла бесконечно,
+// удаления не было нигде. Использованные коды авторизации удаляются вместе
+// с остальными — их срок жизни короткий, и после истечения они бесполезны
+// даже для обнаружения повторного предъявления.
+func (s *ds) DeleteExpiredTokens(ctx context.Context) (int64, error) {
+	result, err := s.db.ExecContext(ctx, "DELETE FROM oauth_tokens WHERE expires_at < now()")
+	if err != nil {
+		return 0, fmt.Errorf("deleting expired tokens: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("counting deleted tokens: %w", err)
+	}
+	return affected, nil
 }
 
 func (s *ds) GetUserRoles(ctx context.Context, userId uuid.UUID) ([]string, error) {
