@@ -14,10 +14,22 @@ trap cleanup EXIT
 echo "поднимаю $IMAGE"
 docker run -d --name "$CONTAINER" -e POSTGRES_PASSWORD=postgres "$IMAGE" >/dev/null
 
-for _ in $(seq 1 60); do
-    if docker exec "$CONTAINER" pg_isready -U postgres 2>/dev/null | grep -q accepting; then break; fi
+# pg_isready отвечает утвердительно уже во время initdb, когда сервер поднят
+# временно и только на unix-сокете, — поэтому ждём успешного запроса,
+# а не готовности сокета.
+ready=0
+for _ in $(seq 1 90); do
+    if docker exec -i "$CONTAINER" psql -U postgres -c "SELECT 1" >/dev/null 2>&1; then
+        ready=1
+        break
+    fi
     sleep 1
 done
+if [ "$ready" != "1" ]; then
+    echo "PostgreSQL не поднялся"
+    docker logs "$CONTAINER" | tail -20
+    exit 1
+fi
 
 docker exec -i "$CONTAINER" psql -U postgres -q -c "CREATE DATABASE wish"
 for service in $SERVICES; do

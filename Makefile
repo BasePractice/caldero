@@ -5,7 +5,7 @@ BIN      := .bin
 GOFLAGS  := -trimpath
 
 .DEFAULT_GOAL := help
-.PHONY: help build test test-race test-integration lint vet fmt fmt-check tidy-check proto up down logs migrate-status migrate-check images clean save-keycloak-config
+.PHONY: help build test test-race test-integration lint vet fmt fmt-check tidy-check proto up down logs migrate-status migrate-check vuln images clean save-keycloak-config
 
 help: ## Показать список целей
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -48,6 +48,10 @@ proto: ## Перегенерировать код из middleware/wallet.proto
 	@command -v protoc-gen-go >/dev/null 2>&1 || { echo "protoc-gen-go не найден: go install google.golang.org/protobuf/cmd/protoc-gen-go@latest"; exit 1; }
 	@command -v protoc-gen-go-grpc >/dev/null 2>&1 || { echo "protoc-gen-go-grpc не найден: go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest"; exit 1; }
 	protoc --go_out=. --go_opt=paths=import --go-grpc_out=. --go-grpc_opt=paths=import middleware/wallet.proto
+
+vuln: ## Проверить известные уязвимости
+	@command -v govulncheck >/dev/null 2>&1 || go install golang.org/x/vuln/cmd/govulncheck@latest
+	govulncheck ./...
 
 migrate-check: ## Прогнать миграции up и down на временном PostgreSQL
 	@scripts/check-migrations.sh
