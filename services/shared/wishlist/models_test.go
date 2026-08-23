@@ -2,6 +2,8 @@ package wishlist
 
 import (
 	"errors"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -122,4 +124,96 @@ func TestPublicHidesGiver(t *testing.T) {
 			t.Error("даритель не видит собственный резерв")
 		}
 	})
+}
+
+func TestStartShoppingValidate(t *testing.T) {
+	item := ShoppingItem{Provider: marketplace.ProviderStub, ProductId: "coffee-machine"}
+
+	tests := []struct {
+		name    string
+		request StartShopping
+		wantErr bool
+	}{
+		{
+			name:    "корректный запрос",
+			request: StartShopping{Budget: 100_000, Items: []ShoppingItem{item}},
+		},
+		{
+			name:    "нулевой бюджет",
+			request: StartShopping{Items: []ShoppingItem{item}},
+			wantErr: true,
+		},
+		{
+			name:    "отрицательный бюджет",
+			request: StartShopping{Budget: -1, Items: []ShoppingItem{item}},
+			wantErr: true,
+		},
+		{
+			name:    "без товаров",
+			request: StartShopping{Budget: 100_000},
+			wantErr: true,
+		},
+		{
+			// Размер списка задаёт клиент, и без предела один запрос
+			// упирается в память сервиса.
+			name:    "товаров больше предела",
+			request: StartShopping{Budget: 100_000, Items: shoppingItems(MaxShoppingItems + 1)},
+			wantErr: true,
+		},
+		{
+			name:    "ровно предельное число товаров",
+			request: StartShopping{Budget: 100_000, Items: shoppingItems(MaxShoppingItems)},
+		},
+		{
+			name:    "товар без площадки",
+			request: StartShopping{Budget: 100_000, Items: []ShoppingItem{{ProductId: "x"}}},
+			wantErr: true,
+		},
+		{
+			name:    "товар без идентификатора",
+			request: StartShopping{Budget: 100_000, Items: []ShoppingItem{{Provider: marketplace.ProviderStub}}},
+			wantErr: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := test.request.Validate()
+			if test.wantErr && err == nil {
+				t.Error("запрос принят, ожидался отказ")
+			}
+			if !test.wantErr && err != nil {
+				t.Errorf("запрос отклонён: %v", err)
+			}
+		})
+	}
+}
+
+func shoppingItems(count int) []ShoppingItem {
+	items := make([]ShoppingItem, 0, count)
+	for i := range count {
+		items = append(items, ShoppingItem{
+			Provider:  marketplace.ProviderStub,
+			ProductId: "product-" + strconv.Itoa(i),
+		})
+	}
+	return items
+}
+
+func TestStartShoppingString(t *testing.T) {
+	request := StartShopping{Budget: 100_000, Items: shoppingItems(3)}
+
+	got := request.String()
+	if !strings.Contains(got, "1000.00") || !strings.Contains(got, "3") {
+		t.Errorf("получено %q", got)
+	}
+}
+
+func TestCreateItemString(t *testing.T) {
+	create := CreateItem{Kind: KindProduct, Priority: 3}
+
+	got := create.String()
+	if !strings.Contains(got, string(KindProduct)) || !strings.Contains(got, "3") {
+		t.Errorf("получено %q", got)
+	}
 }

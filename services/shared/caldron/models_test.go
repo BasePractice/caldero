@@ -2,6 +2,7 @@ package caldron
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -194,5 +195,148 @@ func TestCompleteIgnoresArbiter(t *testing.T) {
 	empty := Caldron{CreatorId: creator, CreatorParticipates: true}
 	if empty.Complete() {
 		t.Error("пустой котёл считается собранным: разыгрывать было бы нечего")
+	}
+}
+
+// TestCanDraw фиксирует право на розыгрыш: по README это создатель
+// или назначенный им арбитр. Право не зависит от того, участвует ли
+// создатель в сборе: организатор он в любом случае.
+func TestCanDraw(t *testing.T) {
+	creator := uuid.New()
+	arbiter := uuid.New()
+
+	tests := []struct {
+		name    string
+		caldron Caldron
+		user    uuid.UUID
+		want    bool
+	}{
+		{
+			name:    "создатель",
+			caldron: Caldron{CreatorId: creator},
+			user:    creator,
+			want:    true,
+		},
+		{
+			name:    "назначенный арбитр",
+			caldron: Caldron{CreatorId: creator, ArbiterId: &arbiter},
+			user:    arbiter,
+			want:    true,
+		},
+		{
+			name:    "посторонний",
+			caldron: Caldron{CreatorId: creator, ArbiterId: &arbiter},
+			user:    uuid.New(),
+			want:    false,
+		},
+		{
+			name:    "участник без права арбитра",
+			caldron: Caldron{CreatorId: creator},
+			user:    uuid.New(),
+			want:    false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := test.caldron.CanDraw(test.user); got != test.want {
+				t.Errorf("получено %v, ожидалось %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestIsParticipant(t *testing.T) {
+	member := uuid.New()
+	caldron := Caldron{Participants: []Participant{{UserId: member}}}
+
+	if !caldron.IsParticipant(member) {
+		t.Error("участник не найден в котле")
+	}
+	if caldron.IsParticipant(uuid.New()) {
+		t.Error("посторонний признан участником")
+	}
+}
+
+// TestExpectedTotal фиксирует расчёт до того, как все внесли: список
+// подарков проверяется по нему ещё на этапе сбора. У диапазона берётся
+// нижняя граница — рассчитывать на верхнюю значит обещать участнику
+// больше, чем он получит.
+func TestExpectedTotal(t *testing.T) {
+	creator := uuid.New()
+
+	tests := []struct {
+		name    string
+		caldron Caldron
+		want    credit.Amount
+	}{
+		{
+			name: "фиксированный взнос, никто не внёс",
+			caldron: Caldron{
+				CreatorId: creator, Mode: ModeFixed, Amount: 1000,
+				CreatorParticipates: true,
+				Participants: []Participant{
+					{UserId: creator, Expected: 1000},
+					{UserId: uuid.New(), Expected: 1000},
+				},
+			},
+			want: 2000,
+		},
+		{
+			name: "внесённое считается фактическим",
+			caldron: Caldron{
+				CreatorId: creator, Mode: ModeFixed, Amount: 1000,
+				CreatorParticipates: true,
+				Participants: []Participant{
+					{UserId: creator, Expected: 1000, Contributed: 1500, State: ParticipantPaid},
+					{UserId: uuid.New(), Expected: 1000},
+				},
+			},
+			want: 2500,
+		},
+		{
+			name: "диапазон считается по нижней границе",
+			caldron: Caldron{
+				CreatorId: creator, Mode: ModeRange, MinAmount: 500, MaxAmount: 5000,
+				CreatorParticipates: true,
+				Participants: []Participant{
+					{UserId: creator},
+					{UserId: uuid.New()},
+				},
+			},
+			want: 1000,
+		},
+		{
+			// Создатель, не участвующий в сборе, в сумму не входит:
+			// организатор — не плательщик.
+			name: "создатель не участвует",
+			caldron: Caldron{
+				CreatorId: creator, Mode: ModeFixed, Amount: 1000,
+				Participants: []Participant{
+					{UserId: creator, Expected: 1000},
+					{UserId: uuid.New(), Expected: 1000},
+				},
+			},
+			want: 1000,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := test.caldron.ExpectedTotal(); got != test.want {
+				t.Errorf("получено %s, ожидалось %s", got, test.want)
+			}
+		})
+	}
+}
+
+func TestCreateCaldronString(t *testing.T) {
+	create := CreateCaldron{Type: TypeGift, Mode: ModeFixed}
+
+	got := create.String()
+	for _, want := range []string{string(TypeGift), string(ModeFixed)} {
+		if !strings.Contains(got, want) {
+			t.Errorf("в %q нет %q", got, want)
+		}
 	}
 }

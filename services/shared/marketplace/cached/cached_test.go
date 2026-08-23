@@ -102,3 +102,98 @@ func TestCachedOpensCircuitOnUnavailable(t *testing.T) {
 			catalog.calls, callsAfterOpen)
 	}
 }
+
+func TestProvider(t *testing.T) {
+	catalog := &countingCatalog{}
+	cached := New(catalog, newMemoryCache(), time.Minute)
+
+	if cached.Provider() != catalog.Provider() {
+		t.Errorf("площадка %s, ожидалась %s", cached.Provider(), catalog.Provider())
+	}
+}
+
+// TestOrderGoesThroughBreaker: заказ не кэшируется — кэшировать результат
+// покупки нельзя, — но размыкатель на него распространяется.
+func TestOrderGoesThroughBreaker(t *testing.T) {
+	ctx := context.Background()
+	catalog := &countingCatalog{stub: marketplace.Stub{OrderSupported: true}}
+	cached := New(catalog, newMemoryCache(), time.Minute)
+
+	order, err := cached.Order(ctx, "coffee-machine", "Москва")
+	if err != nil {
+		t.Fatalf("заказ: %v", err)
+	}
+	if order == "" {
+		t.Error("идентификатор заказа не возвращён")
+	}
+
+	t.Run("недоступная площадка", func(t *testing.T) {
+		// Оформление заказа у площадки может быть недоступно, и это
+		// честный отказ, а не имитация покупки.
+		unavailable := New(&countingCatalog{stub: marketplace.Stub{Unavailable: true}},
+			newMemoryCache(), time.Minute)
+		if _, err := unavailable.Order(ctx, "coffee-machine", "Москва"); err == nil {
+			t.Error("заказ у недоступной площадки прошёл")
+		}
+	})
+}
+
+func TestBuild(t *testing.T) {
+	tests := []struct {
+		name      string
+		providers []string
+		wantErr   bool
+	}{
+		{"заглушка", []string{"STUB"}, false},
+		{"пустой список", nil, false},
+		// Адаптеры площадок — T-076: их нельзя написать, не выяснив,
+		// что доступно стороннему приложению.
+		{"OZON пока не реализован", []string{"OZON"}, true},
+		{"WB пока не реализован", []string{"WB"}, true},
+		{"неизвестная площадка", []string{"WHATEVER"}, true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			registry, err := Build(test.providers, newMemoryCache(), time.Minute)
+			if test.wantErr {
+				if err == nil {
+					t.Error("список принят, ожидался отказ")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("сборка реестра: %v", err)
+			}
+			if registry == nil {
+				t.Error("реестр не создан")
+			}
+		})
+	}
+}
+
+// TestBuildWrapsWithCache проверяет то, ради чего Build существует: каждая
+// площадка оборачивается кэшем, иначе обращение уходит на неё при каждом
+// показе списка.
+func TestBuildWrapsWithCache(t *testing.T) {
+	ctx := context.Background()
+	cache := newMemoryCache()
+
+	registry, err := Build([]string{"STUB"}, cache, time.Minute)
+	if err != nil {
+		t.Fatalf("сборка реестра: %v", err)
+	}
+	catalog, err := registry.Catalog(marketplace.ProviderStub)
+	if err != nil {
+		t.Fatalf("площадка не найдена в реестре: %v", err)
+	}
+	if _, err := catalog.Product(ctx, "coffee-machine"); err != nil {
+		t.Fatalf("карточка товара: %v", err)
+	}
+
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	if len(cache.values) == 0 {
+		t.Error("карточка не попала в кэш: площадка подключена без обёртки")
+	}
+}
