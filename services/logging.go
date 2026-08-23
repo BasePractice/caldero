@@ -43,7 +43,13 @@ func DefineLogging(cfg Config) (*slog.Logger, error) {
 	return logger, nil
 }
 
+// DefineMetrics поднимает служебный порт. Пока на нём живёт только statsviz,
+// который публикует внутреннее состояние рантайма без аутентификации,
+// поэтому по умолчанию порт не открывается вовсе.
 func DefineMetrics(cfg Config) {
+	if !cfg.DebugStatsviz {
+		return
+	}
 	mux := http.NewServeMux()
 	if err := statsviz.Register(mux); err != nil {
 		slog.Error("Error registering metrics", slog.String("err", err.Error()))

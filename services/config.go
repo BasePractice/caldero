@@ -38,6 +38,10 @@ type Config struct {
 	DBMaxOpenConns    int
 	DBMaxIdleConns    int
 	DBConnMaxLifetime time.Duration
+
+	// DebugStatsviz открывает страницу состояния рантайма на порту метрик.
+	// По умолчанию выключено: страница не аутентифицирована.
+	DebugStatsviz bool
 }
 
 // LoadConfig читает .env-файлы и окружение. Вызывается первой строкой main:
@@ -66,6 +70,12 @@ func LoadConfig() (Config, error) {
 		AdminToken:         env("ADMIN_TOKEN", ""),
 		OAuth2GlobalSecret: env("OAUTH2_GLOBAL_SECRET", ""),
 	}
+
+	debugStatsviz, err := strconv.ParseBool(env("DEBUG_STATSVIZ", "false"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing DEBUG_STATSVIZ: %w", err)
+	}
+	cfg.DebugStatsviz = debugStatsviz
 
 	oauth2Debug, err := strconv.ParseBool(env("OAUTH2_DEBUG", "false"))
 	if err != nil {
