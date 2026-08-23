@@ -30,3 +30,63 @@ X-Roles: operator
 {
   "user_id": "00000000-0000-0000-0000-000000000001"
 }
+
+### Пополнение кошелька
+GRPC {{wallet.url}}/wallet.Service/Debit
+X-Authorized-Id: {{user_id}}
+
+{
+  "idempotency_key": "{{$random.uuid}}",
+  "value": 100000,
+  "message": "пополнение"
+}
+
+### Повтор с тем же ключом не должен провести операцию дважды
+# Подставьте idempotency_key из предыдущего запроса.
+GRPC {{wallet.url}}/wallet.Service/Debit
+X-Authorized-Id: {{user_id}}
+
+{
+  "idempotency_key": "{{idempotency_key}}",
+  "value": 100000,
+  "message": "пополнение"
+}
+
+### Списание
+GRPC {{wallet.url}}/wallet.Service/Credit
+X-Authorized-Id: {{user_id}}
+
+{
+  "idempotency_key": "{{$random.uuid}}",
+  "value": 25000,
+  "message": "покупка"
+}
+
+### Перевод между кошельками
+GRPC {{wallet.url}}/wallet.Service/Transfer
+X-Authorized-Id: {{user_id}}
+
+{
+  "idempotency_key": "{{$random.uuid}}",
+  "source_wallet_id": "{{wallet_id}}",
+  "target_wallet_id": "{{target_wallet_id}}",
+  "value": 10000,
+  "message": "перевод"
+}
+
+### История операций
+GRPC {{wallet.url}}/wallet.Service/History
+X-Authorized-Id: {{user_id}}
+
+{
+  "limit": 10
+}
+
+### Блокировка кошелька
+GRPC {{wallet.url}}/wallet.Service/ChangeState
+X-Authorized-Id: {{user_id}}
+
+{
+  "wallet_id": "{{wallet_id}}",
+  "state": "BLOCKED"
+}

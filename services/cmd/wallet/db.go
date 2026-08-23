@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"time"
 
 	"wish/middleware/wallet"
 	"wish/services"
@@ -21,6 +22,12 @@ type DatabaseWallet interface {
 	Information(ctx context.Context, userId uuid.UUID, cb func(reply *wallet.InformationReply)) error
 	// Close освобождает соединения с БД
 	Close() error
+	Debit(ctx context.Context, owner uuid.UUID, params OperationParams) (Transaction, error)
+	Credit(ctx context.Context, owner uuid.UUID, params OperationParams) (Transaction, error)
+	Transfer(ctx context.Context, owner uuid.UUID, params TransferParams) (Transaction, error)
+	History(ctx context.Context, owner, walletId uuid.UUID, limit int, before *time.Time) ([]Transaction, error)
+	ChangeState(ctx context.Context, owner, walletId uuid.UUID, state string) error
+
 	EnsurePartitions(ctx context.Context, monthsAhead int) (int, error)
 	DefaultPartitionRows(ctx context.Context) (int64, error)
 

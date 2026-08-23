@@ -1,9 +1,10 @@
-//edition = "2023";
 syntax = "proto3";
 
 option go_package = "middleware/wallet";
 
 package wallet;
+
+import "google/protobuf/timestamp.proto";
 
 enum WalletType {
   UNKNOWN_TYPE = 0;
@@ -17,6 +18,24 @@ enum WalletState {
   BLOCKED = 2;
   DELETED = 3;
   CLOSED = 4;
+}
+
+enum TransactionState {
+  UNKNOWN_TRANSACTION_STATE = 0;
+  RESERVED = 1;
+  SUCCESS = 2;
+  FAILURE = 3;
+  REJECTED = 4;
+}
+
+enum Operation {
+  UNKNOWN_OPERATION = 0;
+  // Зачисление на кошелёк.
+  DEBIT = 1;
+  // Списание с кошелька.
+  CREDIT = 2;
+  // Перевод между кошельками.
+  SWAP = 3;
 }
 
 message InformationRequest {
@@ -38,6 +57,70 @@ message InformationReplyList {
   repeated InformationReply replies = 1;
 }
 
+// OperationRequest описывает зачисление или списание.
+//
+// idempotency_key обязателен: повтор запроса при обрыве связи не должен
+// провести операцию дважды. Повторный вызов с тем же ключом возвращает
+// результат первой операции, а не создаёт новую.
+message OperationRequest {
+  string idempotency_key = 1;
+  // Сумма в минимальных единицах, строго положительная. Направление
+  // задаётся методом, а не знаком суммы.
+  int64 value = 2;
+  string message = 3;
+  // Кошелёк владельца. Пустое значение — кошелёк по умолчанию.
+  optional string wallet_id = 4;
+}
+
+message TransferRequest {
+  string idempotency_key = 1;
+  string source_wallet_id = 2;
+  string target_wallet_id = 3;
+  int64 value = 4;
+  string message = 5;
+}
+
+message TransactionReply {
+  string id = 1;
+  string wallet_id = 2;
+  optional string source_wallet_id = 3;
+  Operation operation = 4;
+  TransactionState state = 5;
+  int64 value = 6;
+  int64 balance = 7;
+  string message = 8;
+  google.protobuf.Timestamp created_at = 9;
+}
+
+message HistoryRequest {
+  optional string wallet_id = 1;
+  // Ограничение выборки; ноль означает значение по умолчанию.
+  int32 limit = 2;
+  // Курсор: время создания последней полученной транзакции.
+  optional google.protobuf.Timestamp before = 3;
+}
+
+message HistoryReply {
+  repeated TransactionReply transactions = 1;
+  // Курсор для следующей страницы; пусто, если больше ничего нет.
+  optional google.protobuf.Timestamp next_before = 2;
+}
+
+message ChangeStateRequest {
+  string wallet_id = 1;
+  WalletState state = 2;
+}
+
 service Service {
   rpc Information(InformationRequest) returns (InformationReplyList);
+  // Зачисление средств на кошелёк.
+  rpc Debit(OperationRequest) returns (TransactionReply);
+  // Списание средств с кошелька.
+  rpc Credit(OperationRequest) returns (TransactionReply);
+  // Перевод между кошельками.
+  rpc Transfer(TransferRequest) returns (TransactionReply);
+  // История операций с постраничной выдачей.
+  rpc History(HistoryRequest) returns (HistoryReply);
+  // Смена состояния кошелька.
+  rpc ChangeState(ChangeStateRequest) returns (InformationReply);
 }
