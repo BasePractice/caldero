@@ -47,6 +47,8 @@ message InformationRequest {
 message InformationReply {
   string id = 1;
   int64 balance = 2;
+  // available = balance - действующие резервы на списание.
+  int64 available = 17;
   int64 reserved_debit = 3;
   int64 reserved_credit = 4;
   reserved 5, 6, 7, 8, 9, 10, 11, 12, 13;
@@ -108,6 +110,22 @@ message HistoryReply {
   optional google.protobuf.Timestamp next_before = 2;
 }
 
+// ReserveRequest откладывает средства под будущее списание. Баланс при этом
+// не меняется: резерв уменьшает доступный остаток.
+message ReserveRequest {
+  string idempotency_key = 1;
+  int64 value = 2;
+  string message = 3;
+  optional string wallet_id = 4;
+  // Срок жизни резерва в секундах. Ноль означает значение по умолчанию:
+  // резерв без срока блокирует средства навсегда.
+  int32 ttl_seconds = 5;
+}
+
+message SettleRequest {
+  string transaction_id = 1;
+}
+
 message ChangeStateRequest {
   string wallet_id = 1;
   WalletState state = 2;
@@ -125,4 +143,10 @@ service Service {
   rpc History(HistoryRequest) returns (HistoryReply);
   // Смена состояния кошелька.
   rpc ChangeState(ChangeStateRequest) returns (InformationReply);
+  // Резервирование средств под будущее списание.
+  rpc Reserve(ReserveRequest) returns (TransactionReply);
+  // Подтверждение резерва: средства списываются.
+  rpc Confirm(SettleRequest) returns (TransactionReply);
+  // Отмена резерва: средства освобождаются.
+  rpc Reject(SettleRequest) returns (TransactionReply);
 }

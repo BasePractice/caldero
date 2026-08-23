@@ -102,11 +102,16 @@ func (d ds) operate(
 		if operation == OperationDebit {
 			balance += params.Value
 		} else {
-			// Проверка до записи: CHECK на балансе тоже не пропустит минус,
-			// но клиенту нужна внятная причина, а не нарушение ограничения.
-			if wallet.balance < params.Value {
-				return fmt.Errorf("%w: balance %d, requested %d",
-					ErrInsufficientBalance, wallet.balance, params.Value)
+			// Проверяется доступный остаток, а не баланс: зарезервированные
+			// средства ещё принадлежат владельцу, но потратить их второй раз
+			// он не может.
+			available, err := availableBalance(ctx, tx, wallet.id, wallet.balance)
+			if err != nil {
+				return err
+			}
+			if available < params.Value {
+				return fmt.Errorf("%w: available %d, requested %d",
+					ErrInsufficientBalance, available, params.Value)
 			}
 			balance -= params.Value
 		}
@@ -165,9 +170,13 @@ func (d ds) Transfer(ctx context.Context, owner uuid.UUID, params TransferParams
 		if source.userId != owner {
 			return fmt.Errorf("%w: source wallet belongs to another user", ErrWalletNotFound)
 		}
-		if source.balance < params.Value {
-			return fmt.Errorf("%w: balance %d, requested %d",
-				ErrInsufficientBalance, source.balance, params.Value)
+		available, err := availableBalance(ctx, tx, source.id, source.balance)
+		if err != nil {
+			return err
+		}
+		if available < params.Value {
+			return fmt.Errorf("%w: available %d, requested %d",
+				ErrInsufficientBalance, available, params.Value)
 		}
 		target, err := lockWalletById(ctx, tx, params.TargetId)
 		if err != nil {

@@ -25,6 +25,10 @@ type DatabaseWallet interface {
 	Debit(ctx context.Context, owner uuid.UUID, params OperationParams) (Transaction, error)
 	Credit(ctx context.Context, owner uuid.UUID, params OperationParams) (Transaction, error)
 	Transfer(ctx context.Context, owner uuid.UUID, params TransferParams) (Transaction, error)
+	Reserve(ctx context.Context, owner uuid.UUID, params ReserveParams) (Transaction, error)
+	Confirm(ctx context.Context, owner, transactionId uuid.UUID) (Transaction, error)
+	Reject(ctx context.Context, owner, transactionId uuid.UUID) (Transaction, error)
+	ReleaseExpiredReservations(ctx context.Context) (int64, error)
 	History(ctx context.Context, owner, walletId uuid.UUID, limit int, before *time.Time) ([]Transaction, error)
 	ChangeState(ctx context.Context, owner, walletId uuid.UUID, state string) error
 
@@ -65,6 +69,7 @@ WITH wlt AS (SELECT *
                                JOIN wlt ON t.target = wlt.id
                       WHERE t.state = 'RESERVED'
                         AND t.operation = 'CREDIT'
+                        AND (t.reserved_until IS NULL OR t.reserved_until > now())
                       GROUP BY wlt.id),
      trans AS (SELECT COUNT(t.id) AS count, wlt.id
                FROM transaction t
@@ -74,6 +79,7 @@ SELECT wlt.id                          AS id,
        wlt.state                       AS state,
        wlt.type                        AS type,
        wlt.balance                     AS balance,
+       wlt.balance - COALESCE(trans_credit.value, 0) AS available,
        COALESCE(trans.count, 0)        AS trans_c,
        COALESCE(trans_debit.value, 0)  AS dbt_value,
        COALESCE(trans_credit.value, 0) AS crd_value
@@ -133,7 +139,7 @@ func (d ds) selectWallets(ctx context.Context, userId uuid.UUID, cb func(reply *
 		var state, typ string
 		if err = rows.Scan(
 			&reply.Id, &state, &typ,
-			&reply.Balance, &reply.Transactions,
+			&reply.Balance, &reply.Available, &reply.Transactions,
 			&reply.ReservedDebit, &reply.ReservedCredit); err != nil {
 			return false, fmt.Errorf("scanning wallet of user %s: %w", userId, err)
 		}

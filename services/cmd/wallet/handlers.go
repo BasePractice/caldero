@@ -26,6 +26,10 @@ func operationError(ctx context.Context, err error) error {
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, ErrWalletNotFound):
 		return status.Error(codes.NotFound, "wallet not found")
+	case errors.Is(err, ErrReservationNotFound):
+		return status.Error(codes.NotFound, "reservation not found")
+	case errors.Is(err, ErrReservationNotPending):
+		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, ErrWalletNotActive):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, ErrInsufficientBalance):
@@ -213,4 +217,63 @@ func transactionReply(t Transaction) *wallet.TransactionReply {
 		reply.SourceWalletId = &source
 	}
 	return reply
+}
+
+func (s service) Reserve(ctx context.Context, request *wallet.ReserveRequest) (*wallet.TransactionReply, error) {
+	authorized, ok := services.AuthorizedFromContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "not authorized")
+	}
+	if request.IdempotencyKey == "" {
+		return nil, status.Error(codes.InvalidArgument, "idempotency_key is required")
+	}
+	walletId, err := parseWalletId(request.WalletId)
+	if err != nil {
+		return nil, err
+	}
+
+	transaction, err := s.db.Reserve(ctx, authorized.Id, ReserveParams{
+		IdempotencyKey: request.IdempotencyKey,
+		WalletId:       walletId,
+		Value:          request.Value,
+		Message:        request.Message,
+		TTL:            time.Duration(request.TtlSeconds) * time.Second,
+	})
+	if err != nil {
+		return nil, operationError(ctx, err)
+	}
+	return transactionReply(transaction), nil
+}
+
+func (s service) Confirm(ctx context.Context, request *wallet.SettleRequest) (*wallet.TransactionReply, error) {
+	return s.settle(ctx, request, func(ctx context.Context, owner, id uuid.UUID) (Transaction, error) {
+		return s.db.Confirm(ctx, owner, id)
+	})
+}
+
+func (s service) Reject(ctx context.Context, request *wallet.SettleRequest) (*wallet.TransactionReply, error) {
+	return s.settle(ctx, request, func(ctx context.Context, owner, id uuid.UUID) (Transaction, error) {
+		return s.db.Reject(ctx, owner, id)
+	})
+}
+
+func (s service) settle(
+	ctx context.Context,
+	request *wallet.SettleRequest,
+	action func(context.Context, uuid.UUID, uuid.UUID) (Transaction, error),
+) (*wallet.TransactionReply, error) {
+	authorized, ok := services.AuthorizedFromContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "not authorized")
+	}
+	transactionId, err := uuid.Parse(request.TransactionId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "transaction_id is not a valid uuid")
+	}
+
+	transaction, err := action(ctx, authorized.Id, transactionId)
+	if err != nil {
+		return nil, operationError(ctx, err)
+	}
+	return transactionReply(transaction), nil
 }

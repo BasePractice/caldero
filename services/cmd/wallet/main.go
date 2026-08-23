@@ -59,6 +59,17 @@ func main() {
 		} else if created > 0 {
 			slog.Info("Transaction partitions created", slog.Int("count", created))
 		}
+		go services.RunPeriodic(ctx, "reservation-release", cfg.ReservationReleaseInterval,
+			func(ctx context.Context) error {
+				released, err := db.ReleaseExpiredReservations(ctx)
+				if err != nil {
+					return err
+				}
+				if released > 0 {
+					slog.InfoContext(ctx, "Expired reservations released", slog.Int64("count", released))
+				}
+				return nil
+			})
 		go services.RunPeriodic(ctx, "partition-maintenance", cfg.PartitionMaintenanceInterval,
 			func(ctx context.Context) error {
 				created, err := db.EnsurePartitions(ctx, cfg.PartitionMonthsAhead)

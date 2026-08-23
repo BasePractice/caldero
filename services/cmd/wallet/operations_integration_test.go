@@ -7,6 +7,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	wallet "wish/middleware/wallet/v1"
 	"wish/services/testsupport"
@@ -240,6 +241,174 @@ func TestWalletOperations(t *testing.T) {
 		// DELETED терминально: переход из него запрещён триггером.
 		if err := db.ChangeState(ctx, owner, walletId, "ACTIVE"); err == nil {
 			t.Fatal("переход из DELETED должен быть запрещён")
+		}
+	})
+}
+
+func TestWalletReservations(t *testing.T) {
+	ctx := context.Background()
+	db, err := NewDatabaseWallet(ctx, testsupport.Prepare(t, "wallet"))
+	if err != nil {
+		t.Fatalf("не удалось открыть репозиторий: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	fund := func(t *testing.T, owner uuid.UUID, amount int64) {
+		t.Helper()
+		if _, err := db.Debit(ctx, owner, OperationParams{
+			IdempotencyKey: uuid.NewString(), Value: amount,
+		}); err != nil {
+			t.Fatalf("пополнение: %v", err)
+		}
+	}
+	report := func(t *testing.T, owner uuid.UUID) *wallet.InformationReply {
+		t.Helper()
+		var reply *wallet.InformationReply
+		if err := db.Information(ctx, owner, func(r *wallet.InformationReply) { reply = r }); err != nil {
+			t.Fatalf("чтение кошелька: %v", err)
+		}
+		return reply
+	}
+
+	t.Run("резерв уменьшает доступный остаток, но не баланс", func(t *testing.T) {
+		owner := uuid.New()
+		fund(t, owner, 1000)
+
+		if _, err := db.Reserve(ctx, owner, ReserveParams{
+			IdempotencyKey: uuid.NewString(), Value: 400,
+		}); err != nil {
+			t.Fatalf("резервирование: %v", err)
+		}
+
+		info := report(t, owner)
+		if info.Balance != 1000 {
+			t.Errorf("баланс %d, ожидался 1000: резерв не должен менять баланс", info.Balance)
+		}
+		if info.Available != 600 {
+			t.Errorf("доступно %d, ожидалось 600", info.Available)
+		}
+	})
+
+	t.Run("зарезервированные средства нельзя потратить второй раз", func(t *testing.T) {
+		owner := uuid.New()
+		fund(t, owner, 1000)
+		if _, err := db.Reserve(ctx, owner, ReserveParams{
+			IdempotencyKey: uuid.NewString(), Value: 800,
+		}); err != nil {
+			t.Fatalf("резервирование: %v", err)
+		}
+
+		// Списание проверяет доступный остаток, а не баланс.
+		_, err := db.Credit(ctx, owner, OperationParams{IdempotencyKey: uuid.NewString(), Value: 300})
+		if !errors.Is(err, ErrInsufficientBalance) {
+			t.Fatalf("получено %v, ожидалась ErrInsufficientBalance", err)
+		}
+	})
+
+	t.Run("подтверждение списывает средства", func(t *testing.T) {
+		owner := uuid.New()
+		fund(t, owner, 1000)
+		reservation, err := db.Reserve(ctx, owner, ReserveParams{
+			IdempotencyKey: uuid.NewString(), Value: 250,
+		})
+		if err != nil {
+			t.Fatalf("резервирование: %v", err)
+		}
+
+		if _, err = db.Confirm(ctx, owner, reservation.Id); err != nil {
+			t.Fatalf("подтверждение: %v", err)
+		}
+
+		info := report(t, owner)
+		if info.Balance != 750 {
+			t.Errorf("баланс %d, ожидался 750", info.Balance)
+		}
+		if info.Available != 750 {
+			t.Errorf("доступно %d, ожидалось 750: резерв должен быть снят", info.Available)
+		}
+	})
+
+	t.Run("отмена освобождает средства", func(t *testing.T) {
+		owner := uuid.New()
+		fund(t, owner, 1000)
+		reservation, err := db.Reserve(ctx, owner, ReserveParams{
+			IdempotencyKey: uuid.NewString(), Value: 250,
+		})
+		if err != nil {
+			t.Fatalf("резервирование: %v", err)
+		}
+
+		if _, err = db.Reject(ctx, owner, reservation.Id); err != nil {
+			t.Fatalf("отмена: %v", err)
+		}
+
+		info := report(t, owner)
+		if info.Balance != 1000 || info.Available != 1000 {
+			t.Errorf("баланс %d, доступно %d, ожидалось 1000 и 1000", info.Balance, info.Available)
+		}
+	})
+
+	t.Run("повторное подтверждение отклоняется", func(t *testing.T) {
+		owner := uuid.New()
+		fund(t, owner, 1000)
+		reservation, err := db.Reserve(ctx, owner, ReserveParams{
+			IdempotencyKey: uuid.NewString(), Value: 100,
+		})
+		if err != nil {
+			t.Fatalf("резервирование: %v", err)
+		}
+		if _, err = db.Confirm(ctx, owner, reservation.Id); err != nil {
+			t.Fatalf("подтверждение: %v", err)
+		}
+
+		// Иначе повтор списал бы средства второй раз.
+		if _, err = db.Confirm(ctx, owner, reservation.Id); !errors.Is(err, ErrReservationNotPending) {
+			t.Fatalf("получено %v, ожидалась ErrReservationNotPending", err)
+		}
+		if info := report(t, owner); info.Balance != 900 {
+			t.Errorf("баланс %d, ожидался 900", info.Balance)
+		}
+	})
+
+	t.Run("чужой резерв недоступен", func(t *testing.T) {
+		owner := uuid.New()
+		fund(t, owner, 500)
+		reservation, err := db.Reserve(ctx, owner, ReserveParams{
+			IdempotencyKey: uuid.NewString(), Value: 100,
+		})
+		if err != nil {
+			t.Fatalf("резервирование: %v", err)
+		}
+
+		if _, err = db.Confirm(ctx, uuid.New(), reservation.Id); !errors.Is(err, ErrReservationNotFound) {
+			t.Fatalf("получено %v, ожидалась ErrReservationNotFound", err)
+		}
+	})
+
+	t.Run("просроченный резерв освобождается", func(t *testing.T) {
+		owner := uuid.New()
+		fund(t, owner, 1000)
+		// Отрицательный срок жизни даёт заведомо просроченный резерв.
+		reservation, err := db.Reserve(ctx, owner, ReserveParams{
+			IdempotencyKey: uuid.NewString(), Value: 700, TTL: time.Millisecond,
+		})
+		if err != nil {
+			t.Fatalf("резервирование: %v", err)
+		}
+		time.Sleep(20 * time.Millisecond)
+
+		released, err := db.ReleaseExpiredReservations(ctx)
+		if err != nil {
+			t.Fatalf("освобождение: %v", err)
+		}
+		if released != 1 {
+			t.Fatalf("освобождено %d резервов, ожидался 1", released)
+		}
+		if info := report(t, owner); info.Available != 1000 {
+			t.Errorf("доступно %d, ожидалось 1000", info.Available)
+		}
+		if _, err = db.Confirm(ctx, owner, reservation.Id); !errors.Is(err, ErrReservationNotPending) {
+			t.Errorf("просроченный резерв не должен подтверждаться: %v", err)
 		}
 	})
 }

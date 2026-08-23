@@ -15,6 +15,10 @@ import (
 const (
 	defaultHistoryLimit = 50
 	maxHistoryLimit     = 500
+
+	// defaultReservationTTL — срок жизни резерва по умолчанию. Резерв без
+	// срока блокирует средства навсегда, если подтверждение так и не придёт.
+	defaultReservationTTL = 15 * time.Minute
 )
 
 type walletRow struct {

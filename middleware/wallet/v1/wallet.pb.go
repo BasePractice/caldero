@@ -284,14 +284,16 @@ func (x *InformationRequest) GetUserId() string {
 }
 
 type InformationReply struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Balance        int64                  `protobuf:"varint,2,opt,name=balance,proto3" json:"balance,omitempty"`
-	ReservedDebit  int64                  `protobuf:"varint,3,opt,name=reserved_debit,json=reservedDebit,proto3" json:"reserved_debit,omitempty"`
-	ReservedCredit int64                  `protobuf:"varint,4,opt,name=reserved_credit,json=reservedCredit,proto3" json:"reserved_credit,omitempty"`
-	Type           WalletType             `protobuf:"varint,14,opt,name=type,proto3,enum=wallet.v1.WalletType" json:"type,omitempty"`
-	State          WalletState            `protobuf:"varint,15,opt,name=state,proto3,enum=wallet.v1.WalletState" json:"state,omitempty"`
-	Transactions   int64                  `protobuf:"varint,16,opt,name=transactions,proto3" json:"transactions,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Id      string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Balance int64                  `protobuf:"varint,2,opt,name=balance,proto3" json:"balance,omitempty"`
+	// available = balance - действующие резервы на списание.
+	Available      int64       `protobuf:"varint,17,opt,name=available,proto3" json:"available,omitempty"`
+	ReservedDebit  int64       `protobuf:"varint,3,opt,name=reserved_debit,json=reservedDebit,proto3" json:"reserved_debit,omitempty"`
+	ReservedCredit int64       `protobuf:"varint,4,opt,name=reserved_credit,json=reservedCredit,proto3" json:"reserved_credit,omitempty"`
+	Type           WalletType  `protobuf:"varint,14,opt,name=type,proto3,enum=wallet.v1.WalletType" json:"type,omitempty"`
+	State          WalletState `protobuf:"varint,15,opt,name=state,proto3,enum=wallet.v1.WalletState" json:"state,omitempty"`
+	Transactions   int64       `protobuf:"varint,16,opt,name=transactions,proto3" json:"transactions,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -336,6 +338,13 @@ func (x *InformationReply) GetId() string {
 func (x *InformationReply) GetBalance() int64 {
 	if x != nil {
 		return x.Balance
+	}
+	return 0
+}
+
+func (x *InformationReply) GetAvailable() int64 {
+	if x != nil {
+		return x.Available
 	}
 	return 0
 }
@@ -794,6 +803,130 @@ func (x *HistoryReply) GetNextBefore() *timestamppb.Timestamp {
 	return nil
 }
 
+// ReserveRequest откладывает средства под будущее списание. Баланс при этом
+// не меняется: резерв уменьшает доступный остаток.
+type ReserveRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	IdempotencyKey string                 `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	Value          int64                  `protobuf:"varint,2,opt,name=value,proto3" json:"value,omitempty"`
+	Message        string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	WalletId       *string                `protobuf:"bytes,4,opt,name=wallet_id,json=walletId,proto3,oneof" json:"wallet_id,omitempty"`
+	// Срок жизни резерва в секундах. Ноль означает значение по умолчанию:
+	// резерв без срока блокирует средства навсегда.
+	TtlSeconds    int32 `protobuf:"varint,5,opt,name=ttl_seconds,json=ttlSeconds,proto3" json:"ttl_seconds,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReserveRequest) Reset() {
+	*x = ReserveRequest{}
+	mi := &file_middleware_wallet_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReserveRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReserveRequest) ProtoMessage() {}
+
+func (x *ReserveRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_middleware_wallet_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReserveRequest.ProtoReflect.Descriptor instead.
+func (*ReserveRequest) Descriptor() ([]byte, []int) {
+	return file_middleware_wallet_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ReserveRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *ReserveRequest) GetValue() int64 {
+	if x != nil {
+		return x.Value
+	}
+	return 0
+}
+
+func (x *ReserveRequest) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *ReserveRequest) GetWalletId() string {
+	if x != nil && x.WalletId != nil {
+		return *x.WalletId
+	}
+	return ""
+}
+
+func (x *ReserveRequest) GetTtlSeconds() int32 {
+	if x != nil {
+		return x.TtlSeconds
+	}
+	return 0
+}
+
+type SettleRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TransactionId string                 `protobuf:"bytes,1,opt,name=transaction_id,json=transactionId,proto3" json:"transaction_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SettleRequest) Reset() {
+	*x = SettleRequest{}
+	mi := &file_middleware_wallet_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SettleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SettleRequest) ProtoMessage() {}
+
+func (x *SettleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_middleware_wallet_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SettleRequest.ProtoReflect.Descriptor instead.
+func (*SettleRequest) Descriptor() ([]byte, []int) {
+	return file_middleware_wallet_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *SettleRequest) GetTransactionId() string {
+	if x != nil {
+		return x.TransactionId
+	}
+	return ""
+}
+
 type ChangeStateRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	WalletId      string                 `protobuf:"bytes,1,opt,name=wallet_id,json=walletId,proto3" json:"wallet_id,omitempty"`
@@ -804,7 +937,7 @@ type ChangeStateRequest struct {
 
 func (x *ChangeStateRequest) Reset() {
 	*x = ChangeStateRequest{}
-	mi := &file_middleware_wallet_proto_msgTypes[8]
+	mi := &file_middleware_wallet_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -816,7 +949,7 @@ func (x *ChangeStateRequest) String() string {
 func (*ChangeStateRequest) ProtoMessage() {}
 
 func (x *ChangeStateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_middleware_wallet_proto_msgTypes[8]
+	mi := &file_middleware_wallet_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -829,7 +962,7 @@ func (x *ChangeStateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChangeStateRequest.ProtoReflect.Descriptor instead.
 func (*ChangeStateRequest) Descriptor() ([]byte, []int) {
-	return file_middleware_wallet_proto_rawDescGZIP(), []int{8}
+	return file_middleware_wallet_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ChangeStateRequest) GetWalletId() string {
@@ -854,10 +987,11 @@ const file_middleware_wallet_proto_rawDesc = "" +
 	"\x12InformationRequest\x12\x1c\n" +
 	"\auser_id\x18\x01 \x01(\tH\x00R\x06userId\x88\x01\x01B\n" +
 	"\n" +
-	"\b_user_id\"\xbf\x02\n" +
+	"\b_user_id\"\xdd\x02\n" +
 	"\x10InformationReply\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
-	"\abalance\x18\x02 \x01(\x03R\abalance\x12%\n" +
+	"\abalance\x18\x02 \x01(\x03R\abalance\x12\x1c\n" +
+	"\tavailable\x18\x11 \x01(\x03R\tavailable\x12%\n" +
 	"\x0ereserved_debit\x18\x03 \x01(\x03R\rreservedDebit\x12'\n" +
 	"\x0freserved_credit\x18\x04 \x01(\x03R\x0ereservedCredit\x12)\n" +
 	"\x04type\x18\x0e \x01(\x0e2\x15.wallet.v1.WalletTypeR\x04type\x12,\n" +
@@ -903,7 +1037,18 @@ const file_middleware_wallet_proto_rawDesc = "" +
 	"\ftransactions\x18\x01 \x03(\v2\x1b.wallet.v1.TransactionReplyR\ftransactions\x12@\n" +
 	"\vnext_before\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampH\x00R\n" +
 	"nextBefore\x88\x01\x01B\x0e\n" +
-	"\f_next_before\"_\n" +
+	"\f_next_before\"\xba\x01\n" +
+	"\x0eReserveRequest\x12'\n" +
+	"\x0fidempotency_key\x18\x01 \x01(\tR\x0eidempotencyKey\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x03R\x05value\x12\x18\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\x12 \n" +
+	"\twallet_id\x18\x04 \x01(\tH\x00R\bwalletId\x88\x01\x01\x12\x1f\n" +
+	"\vttl_seconds\x18\x05 \x01(\x05R\n" +
+	"ttlSecondsB\f\n" +
+	"\n" +
+	"_wallet_id\"6\n" +
+	"\rSettleRequest\x12%\n" +
+	"\x0etransaction_id\x18\x01 \x01(\tR\rtransactionId\"_\n" +
 	"\x12ChangeStateRequest\x12\x1b\n" +
 	"\twallet_id\x18\x01 \x01(\tR\bwalletId\x12,\n" +
 	"\x05state\x18\x02 \x01(\x0e2\x16.wallet.v1.WalletStateR\x05state*4\n" +
@@ -932,14 +1077,17 @@ const file_middleware_wallet_proto_rawDesc = "" +
 	"\x05DEBIT\x10\x01\x12\n" +
 	"\n" +
 	"\x06CREDIT\x10\x02\x12\b\n" +
-	"\x04SWAP\x10\x032\xae\x03\n" +
+	"\x04SWAP\x10\x032\xf4\x04\n" +
 	"\aService\x12M\n" +
 	"\vInformation\x12\x1d.wallet.v1.InformationRequest\x1a\x1f.wallet.v1.InformationReplyList\x12A\n" +
 	"\x05Debit\x12\x1b.wallet.v1.OperationRequest\x1a\x1b.wallet.v1.TransactionReply\x12B\n" +
 	"\x06Credit\x12\x1b.wallet.v1.OperationRequest\x1a\x1b.wallet.v1.TransactionReply\x12C\n" +
 	"\bTransfer\x12\x1a.wallet.v1.TransferRequest\x1a\x1b.wallet.v1.TransactionReply\x12=\n" +
 	"\aHistory\x12\x19.wallet.v1.HistoryRequest\x1a\x17.wallet.v1.HistoryReply\x12I\n" +
-	"\vChangeState\x12\x1d.wallet.v1.ChangeStateRequest\x1a\x1b.wallet.v1.InformationReplyB\x16Z\x14middleware/wallet/v1b\x06proto3"
+	"\vChangeState\x12\x1d.wallet.v1.ChangeStateRequest\x1a\x1b.wallet.v1.InformationReply\x12A\n" +
+	"\aReserve\x12\x19.wallet.v1.ReserveRequest\x1a\x1b.wallet.v1.TransactionReply\x12@\n" +
+	"\aConfirm\x12\x18.wallet.v1.SettleRequest\x1a\x1b.wallet.v1.TransactionReply\x12?\n" +
+	"\x06Reject\x12\x18.wallet.v1.SettleRequest\x1a\x1b.wallet.v1.TransactionReplyB\x16Z\x14middleware/wallet/v1b\x06proto3"
 
 var (
 	file_middleware_wallet_proto_rawDescOnce sync.Once
@@ -954,7 +1102,7 @@ func file_middleware_wallet_proto_rawDescGZIP() []byte {
 }
 
 var file_middleware_wallet_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_middleware_wallet_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_middleware_wallet_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_middleware_wallet_proto_goTypes = []any{
 	(WalletType)(0),               // 0: wallet.v1.WalletType
 	(WalletState)(0),              // 1: wallet.v1.WalletState
@@ -968,8 +1116,10 @@ var file_middleware_wallet_proto_goTypes = []any{
 	(*TransactionReply)(nil),      // 9: wallet.v1.TransactionReply
 	(*HistoryRequest)(nil),        // 10: wallet.v1.HistoryRequest
 	(*HistoryReply)(nil),          // 11: wallet.v1.HistoryReply
-	(*ChangeStateRequest)(nil),    // 12: wallet.v1.ChangeStateRequest
-	(*timestamppb.Timestamp)(nil), // 13: google.protobuf.Timestamp
+	(*ReserveRequest)(nil),        // 12: wallet.v1.ReserveRequest
+	(*SettleRequest)(nil),         // 13: wallet.v1.SettleRequest
+	(*ChangeStateRequest)(nil),    // 14: wallet.v1.ChangeStateRequest
+	(*timestamppb.Timestamp)(nil), // 15: google.protobuf.Timestamp
 }
 var file_middleware_wallet_proto_depIdxs = []int32{
 	0,  // 0: wallet.v1.InformationReply.type:type_name -> wallet.v1.WalletType
@@ -977,25 +1127,31 @@ var file_middleware_wallet_proto_depIdxs = []int32{
 	5,  // 2: wallet.v1.InformationReplyList.replies:type_name -> wallet.v1.InformationReply
 	3,  // 3: wallet.v1.TransactionReply.operation:type_name -> wallet.v1.Operation
 	2,  // 4: wallet.v1.TransactionReply.state:type_name -> wallet.v1.TransactionState
-	13, // 5: wallet.v1.TransactionReply.created_at:type_name -> google.protobuf.Timestamp
-	13, // 6: wallet.v1.HistoryRequest.before:type_name -> google.protobuf.Timestamp
+	15, // 5: wallet.v1.TransactionReply.created_at:type_name -> google.protobuf.Timestamp
+	15, // 6: wallet.v1.HistoryRequest.before:type_name -> google.protobuf.Timestamp
 	9,  // 7: wallet.v1.HistoryReply.transactions:type_name -> wallet.v1.TransactionReply
-	13, // 8: wallet.v1.HistoryReply.next_before:type_name -> google.protobuf.Timestamp
+	15, // 8: wallet.v1.HistoryReply.next_before:type_name -> google.protobuf.Timestamp
 	1,  // 9: wallet.v1.ChangeStateRequest.state:type_name -> wallet.v1.WalletState
 	4,  // 10: wallet.v1.Service.Information:input_type -> wallet.v1.InformationRequest
 	7,  // 11: wallet.v1.Service.Debit:input_type -> wallet.v1.OperationRequest
 	7,  // 12: wallet.v1.Service.Credit:input_type -> wallet.v1.OperationRequest
 	8,  // 13: wallet.v1.Service.Transfer:input_type -> wallet.v1.TransferRequest
 	10, // 14: wallet.v1.Service.History:input_type -> wallet.v1.HistoryRequest
-	12, // 15: wallet.v1.Service.ChangeState:input_type -> wallet.v1.ChangeStateRequest
-	6,  // 16: wallet.v1.Service.Information:output_type -> wallet.v1.InformationReplyList
-	9,  // 17: wallet.v1.Service.Debit:output_type -> wallet.v1.TransactionReply
-	9,  // 18: wallet.v1.Service.Credit:output_type -> wallet.v1.TransactionReply
-	9,  // 19: wallet.v1.Service.Transfer:output_type -> wallet.v1.TransactionReply
-	11, // 20: wallet.v1.Service.History:output_type -> wallet.v1.HistoryReply
-	5,  // 21: wallet.v1.Service.ChangeState:output_type -> wallet.v1.InformationReply
-	16, // [16:22] is the sub-list for method output_type
-	10, // [10:16] is the sub-list for method input_type
+	14, // 15: wallet.v1.Service.ChangeState:input_type -> wallet.v1.ChangeStateRequest
+	12, // 16: wallet.v1.Service.Reserve:input_type -> wallet.v1.ReserveRequest
+	13, // 17: wallet.v1.Service.Confirm:input_type -> wallet.v1.SettleRequest
+	13, // 18: wallet.v1.Service.Reject:input_type -> wallet.v1.SettleRequest
+	6,  // 19: wallet.v1.Service.Information:output_type -> wallet.v1.InformationReplyList
+	9,  // 20: wallet.v1.Service.Debit:output_type -> wallet.v1.TransactionReply
+	9,  // 21: wallet.v1.Service.Credit:output_type -> wallet.v1.TransactionReply
+	9,  // 22: wallet.v1.Service.Transfer:output_type -> wallet.v1.TransactionReply
+	11, // 23: wallet.v1.Service.History:output_type -> wallet.v1.HistoryReply
+	5,  // 24: wallet.v1.Service.ChangeState:output_type -> wallet.v1.InformationReply
+	9,  // 25: wallet.v1.Service.Reserve:output_type -> wallet.v1.TransactionReply
+	9,  // 26: wallet.v1.Service.Confirm:output_type -> wallet.v1.TransactionReply
+	9,  // 27: wallet.v1.Service.Reject:output_type -> wallet.v1.TransactionReply
+	19, // [19:28] is the sub-list for method output_type
+	10, // [10:19] is the sub-list for method input_type
 	10, // [10:10] is the sub-list for extension type_name
 	10, // [10:10] is the sub-list for extension extendee
 	0,  // [0:10] is the sub-list for field type_name
@@ -1011,13 +1167,14 @@ func file_middleware_wallet_proto_init() {
 	file_middleware_wallet_proto_msgTypes[5].OneofWrappers = []any{}
 	file_middleware_wallet_proto_msgTypes[6].OneofWrappers = []any{}
 	file_middleware_wallet_proto_msgTypes[7].OneofWrappers = []any{}
+	file_middleware_wallet_proto_msgTypes[8].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_middleware_wallet_proto_rawDesc), len(file_middleware_wallet_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   9,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

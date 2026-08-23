@@ -56,6 +56,10 @@ type Config struct {
 	// запросов. Ноль снимает ограничение.
 	MaxInFlightRequests int
 
+	// ReservationReleaseInterval — как часто освобождать просроченные
+	// резервы. Ноль отключает освобождение.
+	ReservationReleaseInterval time.Duration
+
 	// PartitionMaintenanceInterval — как часто проверять окно партиций
 	// транзакций. Ноль отключает обслуживание.
 	PartitionMaintenanceInterval time.Duration
@@ -113,6 +117,12 @@ func LoadConfig() (Config, error) {
 		return Config{}, fmt.Errorf("parsing MAX_IN_FLIGHT_REQUESTS: %w", err)
 	}
 	cfg.MaxInFlightRequests = maxInFlight
+
+	releaseInterval, err := time.ParseDuration(env("RESERVATION_RELEASE_INTERVAL", "1m"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing RESERVATION_RELEASE_INTERVAL: %w", err)
+	}
+	cfg.ReservationReleaseInterval = releaseInterval
 
 	partitionInterval, err := time.ParseDuration(env("PARTITION_MAINTENANCE_INTERVAL", "12h"))
 	if err != nil {

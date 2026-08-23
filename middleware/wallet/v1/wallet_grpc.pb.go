@@ -28,6 +28,9 @@ const (
 	Service_Transfer_FullMethodName    = "/wallet.v1.Service/Transfer"
 	Service_History_FullMethodName     = "/wallet.v1.Service/History"
 	Service_ChangeState_FullMethodName = "/wallet.v1.Service/ChangeState"
+	Service_Reserve_FullMethodName     = "/wallet.v1.Service/Reserve"
+	Service_Confirm_FullMethodName     = "/wallet.v1.Service/Confirm"
+	Service_Reject_FullMethodName      = "/wallet.v1.Service/Reject"
 )
 
 // ServiceClient is the client API for Service service.
@@ -45,6 +48,12 @@ type ServiceClient interface {
 	History(ctx context.Context, in *HistoryRequest, opts ...grpc.CallOption) (*HistoryReply, error)
 	// Смена состояния кошелька.
 	ChangeState(ctx context.Context, in *ChangeStateRequest, opts ...grpc.CallOption) (*InformationReply, error)
+	// Резервирование средств под будущее списание.
+	Reserve(ctx context.Context, in *ReserveRequest, opts ...grpc.CallOption) (*TransactionReply, error)
+	// Подтверждение резерва: средства списываются.
+	Confirm(ctx context.Context, in *SettleRequest, opts ...grpc.CallOption) (*TransactionReply, error)
+	// Отмена резерва: средства освобождаются.
+	Reject(ctx context.Context, in *SettleRequest, opts ...grpc.CallOption) (*TransactionReply, error)
 }
 
 type serviceClient struct {
@@ -115,6 +124,36 @@ func (c *serviceClient) ChangeState(ctx context.Context, in *ChangeStateRequest,
 	return out, nil
 }
 
+func (c *serviceClient) Reserve(ctx context.Context, in *ReserveRequest, opts ...grpc.CallOption) (*TransactionReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TransactionReply)
+	err := c.cc.Invoke(ctx, Service_Reserve_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *serviceClient) Confirm(ctx context.Context, in *SettleRequest, opts ...grpc.CallOption) (*TransactionReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TransactionReply)
+	err := c.cc.Invoke(ctx, Service_Confirm_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *serviceClient) Reject(ctx context.Context, in *SettleRequest, opts ...grpc.CallOption) (*TransactionReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TransactionReply)
+	err := c.cc.Invoke(ctx, Service_Reject_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ServiceServer is the server API for Service service.
 // All implementations must embed UnimplementedServiceServer
 // for forward compatibility.
@@ -130,6 +169,12 @@ type ServiceServer interface {
 	History(context.Context, *HistoryRequest) (*HistoryReply, error)
 	// Смена состояния кошелька.
 	ChangeState(context.Context, *ChangeStateRequest) (*InformationReply, error)
+	// Резервирование средств под будущее списание.
+	Reserve(context.Context, *ReserveRequest) (*TransactionReply, error)
+	// Подтверждение резерва: средства списываются.
+	Confirm(context.Context, *SettleRequest) (*TransactionReply, error)
+	// Отмена резерва: средства освобождаются.
+	Reject(context.Context, *SettleRequest) (*TransactionReply, error)
 	mustEmbedUnimplementedServiceServer()
 }
 
@@ -157,6 +202,15 @@ func (UnimplementedServiceServer) History(context.Context, *HistoryRequest) (*Hi
 }
 func (UnimplementedServiceServer) ChangeState(context.Context, *ChangeStateRequest) (*InformationReply, error) {
 	return nil, status.Error(codes.Unimplemented, "method ChangeState not implemented")
+}
+func (UnimplementedServiceServer) Reserve(context.Context, *ReserveRequest) (*TransactionReply, error) {
+	return nil, status.Error(codes.Unimplemented, "method Reserve not implemented")
+}
+func (UnimplementedServiceServer) Confirm(context.Context, *SettleRequest) (*TransactionReply, error) {
+	return nil, status.Error(codes.Unimplemented, "method Confirm not implemented")
+}
+func (UnimplementedServiceServer) Reject(context.Context, *SettleRequest) (*TransactionReply, error) {
+	return nil, status.Error(codes.Unimplemented, "method Reject not implemented")
 }
 func (UnimplementedServiceServer) mustEmbedUnimplementedServiceServer() {}
 func (UnimplementedServiceServer) testEmbeddedByValue()                 {}
@@ -287,6 +341,60 @@ func _Service_ChangeState_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Service_Reserve_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReserveRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ServiceServer).Reserve(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Service_Reserve_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ServiceServer).Reserve(ctx, req.(*ReserveRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Service_Confirm_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SettleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ServiceServer).Confirm(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Service_Confirm_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ServiceServer).Confirm(ctx, req.(*SettleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Service_Reject_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SettleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ServiceServer).Reject(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Service_Reject_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ServiceServer).Reject(ctx, req.(*SettleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Service_ServiceDesc is the grpc.ServiceDesc for Service service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -317,6 +425,18 @@ var Service_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ChangeState",
 			Handler:    _Service_ChangeState_Handler,
+		},
+		{
+			MethodName: "Reserve",
+			Handler:    _Service_Reserve_Handler,
+		},
+		{
+			MethodName: "Confirm",
+			Handler:    _Service_Confirm_Handler,
+		},
+		{
+			MethodName: "Reject",
+			Handler:    _Service_Reject_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
