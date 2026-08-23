@@ -4,6 +4,8 @@ FROM golang:1.25-alpine AS builder
 LABEL authors="Pastor"
 
 ARG SERVICE
+ARG VERSION=dev
+ARG REVISION=""
 WORKDIR /src
 
 # Alpine не содержит базу часовых поясов, а корневые сертификаты нужны
@@ -21,7 +23,9 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags '-s -w' -o /service wish/services/cmd/${SERVICE}
+RUN CGO_ENABLED=0 go build -trimpath \
+    -ldflags "-s -w -X wish/services.Version=${VERSION} -X wish/services.Revision=${REVISION}" \
+    -o /service wish/services/cmd/${SERVICE}
 
 FROM scratch
 

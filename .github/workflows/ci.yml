@@ -15,7 +15,7 @@ jobs:
     name: Сборка и тесты
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: actions/setup-go@v5
         with:
@@ -41,7 +41,7 @@ jobs:
     name: Интеграционные тесты
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -55,7 +55,7 @@ jobs:
     name: Линтер
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -70,7 +70,7 @@ jobs:
     name: Известные уязвимости
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -83,25 +83,38 @@ jobs:
   docker:
     name: Образы
     runs-on: ubuntu-latest
+    strategy:
+      # Матрица вместо последовательного цикла: четыре образа собираются
+      # параллельно, и падение видно по конкретному сервису.
+      fail-fast: false
+      matrix:
+        service: [ wallet, credit, account, users ]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: hadolint
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: Dockerfile
 
-      - name: Сборка образов
-        run: |
-          for service in wallet credit account users; do
-            docker build --build-arg SERVICE="$service" -t "wish/$service:ci" .
-          done
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Сборка образа ${{ matrix.service }}
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          build-args: SERVICE=${{ matrix.service }}
+          push: false
+          # Кеш слоёв в GitHub Actions: без него каждый прогон заново
+          # выкачивает зависимости и компилирует всё с нуля.
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
   migrations:
     name: Миграции
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Полный цикл up и down: именно здесь ловятся ошибки порядка удаления
       # таблиц и конфликты между миграциями соседних версий.
@@ -115,7 +128,7 @@ jobs:
     name: Конфигурация шлюза
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Шаблон шлюза — не JSON, ошибку в нём заметно только после рендера.
       - name: Проверка шаблона в обоих режимах

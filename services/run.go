@@ -40,7 +40,7 @@ func Run(name string, run func(ctx context.Context, cfg Config) error) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	slog.Info("Service starting", slog.String("service", name))
+	logBuildInfo(name)
 	if err = run(ctx, cfg); err != nil {
 		slog.Error("Service stopped with error",
 			slog.String("service", name), slog.String("err", err.Error()))

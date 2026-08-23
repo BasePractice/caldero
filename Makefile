@@ -3,6 +3,9 @@
 SERVICES := wallet credit account users
 BIN      := .bin
 GOFLAGS  := -trimpath
+VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+REVISION ?= $(shell git rev-parse HEAD 2>/dev/null)
+LDFLAGS  := -X wish/services.Version=$(VERSION) -X wish/services.Revision=$(REVISION)
 
 .DEFAULT_GOAL := help
 .PHONY: help build test test-race test-integration lint vet fmt fmt-check tidy-check proto up down logs migrate-status migrate-check vuln images clean save-keycloak-config
@@ -14,7 +17,7 @@ build: ## Собрать все сервисы в .bin
 	@mkdir -p $(BIN)
 	@for s in $(SERVICES); do \
 		echo "сборка $$s"; \
-		go build $(GOFLAGS) -o $(BIN)/$$s wish/services/cmd/$$s || exit 1; \
+		go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BIN)/$$s wish/services/cmd/$$s || exit 1; \
 	done
 
 test: ## Прогнать тесты
@@ -59,7 +62,8 @@ migrate-check: ## Прогнать миграции up и down на времен
 images: ## Собрать образы всех сервисов
 	@for s in $(SERVICES); do \
 		echo "образ $$s"; \
-		docker build --build-arg SERVICE=$$s -t wish/$$s:latest . || exit 1; \
+		docker build --build-arg SERVICE=$$s --build-arg VERSION=$(VERSION) \
+			--build-arg REVISION=$(REVISION) -t wish/$$s:latest . || exit 1; \
 	done
 
 up: ## Поднять стенд (режим провайдера — из .env)
