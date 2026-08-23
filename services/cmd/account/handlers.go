@@ -35,33 +35,30 @@ func registerHttpHandlers(ctx context.Context, db Database) http.Handler {
 func createAccount(ctx context.Context, db Database, w http.ResponseWriter, r *http.Request) {
 	operator, err := services.HttpAuthorized(r)
 	if err != nil {
-		w.WriteHeader(http.StatusUnauthorized)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	switch r.Method {
-	case http.MethodPost:
-		var a account.CreateAccount
-		err := json.NewDecoder(r.Body).Decode(&a)
-		if err != nil {
-			slog.Error("Failed decoding account",
-				slog.String("error", err.Error()))
-			w.WriteHeader(http.StatusBadRequest)
-		} else if !a.Validate() {
-			slog.Error("Account validation failed",
-				slog.String("account", a.String()))
-			w.WriteHeader(http.StatusBadRequest)
-		}
-		id, err := db.Create(ctx, a, operator)
-		if err != nil {
-			slog.Error("Failed to create account",
-				slog.String("account", a.String()),
-				slog.String("error", err.Error()))
-			w.WriteHeader(http.StatusInternalServerError)
-		} else {
-			w.Header().Set("X-Account-Id", fmt.Sprintf("%d", id))
-			w.WriteHeader(http.StatusCreated)
-		}
-	default:
-		w.WriteHeader(http.StatusMethodNotAllowed)
+
+	var a account.CreateAccount
+	if err = json.NewDecoder(r.Body).Decode(&a); err != nil {
+		slog.Error("Failed decoding account", slog.String("error", err.Error()))
+		http.Error(w, "Malformed request body", http.StatusBadRequest)
+		return
 	}
+	if !a.Validate() {
+		slog.Error("Account validation failed", slog.String("account", a.String()))
+		http.Error(w, "Account validation failed", http.StatusBadRequest)
+		return
+	}
+
+	id, err := db.Create(ctx, a, operator)
+	if err != nil {
+		slog.Error("Failed to create account",
+			slog.String("account", a.String()),
+			slog.String("error", err.Error()))
+		http.Error(w, "Can't create account", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("X-Account-Id", fmt.Sprintf("%d", id))
+	w.WriteHeader(http.StatusCreated)
 }

@@ -60,33 +60,30 @@ func registerHttpHandlers(ctx context.Context, db Database) http.Handler {
 func createCredit(ctx context.Context, db Database, w http.ResponseWriter, r *http.Request) {
 	operator, err := services.HttpAuthorized(r)
 	if err != nil {
-		w.WriteHeader(http.StatusUnauthorized)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	switch r.Method {
-	case http.MethodPost:
-		var c credit.CreateCredit
-		err := json.NewDecoder(r.Body).Decode(&c)
-		if err != nil {
-			slog.Error("Failed decoding credit",
-				slog.String("error", err.Error()))
-			w.WriteHeader(http.StatusBadRequest)
-		} else if !c.Validate() {
-			slog.Error("Credit validation failed",
-				slog.String("credit", c.String()))
-			w.WriteHeader(http.StatusBadRequest)
-		}
-		id, err := db.Create(ctx, c, operator)
-		if err != nil {
-			slog.Error("Failed to create credit",
-				slog.String("credit", c.String()),
-				slog.String("error", err.Error()))
-			w.WriteHeader(http.StatusInternalServerError)
-		} else {
-			w.Header().Set("X-Credit-Id", fmt.Sprintf("%d", id))
-			w.WriteHeader(http.StatusCreated)
-		}
-	default:
-		w.WriteHeader(http.StatusMethodNotAllowed)
+
+	var c credit.CreateCredit
+	if err = json.NewDecoder(r.Body).Decode(&c); err != nil {
+		slog.Error("Failed decoding credit", slog.String("error", err.Error()))
+		http.Error(w, "Malformed request body", http.StatusBadRequest)
+		return
 	}
+	if !c.Validate() {
+		slog.Error("Credit validation failed", slog.String("credit", c.String()))
+		http.Error(w, "Credit validation failed", http.StatusBadRequest)
+		return
+	}
+
+	id, err := db.Create(ctx, c, operator)
+	if err != nil {
+		slog.Error("Failed to create credit",
+			slog.String("credit", c.String()),
+			slog.String("error", err.Error()))
+		http.Error(w, "Can't create credit", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("X-Credit-Id", fmt.Sprintf("%d", id))
+	w.WriteHeader(http.StatusCreated)
 }
