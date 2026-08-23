@@ -3,11 +3,15 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"wish/services"
@@ -26,6 +30,10 @@ type Service struct {
 	oauth2Provider fosite.OAuth2Provider
 	keyManager     KeyManager
 	db             DatabaseUsers
+	cfg            services.Config
+
+	rotationMu   sync.Mutex
+	lastRotation time.Time
 }
 
 func newService(ctx context.Context, cfg services.Config) *Service {
@@ -59,6 +67,7 @@ func newService(ctx context.Context, cfg services.Config) *Service {
 		oauth2Provider: oauth2Provider,
 		keyManager:     keyManager,
 		db:             db,
+		cfg:            cfg,
 	}
 }
 
@@ -223,22 +232,54 @@ func (s *Service) handleJWKS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// authorizeAdmin защищает служебные эндпоинты. Сравнение постоянного времени:
+// обычное сравнение строк утекает длину совпадающего префикса.
+func (s *Service) authorizeAdmin(r *http.Request) bool {
+	if s.cfg.AdminToken == "" {
+		return false
+	}
+	provided := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	return subtle.ConstantTimeCompare([]byte(provided), []byte(s.cfg.AdminToken)) == 1
+}
+
 func (s *Service) handleRotateKeys(w http.ResponseWriter, r *http.Request) {
-	if err := s.keyManager.RotateKeys(r.Context()); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if !s.authorizeAdmin(r) {
+		slog.Warn("Unauthorized key rotation attempt",
+			slog.String("remote", r.RemoteAddr))
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
+
+	// Ротация генерирует RSA-2048 и обесценивает выданные токены, поэтому
+	// её частота ограничена даже для владельца административного токена.
+	s.rotationMu.Lock()
+	defer s.rotationMu.Unlock()
+	if since := time.Since(s.lastRotation); !s.lastRotation.IsZero() && since < s.cfg.KeyRotationMinInterval {
+		w.Header().Set("Retry-After",
+			strconv.Itoa(int((s.cfg.KeyRotationMinInterval - since).Seconds())))
+		http.Error(w, "Key rotation is rate limited", http.StatusTooManyRequests)
+		return
+	}
+
+	if err := s.keyManager.RotateKeys(r.Context()); err != nil {
+		slog.Error("Failed to rotate keys", slog.String("err", err.Error()))
+		http.Error(w, "Can't rotate keys", http.StatusInternalServerError)
+		return
+	}
+	s.lastRotation = time.Now()
 	w.WriteHeader(http.StatusOK)
 }
 
+// handleRevoke реализует RFC 7009: аутентификацию клиента и подбор корректного
+// ответа делает fosite. Раньше наружу уходил err.Error() с внутренними деталями,
+// а неизвестный токен давал 500 вместо предписанного стандартом 200.
 func (s *Service) handleRevoke(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	err := s.oauth2Provider.NewRevocationRequest(ctx, r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		slog.Debug("Revocation request rejected", slog.String("err", err.Error()))
 	}
-	w.WriteHeader(http.StatusOK)
+	s.oauth2Provider.WriteRevocationResponse(ctx, w, err)
 }
 
 func (s *Service) newSession(userId uuid.UUID) *openid.DefaultSession {

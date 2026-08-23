@@ -11,8 +11,8 @@ func registerHttpHandlers(_ context.Context, service *Service) http.Handler {
 	mux.HandleFunc("/auth", service.handleAuthorization)
 	mux.HandleFunc("/token", service.handleToken)
 	mux.HandleFunc("/me", service.protect(handleUserInformation))
-	mux.HandleFunc("/.well-known/jwks.json", service.handleJWKS)
-	mux.HandleFunc("/rotate-keys", service.handleRotateKeys)
-	mux.HandleFunc("/revoke", service.handleRevoke)
+	mux.HandleFunc("GET /.well-known/jwks.json", service.handleJWKS)
+	mux.HandleFunc("POST /rotate-keys", service.handleRotateKeys)
+	mux.HandleFunc("POST /revoke", service.handleRevoke)
 	return mux
 }

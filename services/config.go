@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -18,6 +19,13 @@ type Config struct {
 	LogFile     string
 	LogColor    bool
 	MetricsPort int
+
+	// AdminToken защищает служебные эндпоинты. Пустое значение полностью
+	// отключает их: незакрытая ротация ключей — это и инвалидация всех
+	// выданных токенов, и генерация RSA-2048 на каждый запрос.
+	AdminToken string
+	// KeyRotationMinInterval ограничивает частоту ротации ключей.
+	KeyRotationMinInterval time.Duration
 }
 
 // LoadConfig читает .env-файлы и окружение. Вызывается первой строкой main:
@@ -42,7 +50,15 @@ func LoadConfig() (Config, error) {
 		RedisURL: env("REDIS_URL", "redis://localhost:6379/10?protocol=3"),
 		LogLevel: env("LOG_LEVEL", "INFO"),
 		LogFile:  env("LOG_FILE", ""),
+
+		AdminToken: env("ADMIN_TOKEN", ""),
 	}
+
+	rotationInterval, err := time.ParseDuration(env("KEY_ROTATION_MIN_INTERVAL", "1h"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing KEY_ROTATION_MIN_INTERVAL: %w", err)
+	}
+	cfg.KeyRotationMinInterval = rotationInterval
 
 	logColor, err := strconv.ParseBool(env("LOG_COLOR", "true"))
 	if err != nil {
