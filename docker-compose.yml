@@ -243,6 +243,7 @@ services:
       OAUTH2_GLOBAL_SECRET: ${OAUTH2_GLOBAL_SECRET:?OAUTH2_GLOBAL_SECRET не задан, нужно ровно 32 байта}
       OAUTH2_ISSUER: ${OAUTH2_ISSUER:-http://localhost:8080/api/v1}
       ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      KEY_MASTER_KEY: ${KEY_MASTER_KEY:-}
 #      LOG_FILE: /logs/users.log
     volumes:
       - ./.logs/users:/logs

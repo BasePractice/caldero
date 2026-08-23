@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strings"
 	"time"
@@ -58,6 +59,9 @@ type DatabaseUsers interface {
 
 type ds struct {
 	db *sql.DB
+	// cipher шифрует приватные ключи подписи. nil означает хранение
+	// открытым текстом — только для локального стенда.
+	cipher *services.Cipher
 }
 
 func (s *ds) CreateAuthorizeCodeSession(ctx context.Context, code string, request fosite.Requester) error {
@@ -132,7 +136,8 @@ func (s *ds) CreateClient(ctx context.Context, clientId, clientSecret, redirectU
 }
 
 func (s *ds) GetKeys(ctx context.Context, cb func(string, []byte)) error {
-	rows, err := s.db.QueryContext(ctx, "SELECT key_id, private_key FROM keys ORDER BY created_at DESC LIMIT 2")
+	rows, err := s.db.QueryContext(ctx,
+		"SELECT key_id, private_key, encrypted FROM keys ORDER BY created_at DESC LIMIT 2")
 	if err != nil {
 		return fmt.Errorf("loading signing keys: %w", err)
 	}
@@ -144,10 +149,15 @@ func (s *ds) GetKeys(ctx context.Context, cb func(string, []byte)) error {
 	for rows.Next() {
 		var id string
 		var privateKey []byte
-		if err = rows.Scan(&id, &privateKey); err != nil {
+		var encrypted bool
+		if err = rows.Scan(&id, &privateKey, &encrypted); err != nil {
 			return fmt.Errorf("scanning signing key: %w", err)
 		}
-		cb(id, privateKey)
+		decoded, err := s.decodeKey(privateKey, encrypted)
+		if err != nil {
+			return err
+		}
+		cb(id, decoded)
 	}
 	// Без этой проверки обрыв соединения посреди выборки выглядит как пустой
 	// набор ключей, и JWKS молча отдаёт пустой список.
@@ -159,20 +169,51 @@ func (s *ds) GetKeys(ctx context.Context, cb func(string, []byte)) error {
 
 func (s *ds) GetKey(ctx context.Context, id string) ([]byte, error) {
 	var privateKey []byte
-	err := s.db.QueryRowContext(ctx, "SELECT private_key FROM keys WHERE key_id = $1", id).Scan(&privateKey)
+	var encrypted bool
+	err := s.db.QueryRowContext(ctx,
+		"SELECT private_key, encrypted FROM keys WHERE key_id = $1", id).
+		Scan(&privateKey, &encrypted)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("loading signing key %s: %w", id, err)
 	}
-	return privateKey, nil
+	return s.decodeKey(privateKey, encrypted)
 }
 
 func (s *ds) CreateKey(ctx context.Context, key []byte) (string, error) {
 	keyId := fmt.Sprintf("key-%d", time.Now().UnixNano())
-	_, err := s.db.ExecContext(ctx, "INSERT INTO keys (key_id, private_key) VALUES ($1, $2)", keyId, key)
+
+	stored, encrypted := key, false
+	if s.cipher != nil {
+		var err error
+		if stored, err = s.cipher.Encrypt(key); err != nil {
+			return "", fmt.Errorf("encrypting signing key: %w", err)
+		}
+		encrypted = true
+	}
+
+	_, err := s.db.ExecContext(ctx,
+		"INSERT INTO keys (key_id, private_key, encrypted) VALUES ($1, $2, $3)",
+		keyId, stored, encrypted)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("storing signing key: %w", err)
 	}
 	return keyId, nil
+}
+
+// decodeKey возвращает ключ в открытом виде. Признак хранится рядом с самой
+// записью, поэтому включение шифрования не ломает ранее выданные ключи.
+func (s *ds) decodeKey(stored []byte, encrypted bool) ([]byte, error) {
+	if !encrypted {
+		return stored, nil
+	}
+	if s.cipher == nil {
+		return nil, fmt.Errorf("signing key is encrypted but KEY_MASTER_KEY is not set")
+	}
+	key, err := s.cipher.Decrypt(stored)
+	if err != nil {
+		return nil, fmt.Errorf("decrypting signing key: %w", err)
+	}
+	return key, nil
 }
 
 func (s *ds) ClearKeys(ctx context.Context) error {
@@ -574,5 +615,13 @@ func NewDatabaseUsers(ctx context.Context, cfg services.Config) (DatabaseUsers, 
 	if err != nil {
 		return nil, fmt.Errorf("opening users database: %w", err)
 	}
-	return &ds{d}, nil
+
+	store := &ds{db: d}
+	if cfg.KeyMasterKey == "" {
+		slog.Warn("KEY_MASTER_KEY is not set, signing keys are stored in plain text: " +
+			"a database dump is enough to forge any token")
+	} else if store.cipher, err = services.NewCipher(cfg.KeyMasterKey); err != nil {
+		return nil, fmt.Errorf("creating key cipher: %w", err)
+	}
+	return store, nil
 }

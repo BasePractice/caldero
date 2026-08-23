@@ -34,6 +34,9 @@ type Config struct {
 	OAuth2Debug bool
 	// OAuth2Issuer попадает в claim iss выданных токенов.
 	OAuth2Issuer string
+	// KeyMasterKey шифрует приватные ключи подписи в БД. Пустое значение
+	// оставляет их открытым текстом — допустимо только для локального стенда.
+	KeyMasterKey string
 
 	// Пул соединений. Суммарно по всем сервисам должен укладываться
 	// в max_connections PostgreSQL, по умолчанию равный 100.
@@ -76,6 +79,7 @@ func LoadConfig() (Config, error) {
 		AdminToken:         env("ADMIN_TOKEN", ""),
 		OAuth2GlobalSecret: env("OAUTH2_GLOBAL_SECRET", ""),
 		OAuth2Issuer:       env("OAUTH2_ISSUER", "http://localhost:8080/api/v1"),
+		KeyMasterKey:       env("KEY_MASTER_KEY", ""),
 	}
 
 	debugStatsviz, err := strconv.ParseBool(env("DEBUG_STATSVIZ", "false"))
