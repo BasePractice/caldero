@@ -97,7 +97,7 @@ func (s *ds) GetKeys(ctx context.Context, cb func(string, []byte)) error {
 
 func (s *ds) GetKey(ctx context.Context, id string) ([]byte, error) {
 	var privateKey []byte
-	err := s.db.QueryRowContext(ctx, "SELECT private_key FROM keys WHERE id = $1", id).Scan(&privateKey)
+	err := s.db.QueryRowContext(ctx, "SELECT private_key FROM keys WHERE key_id = $1", id).Scan(&privateKey)
 	if err != nil {
 		return nil, err
 	}
@@ -114,11 +114,11 @@ func (s *ds) CreateKey(ctx context.Context, key []byte) (string, error) {
 }
 
 func (s *ds) ClearKeys(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM keys 
-		WHERE rowid NOT IN (
-			SELECT rowid 
-			FROM keys 
-			ORDER BY created_at DESC 
+	_, err := s.db.ExecContext(ctx, `DELETE FROM keys
+		WHERE key_id NOT IN (
+			SELECT key_id
+			FROM keys
+			ORDER BY created_at DESC
 			LIMIT 2
 		)`)
 	return err
@@ -213,18 +213,31 @@ func (s *ds) DeleteRefreshTokenSession(ctx context.Context, signature string) er
 func (s *ds) createTokenSession(tokenType, signature string, request fosite.Requester) error {
 	data, err := json.Marshal(request)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshalling %s token session: %w", tokenType, err)
 	}
 
+	// Срок жизни берётся по типу токена: у refresh он на порядок длиннее
+	// access, и подстановка чужого срока обрывала refresh-поток через час.
+	expiresAt := request.GetSession().GetExpiresAt(tokenKind(tokenType))
 	_, err = s.db.Exec(
 		"INSERT INTO oauth_tokens (signature, request_id, session_data, expires_at, token_type) VALUES ($1, $2, $3, $4, $5)",
 		signature,
 		request.GetID(),
 		data,
-		request.GetSession().GetExpiresAt(fosite.AccessToken),
+		expiresAt,
 		tokenType,
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("storing %s token session: %w", tokenType, err)
+	}
+	return nil
+}
+
+func tokenKind(tokenType string) fosite.TokenType {
+	if tokenType == "refresh" {
+		return fosite.RefreshToken
+	}
+	return fosite.AccessToken
 }
 
 func (s *ds) getTokenSession(tokenType, signature string, session fosite.Session) (fosite.Requester, error) {
@@ -255,7 +268,7 @@ func (s *ds) getTokenSession(tokenType, signature string, session fosite.Session
 
 func (s *ds) deleteTokenSession(tokenType, signature string) error {
 	_, err := s.db.Exec(
-		"DELETE FROM oauth_tokens WHERE signature = ? AND token_type = $1",
+		"DELETE FROM oauth_tokens WHERE signature = $1 AND token_type = $2",
 		signature,
 		tokenType,
 	)
