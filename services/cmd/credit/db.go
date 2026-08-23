@@ -25,6 +25,8 @@ type Database interface {
 	Close() error
 	// Stats нужен для публикации метрик пула соединений.
 	Stats() sql.DBStats
+	RecordPayment(ctx context.Context, payment PaymentRecord) error
+
 	// Ping нужен пробе готовности.
 	Ping(ctx context.Context) error
 }
@@ -74,6 +76,56 @@ func (d ds) Create(ctx context.Context, c credit.CreateCredit, operator *service
 
 func (d ds) Stats() sql.DBStats {
 	return d.db.Stats()
+}
+
+// PaymentRecord — внесённый платёж по кредиту.
+type PaymentRecord struct {
+	CreditId       uuid.UUID
+	IdempotencyKey string
+	NeedValue      credit.Amount
+	Amount         credit.Amount
+}
+
+// ErrPaymentAlreadyRecorded — платёж с таким ключом уже зафиксирован.
+// Это не ошибка, а признак повтора: операция уже доведена до конца.
+var ErrPaymentAlreadyRecorded = errors.New("payment already recorded")
+
+// RecordPayment фиксирует платёж и увеличивает внесённую сумму кредита
+// в одной транзакции: разошедшиеся между собой платёж и остаток
+// по кредиту — это расхождение в деньгах.
+func (d ds) RecordPayment(ctx context.Context, payment PaymentRecord) error {
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("starting payment transaction: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	if _, err = tx.ExecContext(ctx, `
+		INSERT INTO payment (credit_id, need_value, amount, payment_at, state, expired_at, idempotency_key)
+		VALUES ($1, $2, $3, now(), 'COMPLETE', now(), $4)`,
+		payment.CreditId, payment.NeedValue, payment.Amount, payment.IdempotencyKey); err != nil {
+		if services.IsUniqueViolation(err) {
+			return ErrPaymentAlreadyRecorded
+		}
+		return fmt.Errorf("recording payment for credit %s: %w", payment.CreditId, err)
+	}
+
+	if _, err = tx.ExecContext(ctx, `
+		UPDATE credit SET already_paid = already_paid + $1, last_paid_at = now(), updated_at = now()
+		WHERE id = $2`, payment.Amount, payment.CreditId); err != nil {
+		return fmt.Errorf("updating credit %s: %w", payment.CreditId, err)
+	}
+
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("committing payment: %w", err)
+	}
+	committed = true
+	return nil
 }
 
 func (d ds) Ping(ctx context.Context) error {

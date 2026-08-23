@@ -4,7 +4,10 @@
 // 	protoc        v7.36.0
 // source: middleware/wallet.proto
 
-package wallet
+// Версия в имени пакета: путь метода включает его, поэтому несовместимое
+// изменение контракта означает новую версию, а не молчаливую поломку клиентов.
+
+package v1
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -286,8 +289,8 @@ type InformationReply struct {
 	Balance        int64                  `protobuf:"varint,2,opt,name=balance,proto3" json:"balance,omitempty"`
 	ReservedDebit  int64                  `protobuf:"varint,3,opt,name=reserved_debit,json=reservedDebit,proto3" json:"reserved_debit,omitempty"`
 	ReservedCredit int64                  `protobuf:"varint,4,opt,name=reserved_credit,json=reservedCredit,proto3" json:"reserved_credit,omitempty"`
-	Type           WalletType             `protobuf:"varint,14,opt,name=type,proto3,enum=wallet.WalletType" json:"type,omitempty"`
-	State          WalletState            `protobuf:"varint,15,opt,name=state,proto3,enum=wallet.WalletState" json:"state,omitempty"`
+	Type           WalletType             `protobuf:"varint,14,opt,name=type,proto3,enum=wallet.v1.WalletType" json:"type,omitempty"`
+	State          WalletState            `protobuf:"varint,15,opt,name=state,proto3,enum=wallet.v1.WalletState" json:"state,omitempty"`
 	Transactions   int64                  `protobuf:"varint,16,opt,name=transactions,proto3" json:"transactions,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -573,8 +576,8 @@ type TransactionReply struct {
 	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	WalletId       string                 `protobuf:"bytes,2,opt,name=wallet_id,json=walletId,proto3" json:"wallet_id,omitempty"`
 	SourceWalletId *string                `protobuf:"bytes,3,opt,name=source_wallet_id,json=sourceWalletId,proto3,oneof" json:"source_wallet_id,omitempty"`
-	Operation      Operation              `protobuf:"varint,4,opt,name=operation,proto3,enum=wallet.Operation" json:"operation,omitempty"`
-	State          TransactionState       `protobuf:"varint,5,opt,name=state,proto3,enum=wallet.TransactionState" json:"state,omitempty"`
+	Operation      Operation              `protobuf:"varint,4,opt,name=operation,proto3,enum=wallet.v1.Operation" json:"operation,omitempty"`
+	State          TransactionState       `protobuf:"varint,5,opt,name=state,proto3,enum=wallet.v1.TransactionState" json:"state,omitempty"`
 	Value          int64                  `protobuf:"varint,6,opt,name=value,proto3" json:"value,omitempty"`
 	Balance        int64                  `protobuf:"varint,7,opt,name=balance,proto3" json:"balance,omitempty"`
 	Message        string                 `protobuf:"bytes,8,opt,name=message,proto3" json:"message,omitempty"`
@@ -794,7 +797,7 @@ func (x *HistoryReply) GetNextBefore() *timestamppb.Timestamp {
 type ChangeStateRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	WalletId      string                 `protobuf:"bytes,1,opt,name=wallet_id,json=walletId,proto3" json:"wallet_id,omitempty"`
-	State         WalletState            `protobuf:"varint,2,opt,name=state,proto3,enum=wallet.WalletState" json:"state,omitempty"`
+	State         WalletState            `protobuf:"varint,2,opt,name=state,proto3,enum=wallet.v1.WalletState" json:"state,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -847,23 +850,23 @@ var File_middleware_wallet_proto protoreflect.FileDescriptor
 
 const file_middleware_wallet_proto_rawDesc = "" +
 	"\n" +
-	"\x17middleware/wallet.proto\x12\x06wallet\x1a\x1fgoogle/protobuf/timestamp.proto\">\n" +
+	"\x17middleware/wallet.proto\x12\twallet.v1\x1a\x1fgoogle/protobuf/timestamp.proto\">\n" +
 	"\x12InformationRequest\x12\x1c\n" +
 	"\auser_id\x18\x01 \x01(\tH\x00R\x06userId\x88\x01\x01B\n" +
 	"\n" +
-	"\b_user_id\"\xb9\x02\n" +
+	"\b_user_id\"\xbf\x02\n" +
 	"\x10InformationReply\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\abalance\x18\x02 \x01(\x03R\abalance\x12%\n" +
 	"\x0ereserved_debit\x18\x03 \x01(\x03R\rreservedDebit\x12'\n" +
-	"\x0freserved_credit\x18\x04 \x01(\x03R\x0ereservedCredit\x12&\n" +
-	"\x04type\x18\x0e \x01(\x0e2\x12.wallet.WalletTypeR\x04type\x12)\n" +
-	"\x05state\x18\x0f \x01(\x0e2\x13.wallet.WalletStateR\x05state\x12\"\n" +
+	"\x0freserved_credit\x18\x04 \x01(\x03R\x0ereservedCredit\x12)\n" +
+	"\x04type\x18\x0e \x01(\x0e2\x15.wallet.v1.WalletTypeR\x04type\x12,\n" +
+	"\x05state\x18\x0f \x01(\x0e2\x16.wallet.v1.WalletStateR\x05state\x12\"\n" +
 	"\ftransactions\x18\x10 \x01(\x03R\ftransactionsJ\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\a\x10\bJ\x04\b\b\x10\tJ\x04\b\t\x10\n" +
 	"J\x04\b\n" +
-	"\x10\vJ\x04\b\v\x10\fJ\x04\b\f\x10\rJ\x04\b\r\x10\x0e\"J\n" +
-	"\x14InformationReplyList\x122\n" +
-	"\areplies\x18\x01 \x03(\v2\x18.wallet.InformationReplyR\areplies\"\x9b\x01\n" +
+	"\x10\vJ\x04\b\v\x10\fJ\x04\b\f\x10\rJ\x04\b\r\x10\x0e\"M\n" +
+	"\x14InformationReplyList\x125\n" +
+	"\areplies\x18\x01 \x03(\v2\x1b.wallet.v1.InformationReplyR\areplies\"\x9b\x01\n" +
 	"\x10OperationRequest\x12'\n" +
 	"\x0fidempotency_key\x18\x01 \x01(\tR\x0eidempotencyKey\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\x03R\x05value\x12\x18\n" +
@@ -876,13 +879,13 @@ const file_middleware_wallet_proto_rawDesc = "" +
 	"\x10source_wallet_id\x18\x02 \x01(\tR\x0esourceWalletId\x12(\n" +
 	"\x10target_wallet_id\x18\x03 \x01(\tR\x0etargetWalletId\x12\x14\n" +
 	"\x05value\x18\x04 \x01(\x03R\x05value\x12\x18\n" +
-	"\amessage\x18\x05 \x01(\tR\amessage\"\xe9\x02\n" +
+	"\amessage\x18\x05 \x01(\tR\amessage\"\xef\x02\n" +
 	"\x10TransactionReply\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\twallet_id\x18\x02 \x01(\tR\bwalletId\x12-\n" +
-	"\x10source_wallet_id\x18\x03 \x01(\tH\x00R\x0esourceWalletId\x88\x01\x01\x12/\n" +
-	"\toperation\x18\x04 \x01(\x0e2\x11.wallet.OperationR\toperation\x12.\n" +
-	"\x05state\x18\x05 \x01(\x0e2\x18.wallet.TransactionStateR\x05state\x12\x14\n" +
+	"\x10source_wallet_id\x18\x03 \x01(\tH\x00R\x0esourceWalletId\x88\x01\x01\x122\n" +
+	"\toperation\x18\x04 \x01(\x0e2\x14.wallet.v1.OperationR\toperation\x121\n" +
+	"\x05state\x18\x05 \x01(\x0e2\x1b.wallet.v1.TransactionStateR\x05state\x12\x14\n" +
 	"\x05value\x18\x06 \x01(\x03R\x05value\x12\x18\n" +
 	"\abalance\x18\a \x01(\x03R\abalance\x12\x18\n" +
 	"\amessage\x18\b \x01(\tR\amessage\x129\n" +
@@ -895,15 +898,15 @@ const file_middleware_wallet_proto_rawDesc = "" +
 	"\x06before\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampH\x01R\x06before\x88\x01\x01B\f\n" +
 	"\n" +
 	"_wallet_idB\t\n" +
-	"\a_before\"\x9e\x01\n" +
-	"\fHistoryReply\x12<\n" +
-	"\ftransactions\x18\x01 \x03(\v2\x18.wallet.TransactionReplyR\ftransactions\x12@\n" +
+	"\a_before\"\xa1\x01\n" +
+	"\fHistoryReply\x12?\n" +
+	"\ftransactions\x18\x01 \x03(\v2\x1b.wallet.v1.TransactionReplyR\ftransactions\x12@\n" +
 	"\vnext_before\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampH\x00R\n" +
 	"nextBefore\x88\x01\x01B\x0e\n" +
-	"\f_next_before\"\\\n" +
+	"\f_next_before\"_\n" +
 	"\x12ChangeStateRequest\x12\x1b\n" +
-	"\twallet_id\x18\x01 \x01(\tR\bwalletId\x12)\n" +
-	"\x05state\x18\x02 \x01(\x0e2\x13.wallet.WalletStateR\x05state*4\n" +
+	"\twallet_id\x18\x01 \x01(\tR\bwalletId\x12,\n" +
+	"\x05state\x18\x02 \x01(\x0e2\x16.wallet.v1.WalletStateR\x05state*4\n" +
 	"\n" +
 	"WalletType\x12\x10\n" +
 	"\fUNKNOWN_TYPE\x10\x00\x12\b\n" +
@@ -929,14 +932,14 @@ const file_middleware_wallet_proto_rawDesc = "" +
 	"\x05DEBIT\x10\x01\x12\n" +
 	"\n" +
 	"\x06CREDIT\x10\x02\x12\b\n" +
-	"\x04SWAP\x10\x032\x8a\x03\n" +
-	"\aService\x12G\n" +
-	"\vInformation\x12\x1a.wallet.InformationRequest\x1a\x1c.wallet.InformationReplyList\x12;\n" +
-	"\x05Debit\x12\x18.wallet.OperationRequest\x1a\x18.wallet.TransactionReply\x12<\n" +
-	"\x06Credit\x12\x18.wallet.OperationRequest\x1a\x18.wallet.TransactionReply\x12=\n" +
-	"\bTransfer\x12\x17.wallet.TransferRequest\x1a\x18.wallet.TransactionReply\x127\n" +
-	"\aHistory\x12\x16.wallet.HistoryRequest\x1a\x14.wallet.HistoryReply\x12C\n" +
-	"\vChangeState\x12\x1a.wallet.ChangeStateRequest\x1a\x18.wallet.InformationReplyB\x13Z\x11middleware/walletb\x06proto3"
+	"\x04SWAP\x10\x032\xae\x03\n" +
+	"\aService\x12M\n" +
+	"\vInformation\x12\x1d.wallet.v1.InformationRequest\x1a\x1f.wallet.v1.InformationReplyList\x12A\n" +
+	"\x05Debit\x12\x1b.wallet.v1.OperationRequest\x1a\x1b.wallet.v1.TransactionReply\x12B\n" +
+	"\x06Credit\x12\x1b.wallet.v1.OperationRequest\x1a\x1b.wallet.v1.TransactionReply\x12C\n" +
+	"\bTransfer\x12\x1a.wallet.v1.TransferRequest\x1a\x1b.wallet.v1.TransactionReply\x12=\n" +
+	"\aHistory\x12\x19.wallet.v1.HistoryRequest\x1a\x17.wallet.v1.HistoryReply\x12I\n" +
+	"\vChangeState\x12\x1d.wallet.v1.ChangeStateRequest\x1a\x1b.wallet.v1.InformationReplyB\x16Z\x14middleware/wallet/v1b\x06proto3"
 
 var (
 	file_middleware_wallet_proto_rawDescOnce sync.Once
@@ -953,44 +956,44 @@ func file_middleware_wallet_proto_rawDescGZIP() []byte {
 var file_middleware_wallet_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
 var file_middleware_wallet_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_middleware_wallet_proto_goTypes = []any{
-	(WalletType)(0),               // 0: wallet.WalletType
-	(WalletState)(0),              // 1: wallet.WalletState
-	(TransactionState)(0),         // 2: wallet.TransactionState
-	(Operation)(0),                // 3: wallet.Operation
-	(*InformationRequest)(nil),    // 4: wallet.InformationRequest
-	(*InformationReply)(nil),      // 5: wallet.InformationReply
-	(*InformationReplyList)(nil),  // 6: wallet.InformationReplyList
-	(*OperationRequest)(nil),      // 7: wallet.OperationRequest
-	(*TransferRequest)(nil),       // 8: wallet.TransferRequest
-	(*TransactionReply)(nil),      // 9: wallet.TransactionReply
-	(*HistoryRequest)(nil),        // 10: wallet.HistoryRequest
-	(*HistoryReply)(nil),          // 11: wallet.HistoryReply
-	(*ChangeStateRequest)(nil),    // 12: wallet.ChangeStateRequest
+	(WalletType)(0),               // 0: wallet.v1.WalletType
+	(WalletState)(0),              // 1: wallet.v1.WalletState
+	(TransactionState)(0),         // 2: wallet.v1.TransactionState
+	(Operation)(0),                // 3: wallet.v1.Operation
+	(*InformationRequest)(nil),    // 4: wallet.v1.InformationRequest
+	(*InformationReply)(nil),      // 5: wallet.v1.InformationReply
+	(*InformationReplyList)(nil),  // 6: wallet.v1.InformationReplyList
+	(*OperationRequest)(nil),      // 7: wallet.v1.OperationRequest
+	(*TransferRequest)(nil),       // 8: wallet.v1.TransferRequest
+	(*TransactionReply)(nil),      // 9: wallet.v1.TransactionReply
+	(*HistoryRequest)(nil),        // 10: wallet.v1.HistoryRequest
+	(*HistoryReply)(nil),          // 11: wallet.v1.HistoryReply
+	(*ChangeStateRequest)(nil),    // 12: wallet.v1.ChangeStateRequest
 	(*timestamppb.Timestamp)(nil), // 13: google.protobuf.Timestamp
 }
 var file_middleware_wallet_proto_depIdxs = []int32{
-	0,  // 0: wallet.InformationReply.type:type_name -> wallet.WalletType
-	1,  // 1: wallet.InformationReply.state:type_name -> wallet.WalletState
-	5,  // 2: wallet.InformationReplyList.replies:type_name -> wallet.InformationReply
-	3,  // 3: wallet.TransactionReply.operation:type_name -> wallet.Operation
-	2,  // 4: wallet.TransactionReply.state:type_name -> wallet.TransactionState
-	13, // 5: wallet.TransactionReply.created_at:type_name -> google.protobuf.Timestamp
-	13, // 6: wallet.HistoryRequest.before:type_name -> google.protobuf.Timestamp
-	9,  // 7: wallet.HistoryReply.transactions:type_name -> wallet.TransactionReply
-	13, // 8: wallet.HistoryReply.next_before:type_name -> google.protobuf.Timestamp
-	1,  // 9: wallet.ChangeStateRequest.state:type_name -> wallet.WalletState
-	4,  // 10: wallet.Service.Information:input_type -> wallet.InformationRequest
-	7,  // 11: wallet.Service.Debit:input_type -> wallet.OperationRequest
-	7,  // 12: wallet.Service.Credit:input_type -> wallet.OperationRequest
-	8,  // 13: wallet.Service.Transfer:input_type -> wallet.TransferRequest
-	10, // 14: wallet.Service.History:input_type -> wallet.HistoryRequest
-	12, // 15: wallet.Service.ChangeState:input_type -> wallet.ChangeStateRequest
-	6,  // 16: wallet.Service.Information:output_type -> wallet.InformationReplyList
-	9,  // 17: wallet.Service.Debit:output_type -> wallet.TransactionReply
-	9,  // 18: wallet.Service.Credit:output_type -> wallet.TransactionReply
-	9,  // 19: wallet.Service.Transfer:output_type -> wallet.TransactionReply
-	11, // 20: wallet.Service.History:output_type -> wallet.HistoryReply
-	5,  // 21: wallet.Service.ChangeState:output_type -> wallet.InformationReply
+	0,  // 0: wallet.v1.InformationReply.type:type_name -> wallet.v1.WalletType
+	1,  // 1: wallet.v1.InformationReply.state:type_name -> wallet.v1.WalletState
+	5,  // 2: wallet.v1.InformationReplyList.replies:type_name -> wallet.v1.InformationReply
+	3,  // 3: wallet.v1.TransactionReply.operation:type_name -> wallet.v1.Operation
+	2,  // 4: wallet.v1.TransactionReply.state:type_name -> wallet.v1.TransactionState
+	13, // 5: wallet.v1.TransactionReply.created_at:type_name -> google.protobuf.Timestamp
+	13, // 6: wallet.v1.HistoryRequest.before:type_name -> google.protobuf.Timestamp
+	9,  // 7: wallet.v1.HistoryReply.transactions:type_name -> wallet.v1.TransactionReply
+	13, // 8: wallet.v1.HistoryReply.next_before:type_name -> google.protobuf.Timestamp
+	1,  // 9: wallet.v1.ChangeStateRequest.state:type_name -> wallet.v1.WalletState
+	4,  // 10: wallet.v1.Service.Information:input_type -> wallet.v1.InformationRequest
+	7,  // 11: wallet.v1.Service.Debit:input_type -> wallet.v1.OperationRequest
+	7,  // 12: wallet.v1.Service.Credit:input_type -> wallet.v1.OperationRequest
+	8,  // 13: wallet.v1.Service.Transfer:input_type -> wallet.v1.TransferRequest
+	10, // 14: wallet.v1.Service.History:input_type -> wallet.v1.HistoryRequest
+	12, // 15: wallet.v1.Service.ChangeState:input_type -> wallet.v1.ChangeStateRequest
+	6,  // 16: wallet.v1.Service.Information:output_type -> wallet.v1.InformationReplyList
+	9,  // 17: wallet.v1.Service.Debit:output_type -> wallet.v1.TransactionReply
+	9,  // 18: wallet.v1.Service.Credit:output_type -> wallet.v1.TransactionReply
+	9,  // 19: wallet.v1.Service.Transfer:output_type -> wallet.v1.TransactionReply
+	11, // 20: wallet.v1.Service.History:output_type -> wallet.v1.HistoryReply
+	5,  // 21: wallet.v1.Service.ChangeState:output_type -> wallet.v1.InformationReply
 	16, // [16:22] is the sub-list for method output_type
 	10, // [10:16] is the sub-list for method input_type
 	10, // [10:10] is the sub-list for extension type_name

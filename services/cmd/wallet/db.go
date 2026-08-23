@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"wish/middleware/wallet"
+	wallet "wish/middleware/wallet/v1"
 	"wish/services"
 
 	"github.com/google/uuid"

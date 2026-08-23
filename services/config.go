@@ -48,6 +48,10 @@ type Config struct {
 	// Нулевое значение отключает очистку.
 	TokenCleanupInterval time.Duration
 
+	// WalletAddress — адрес сервиса кошелька. Пустое значение отключает
+	// операции, которым он нужен.
+	WalletAddress string
+
 	// MaxInFlightRequests ограничивает число одновременно обрабатываемых
 	// запросов. Ноль снимает ограничение.
 	MaxInFlightRequests int
@@ -101,6 +105,8 @@ func LoadConfig() (Config, error) {
 		OAuth2Issuer:       env("OAUTH2_ISSUER", "http://localhost:8080/api/v1"),
 		KeyMasterKey:       env("KEY_MASTER_KEY", ""),
 	}
+
+	cfg.WalletAddress = env("WALLET_ADDRESS", "")
 
 	maxInFlight, err := strconv.Atoi(env("MAX_IN_FLIGHT_REQUESTS", "256"))
 	if err != nil {

@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"wish/middleware/wallet"
+	wallet "wish/middleware/wallet/v1"
 	"wish/services/testsupport"
 
 	"github.com/google/uuid"

@@ -70,6 +70,15 @@ func lockWallet(ctx context.Context, tx *sql.Tx, owner uuid.UUID, walletId uuid.
 		return wallet, nil
 	}
 
+	// Кошелёк создаётся при первом обращении — как и при чтении информации.
+	// Иначе первая же операция нового пользователя упирается в «нет кошелька»,
+	// хотя требование прямо говорит о его автосоздании.
+	if _, err := tx.ExecContext(ctx,
+		"INSERT INTO wallet (user_id) VALUES ($1) ON CONFLICT (user_id, type) DO NOTHING",
+		owner); err != nil {
+		return walletRow{}, fmt.Errorf("creating default wallet for user %s: %w", owner, err)
+	}
+
 	var wallet walletRow
 	err := tx.QueryRowContext(ctx,
 		`SELECT id, user_id, state, balance FROM wallet

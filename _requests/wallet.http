@@ -1,13 +1,13 @@
 ### Свои кошельки
 # Заголовок называется X-Authorized-Id — в gRPC-метаданных он приходит
 # в нижнем регистре. Кошелёк создаётся автоматически при первом обращении.
-GRPC {{wallet.url}}/wallet.Service/Information
+GRPC {{wallet.url}}/wallet.v1.Service/Information
 X-Authorized-Id: {{user_id}}
 
 {}
 
 ### Кошельки по явному идентификатору владельца
-GRPC {{wallet.url}}/wallet.Service/Information
+GRPC {{wallet.url}}/wallet.v1.Service/Information
 X-Authorized-Id: {{user_id}}
 
 {
@@ -15,7 +15,7 @@ X-Authorized-Id: {{user_id}}
 }
 
 ### Чужой кошелёк без роли оператора
-GRPC {{wallet.url}}/wallet.Service/Information
+GRPC {{wallet.url}}/wallet.v1.Service/Information
 X-Authorized-Id: {{user_id}}
 
 {
@@ -23,7 +23,7 @@ X-Authorized-Id: {{user_id}}
 }
 
 ### Чужой кошелёк с ролью оператора
-GRPC {{wallet.url}}/wallet.Service/Information
+GRPC {{wallet.url}}/wallet.v1.Service/Information
 X-Authorized-Id: {{user_id}}
 X-Roles: operator
 
@@ -32,7 +32,7 @@ X-Roles: operator
 }
 
 ### Пополнение кошелька
-GRPC {{wallet.url}}/wallet.Service/Debit
+GRPC {{wallet.url}}/wallet.v1.Service/Debit
 X-Authorized-Id: {{user_id}}
 
 {
@@ -43,7 +43,7 @@ X-Authorized-Id: {{user_id}}
 
 ### Повтор с тем же ключом не должен провести операцию дважды
 # Подставьте idempotency_key из предыдущего запроса.
-GRPC {{wallet.url}}/wallet.Service/Debit
+GRPC {{wallet.url}}/wallet.v1.Service/Debit
 X-Authorized-Id: {{user_id}}
 
 {
@@ -53,7 +53,7 @@ X-Authorized-Id: {{user_id}}
 }
 
 ### Списание
-GRPC {{wallet.url}}/wallet.Service/Credit
+GRPC {{wallet.url}}/wallet.v1.Service/Credit
 X-Authorized-Id: {{user_id}}
 
 {
@@ -63,7 +63,7 @@ X-Authorized-Id: {{user_id}}
 }
 
 ### Перевод между кошельками
-GRPC {{wallet.url}}/wallet.Service/Transfer
+GRPC {{wallet.url}}/wallet.v1.Service/Transfer
 X-Authorized-Id: {{user_id}}
 
 {
@@ -75,7 +75,7 @@ X-Authorized-Id: {{user_id}}
 }
 
 ### История операций
-GRPC {{wallet.url}}/wallet.Service/History
+GRPC {{wallet.url}}/wallet.v1.Service/History
 X-Authorized-Id: {{user_id}}
 
 {
@@ -83,7 +83,7 @@ X-Authorized-Id: {{user_id}}
 }
 
 ### Блокировка кошелька
-GRPC {{wallet.url}}/wallet.Service/ChangeState
+GRPC {{wallet.url}}/wallet.v1.Service/ChangeState
 X-Authorized-Id: {{user_id}}
 
 {

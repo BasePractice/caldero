@@ -1,8 +1,10 @@
 syntax = "proto3";
 
-option go_package = "middleware/wallet";
+option go_package = "middleware/wallet/v1";
 
-package wallet;
+// Версия в имени пакета: путь метода включает его, поэтому несовместимое
+// изменение контракта означает новую версию, а не молчаливую поломку клиентов.
+package wallet.v1;
 
 import "google/protobuf/timestamp.proto";
 

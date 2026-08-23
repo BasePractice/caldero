@@ -8,11 +8,14 @@ import (
 	"net"
 	"os"
 
-	"wish/middleware/wallet"
+	wallet "wish/middleware/wallet/v1"
 	"wish/services"
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
+	grpchealth "google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/reflection"
 )
 
 var (
@@ -83,10 +86,26 @@ func main() {
 			grpc.ChainUnaryInterceptor(
 				services.MeasureUnaryInterceptor("wallet"),
 				services.RecoverUnaryInterceptor,
+				// Служебные методы проверки доступны без пользователя:
+				// оркестратор опрашивает их не от чьего-либо имени.
+				services.AuthorizeUnaryInterceptor(
+					"/grpc.health.v1.Health/Check",
+					"/grpc.health.v1.Health/Watch",
+				),
 			),
 			grpc.MaxRecvMsgSize(services.MaxRequestBody),
 		)
 		wallet.RegisterServiceServer(grpcServer, &service{db: db, cache: cache})
+
+		// Стандартная проверка здоровья: у gRPC нет аналога HTTP-эндпоинта,
+		// и без неё оркестратору нечем опросить сервис.
+		healthServer := grpchealth.NewServer()
+		healthServer.SetServingStatus("wallet.v1.Service", healthpb.HealthCheckResponse_SERVING)
+		healthpb.RegisterHealthServer(grpcServer, healthServer)
+
+		// Reflection нужен инструментам отладки: без него клиент обязан
+		// иметь при себе .proto-файл.
+		reflection.Register(grpcServer)
 		return services.ServeGRPC(ctx, listen, grpcServer)
 	})
 }

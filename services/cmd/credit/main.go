@@ -4,8 +4,10 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 
+	wallet "wish/middleware/wallet/v1"
 	"wish/services"
 )
 
@@ -32,7 +34,19 @@ func main() {
 		health.Register("database", db.Ping)
 		services.RegisterDBStats("credit", db)
 
+		var walletClient Wallet
+		if cfg.WalletAddress == "" {
+			slog.Warn("WALLET_ADDRESS is not set, credit repayment is unavailable")
+		} else {
+			conn, err := services.NewGrpcClient(cfg.WalletAddress)
+			if err != nil {
+				return err
+			}
+			defer services.CloseGrpcClient("wallet", conn)
+			walletClient = wallet.NewServiceClient(conn)
+		}
+
 		return services.ServeHTTP(ctx, cfg, fmt.Sprintf(":%d", *port),
-			registerHttpHandlers(db))
+			registerHttpHandlers(db, walletClient))
 	})
 }

@@ -211,6 +211,8 @@ services:
         condition: service_healthy
       jaeger:
         condition: service_started
+      wallet:
+        condition: service_healthy
     # Порт наружу не публикуется: доступ к сервису только через шлюз (T-001).
     # Для локальной отладки поднимайте профиль debug или пробрасывайте порт вручную.
     expose:
@@ -223,6 +225,7 @@ services:
       start_period: 5s
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres-db:5432/wish?sslmode=disable&search_path=credit
+      WALLET_ADDRESS: ${WALLET_ADDRESS:-wallet:51051}
       REDIS_URL: redis://redis:6379/10?protocol=3
       LOG_COLOR: "false"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}

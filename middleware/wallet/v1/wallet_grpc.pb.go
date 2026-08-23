@@ -4,7 +4,10 @@
 // - protoc             v7.36.0
 // source: middleware/wallet.proto
 
-package wallet
+// Версия в имени пакета: путь метода включает его, поэтому несовместимое
+// изменение контракта означает новую версию, а не молчаливую поломку клиентов.
+
+package v1
 
 import (
 	context "context"
@@ -19,12 +22,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Service_Information_FullMethodName = "/wallet.Service/Information"
-	Service_Debit_FullMethodName       = "/wallet.Service/Debit"
-	Service_Credit_FullMethodName      = "/wallet.Service/Credit"
-	Service_Transfer_FullMethodName    = "/wallet.Service/Transfer"
-	Service_History_FullMethodName     = "/wallet.Service/History"
-	Service_ChangeState_FullMethodName = "/wallet.Service/ChangeState"
+	Service_Information_FullMethodName = "/wallet.v1.Service/Information"
+	Service_Debit_FullMethodName       = "/wallet.v1.Service/Debit"
+	Service_Credit_FullMethodName      = "/wallet.v1.Service/Credit"
+	Service_Transfer_FullMethodName    = "/wallet.v1.Service/Transfer"
+	Service_History_FullMethodName     = "/wallet.v1.Service/History"
+	Service_ChangeState_FullMethodName = "/wallet.v1.Service/ChangeState"
 )
 
 // ServiceClient is the client API for Service service.
@@ -288,7 +291,7 @@ func _Service_ChangeState_Handler(srv interface{}, ctx context.Context, dec func
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var Service_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "wallet.Service",
+	ServiceName: "wallet.v1.Service",
 	HandlerType: (*ServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{

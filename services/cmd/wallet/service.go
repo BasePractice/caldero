@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	"wish/middleware/wallet"
+	wallet "wish/middleware/wallet/v1"
 	"wish/services"
 
 	"github.com/google/uuid"
@@ -19,12 +19,12 @@ type service struct {
 }
 
 func (s service) Information(ctx context.Context, request *wallet.InformationRequest) (*wallet.InformationReplyList, error) {
-	authorized, err := services.GrpcAuthorized(ctx)
-	if err != nil {
-		slog.DebugContext(ctx, "Unauthorized information request", slog.String("err", err.Error()))
+	authorized, ok := services.AuthorizedFromContext(ctx)
+	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "not authorized")
 	}
 
+	var err error
 	owner := authorized.Id
 	if request.UserId != nil {
 		if owner, err = uuid.Parse(*request.UserId); err != nil {

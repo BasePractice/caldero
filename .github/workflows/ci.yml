@@ -31,6 +31,13 @@ jobs:
       - name: go vet
         run: make vet
 
+      - name: Актуальность сгенерированного кода
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq protobuf-compiler
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+          make proto-check
+
       - name: Сборка
         run: make build
 

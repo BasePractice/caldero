@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"wish/middleware/wallet"
+	wallet "wish/middleware/wallet/v1"
 	"wish/services"
 
 	"github.com/google/uuid"
@@ -66,8 +66,8 @@ func (s service) operationParams(request *wallet.OperationRequest) (OperationPar
 }
 
 func (s service) Debit(ctx context.Context, request *wallet.OperationRequest) (*wallet.TransactionReply, error) {
-	authorized, err := services.GrpcAuthorized(ctx)
-	if err != nil {
+	authorized, ok := services.AuthorizedFromContext(ctx)
+	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "not authorized")
 	}
 	params, err := s.operationParams(request)
@@ -83,8 +83,8 @@ func (s service) Debit(ctx context.Context, request *wallet.OperationRequest) (*
 }
 
 func (s service) Credit(ctx context.Context, request *wallet.OperationRequest) (*wallet.TransactionReply, error) {
-	authorized, err := services.GrpcAuthorized(ctx)
-	if err != nil {
+	authorized, ok := services.AuthorizedFromContext(ctx)
+	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "not authorized")
 	}
 	params, err := s.operationParams(request)
@@ -100,8 +100,8 @@ func (s service) Credit(ctx context.Context, request *wallet.OperationRequest) (
 }
 
 func (s service) Transfer(ctx context.Context, request *wallet.TransferRequest) (*wallet.TransactionReply, error) {
-	authorized, err := services.GrpcAuthorized(ctx)
-	if err != nil {
+	authorized, ok := services.AuthorizedFromContext(ctx)
+	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "not authorized")
 	}
 	if request.IdempotencyKey == "" {
@@ -130,8 +130,8 @@ func (s service) Transfer(ctx context.Context, request *wallet.TransferRequest) 
 }
 
 func (s service) History(ctx context.Context, request *wallet.HistoryRequest) (*wallet.HistoryReply, error) {
-	authorized, err := services.GrpcAuthorized(ctx)
-	if err != nil {
+	authorized, ok := services.AuthorizedFromContext(ctx)
+	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "not authorized")
 	}
 	walletId, err := parseWalletId(request.WalletId)
@@ -166,8 +166,8 @@ func (s service) History(ctx context.Context, request *wallet.HistoryRequest) (*
 }
 
 func (s service) ChangeState(ctx context.Context, request *wallet.ChangeStateRequest) (*wallet.InformationReply, error) {
-	authorized, err := services.GrpcAuthorized(ctx)
-	if err != nil {
+	authorized, ok := services.AuthorizedFromContext(ctx)
+	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "not authorized")
 	}
 	walletId, err := uuid.Parse(request.WalletId)

@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func registerHttpHandlers(db Database) http.Handler {
+func registerHttpHandlers(db Database, walletClient Wallet) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /credit", func(w http.ResponseWriter, r *http.Request) {
 		createCredit(db, w, r)
@@ -61,6 +61,10 @@ func registerHttpHandlers(db Database) http.Handler {
 			return
 		}
 	})
+	mux.HandleFunc("POST /credits/{id}/payments", func(w http.ResponseWriter, r *http.Request) {
+		payCredit(db, walletClient, w, r)
+	})
+
 	// /metrics живёт на служебном порту, а не рядом с публичным API.
 	return services.Measure("credit", mux)
 }
@@ -110,4 +114,103 @@ func createCredit(db Database, w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("X-Credit-Id", id.String())
 	w.WriteHeader(http.StatusCreated)
+}
+
+// payCredit вносит платёж по кредиту: списывает средства с кошелька
+// пользователя и фиксирует платёж.
+//
+// Распределённой транзакции здесь нет и быть не может: кошелёк и кредит —
+// разные сервисы с разными базами. Порядок выбран так, чтобы худший исход
+// был безопасным: сначала списание, затем запись. Если запись не удастся,
+// повтор с тем же ключом идемпотентности не спишет средства второй раз,
+// а дойдёт до записи.
+func payCredit(db Database, walletClient Wallet, w http.ResponseWriter, r *http.Request) {
+	operator, err := services.HttpAuthorized(r)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	creditId, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "Invalid id", http.StatusBadRequest)
+		return
+	}
+
+	request, err := services.DecodeJSON[payRequest](w, r)
+	if err != nil {
+		services.WriteDecodeError(w, err)
+		return
+	}
+	if request.IdempotencyKey == "" {
+		http.Error(w, "idempotency_key is required", http.StatusBadRequest)
+		return
+	}
+	if request.Amount <= 0 {
+		http.Error(w, "amount must be positive", http.StatusBadRequest)
+		return
+	}
+
+	c, err := db.Get(r.Context(), creditId)
+	if errors.Is(err, ErrCreditNotFound) {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		slog.ErrorContext(r.Context(), "Get credit", slog.String("err", err.Error()))
+		http.Error(w, "Can't load credit", http.StatusInternalServerError)
+		return
+	}
+	// Платить может только заёмщик: оператор выдаёт кредит, но не гасит его
+	// чужими средствами.
+	if c.UserId != operator.Id {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	if request.Amount > c.Balance-c.AlreadyPaid {
+		http.Error(w, "amount exceeds the remaining debt", http.StatusBadRequest)
+		return
+	}
+
+	err = walletCredit(r.Context(), walletClient, operator, request.IdempotencyKey,
+		int64(request.Amount), "погашение кредита "+creditId.String())
+	if errors.Is(err, ErrInsufficientFunds) {
+		http.Error(w, err.Error(), http.StatusPaymentRequired)
+		return
+	}
+	if err != nil {
+		slog.ErrorContext(r.Context(), "Wallet debit failed", slog.String("err", err.Error()))
+		http.Error(w, "Can't debit wallet", http.StatusBadGateway)
+		return
+	}
+
+	err = db.RecordPayment(r.Context(), PaymentRecord{
+		CreditId:       creditId,
+		IdempotencyKey: request.IdempotencyKey,
+		NeedValue:      request.Amount,
+		Amount:         request.Amount,
+	})
+	// Повтор запроса должен давать тот же ответ, что и первый: кошелёк
+	// по тому же ключу средства второй раз не спишет, платёж уже записан.
+	if errors.Is(err, ErrPaymentAlreadyRecorded) {
+		w.WriteHeader(http.StatusCreated)
+		return
+	}
+	if err != nil {
+		// Средства уже списаны: об этом нужно знать, потому что повтор
+		// запроса — единственный способ довести операцию до конца.
+		slog.ErrorContext(r.Context(), "Payment recorded in wallet but not in credit",
+			slog.String("credit", creditId.String()),
+			slog.String("idempotency_key", request.IdempotencyKey),
+			slog.String("err", err.Error()))
+		http.Error(w, "Payment is not recorded, retry with the same idempotency_key",
+			http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+}
+
+type payRequest struct {
+	IdempotencyKey string        `json:"idempotency_key"`
+	Amount         credit.Amount `json:"amount"`
 }
