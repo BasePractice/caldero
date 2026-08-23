@@ -10,7 +10,6 @@
 | T-061 | Authorization Code Flow: хранилище кодов авторизации | ЗАВЕДЕНА |
 | T-063 | Непредсказуемые идентификаторы сущностей в публичном контракте | ЗАВЕДЕНА |
 | T-064 | Ролевая модель: кредит выдаётся произвольному пользователю | ЗАВЕДЕНА |
-| T-015 | `DROP TABLE` в неверном порядке в down-миграции | ЗАВЕДЕНА |
 | T-016 | Единый bootstrap сервиса + graceful shutdown | ЗАВЕДЕНА |
 | T-017 | Контексты в запросах к БД, настройка пула, `Ping` при старте | ЗАВЕДЕНА |
 | T-018 | Таймауты `http.Server`, ограничение размера тела запроса | ЗАВЕДЕНА |
@@ -58,23 +57,6 @@
 ---
 
 # Детальные планы
-
-## T-015. `DROP TABLE` в неверном порядке в down-миграции
-
-**Статус:** ЗАВЕДЕНА
-
-[wallet/migrations/1_init_schema.down.sql](services/cmd/wallet/migrations/1_init_schema.down.sql) —
-`DROP TABLE wallet` до `DROP TABLE transaction`, а `transaction` ссылается на `wallet`.
-
-**План**
-1. Поменять порядок; удалить триггер и функцию.
-2. Добавить недостающие down-миграции: `account/1_init_schema.down.sql`,
-   `wallet/2_change_transaction_partitions.down.sql`.
-3. Проверить `migrate down` на всех сервисах.
-
-**Проверка:** полный цикл up → down → up на чистой БД.
-
----
 
 ## T-016. Единый bootstrap сервиса + graceful shutdown
 
