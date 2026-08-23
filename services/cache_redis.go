@@ -26,6 +26,10 @@ func (c *redisCache) Get(ctx context.Context, key string) (string, error) {
 	return c.c.Get(ctx, key).Result()
 }
 
+func (c *redisCache) Close() error {
+	return c.c.Close()
+}
+
 func NewRedisCache(ctx context.Context, cfg Config) (Cache, error) {
 	options, err := redis.ParseURL(cfg.RedisURL)
 	if err != nil {

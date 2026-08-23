@@ -45,6 +45,8 @@ type DatabaseUsers interface {
 
 	IsUniqueConstraintError(err error) bool
 	CreateClient(ctx context.Context, clientId, clientSecret, redirectUri, scopes, responseType, grantTypes string)
+	// Close освобождает соединения с БД
+	Close() error
 }
 
 type ds struct {
@@ -319,6 +321,10 @@ func (s *ds) SetClientAssertionJWT(ctx context.Context, jti string, exp time.Tim
 
 func splitCSV(input string) []string {
 	return strings.Split(input, ",")
+}
+
+func (s *ds) Close() error {
+	return s.db.Close()
 }
 
 func NewDatabaseUsers(cfg services.Config) (DatabaseUsers, error) {

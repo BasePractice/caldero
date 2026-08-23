@@ -18,6 +18,8 @@ var migrations embed.FS
 type Database interface {
 	Create(ctx context.Context, account account.CreateAccount, operator *services.AuthorizedUser) (int64, error)
 	Get(ctx context.Context, id int64) (*account.Account, error)
+	// Close освобождает соединения с БД
+	Close() error
 }
 
 type ds struct {
@@ -51,6 +53,10 @@ func (d ds) Get(ctx context.Context, id int64) (*account.Account, error) {
 		a.StartedAt = &startedAt.Time
 	}
 	return &a, nil
+}
+
+func (d ds) Close() error {
+	return d.db.Close()
 }
 
 func NewDatabase(cfg services.Config) (Database, error) {

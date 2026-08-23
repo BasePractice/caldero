@@ -13,4 +13,6 @@ type Cache interface {
 	SetTtl(ctx context.Context, key string, value string, expiration time.Duration) error
 	// Set установка значения по ключу
 	Set(ctx context.Context, key string, value string) error
+	// Close освобождает соединения
+	Close() error
 }

@@ -19,6 +19,8 @@ var migrations embed.FS
 type Database interface {
 	Create(ctx context.Context, credit credit.CreateCredit, operator *services.AuthorizedUser) (int64, error)
 	Get(ctx context.Context, id uint64) (*credit.Credit, error)
+	// Close освобождает соединения с БД
+	Close() error
 }
 
 type ds struct {
@@ -62,6 +64,10 @@ func (d ds) Create(ctx context.Context, c credit.CreateCredit, operator *service
 		return 0, fmt.Errorf("failed to create credit: %w", err)
 	}
 	return id, nil
+}
+
+func (d ds) Close() error {
+	return d.db.Close()
 }
 
 func NewDatabase(cfg services.Config) (Database, error) {

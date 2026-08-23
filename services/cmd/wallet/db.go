@@ -18,6 +18,8 @@ var migrations embed.FS
 
 type DatabaseWallet interface {
 	Information(userId uuid.UUID, cb func(reply *wallet.InformationReply)) error
+	// Close освобождает соединения с БД
+	Close() error
 }
 
 type ds struct {
@@ -131,6 +133,10 @@ func (d ds) selectWallets(userId uuid.UUID, cb func(reply *wallet.InformationRep
 		return false, fmt.Errorf("reading wallets of user %s: %w", userId, err)
 	}
 	return found, nil
+}
+
+func (d ds) Close() error {
+	return d.db.Close()
 }
 
 func NewDatabaseWallet(cfg services.Config) (DatabaseWallet, error) {

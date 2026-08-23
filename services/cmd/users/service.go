@@ -105,6 +105,11 @@ func newService(ctx context.Context, cfg services.Config) (*Service, error) {
 	}, nil
 }
 
+// Close освобождает ресурсы сервиса.
+func (s *Service) Close() error {
+	return s.db.Close()
+}
+
 func (s *Service) handleCreateClient(w http.ResponseWriter, r *http.Request) {
 	clientId := r.FormValue("client-id")
 	clientSecret := r.FormValue("client-secret")

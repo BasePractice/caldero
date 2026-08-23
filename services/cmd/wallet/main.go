@@ -4,10 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log/slog"
 	"net"
-	"os"
-	"runtime/debug"
 
 	"wish/middleware/wallet"
 	"wish/services"
@@ -20,48 +17,27 @@ var (
 )
 
 func main() {
-	defer func() {
-		if err := recover(); err != nil {
-			slog.Error("Recovered from panic",
-				slog.String("stack", string(debug.Stack())),
-				slog.String("err", fmt.Sprintf("%v", err)))
-		}
-	}()
-	ctx := services.ExitHandle(func(context.Context) {
-		slog.Info("Service exit")
-		os.Exit(0)
-	})
 	flag.Parse()
-	cfg, err := services.LoadConfig()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "can't load configuration:", err)
-		os.Exit(1)
-	}
-	if _, err = services.DefineLogging(cfg); err != nil {
-		fmt.Fprintln(os.Stderr, "can't configure logging:", err)
-		os.Exit(1)
-	}
-	services.DefineMetrics(cfg)
-	listen, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
-	if err != nil {
-		slog.Error("Failed to listen", slog.String("err", err.Error()))
-		os.Exit(1)
-	}
-	grpcServer := grpc.NewServer()
-	cache, err := services.NewDefaultCache(ctx, cfg)
-	if err != nil {
-		slog.Error("Can't connect to cache", slog.String("err", err.Error()))
-		os.Exit(1)
-	}
-	db, err := NewDatabaseWallet(cfg)
-	if err != nil {
-		slog.Error("Can't open database", slog.String("err", err.Error()))
-		os.Exit(1)
-	}
-	server := &service{db: db, cache: cache}
-	wallet.RegisterServiceServer(grpcServer, server)
-	slog.Info("Starting server", slog.String("addr", listen.Addr().String()))
-	if err = grpcServer.Serve(listen); err != nil {
-		slog.Error("Failed to serve ", slog.String("err", err.Error()))
-	}
+	services.Run("wallet", func(ctx context.Context, cfg services.Config) error {
+		listen, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
+		if err != nil {
+			return fmt.Errorf("listening on port %d: %w", *port, err)
+		}
+
+		cache, err := services.NewDefaultCache(ctx, cfg)
+		if err != nil {
+			return fmt.Errorf("connecting to cache: %w", err)
+		}
+		defer services.Close("cache", cache)
+
+		db, err := NewDatabaseWallet(cfg)
+		if err != nil {
+			return err
+		}
+		defer services.Close("database", db)
+
+		grpcServer := grpc.NewServer(grpc.UnaryInterceptor(services.RecoverUnaryInterceptor))
+		wallet.RegisterServiceServer(grpcServer, &service{db: db, cache: cache})
+		return services.ServeGRPC(ctx, listen, grpcServer)
+	})
 }
