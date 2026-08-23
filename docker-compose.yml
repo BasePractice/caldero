@@ -302,4 +302,43 @@ services:
       OTEL_TRACES_SAMPLER_ARG: ${OTEL_TRACES_SAMPLER_ARG:-1.0}
       LOG_FILE: /logs/account.log
     volumes:
-      - ./.logs/account:/logs
+      - ./.logs/account:/logs  notify:
+    image: wish/notify:latest
+    build:
+      context: ./
+      dockerfile: ./Dockerfile
+      args:
+        SERVICE: notify
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    # Порт наружу не публикуется: доступ к сервису только через шлюз (T-001).
+    # Для локальной отладки поднимайте профиль debug или пробрасывайте порт вручную.
+    expose:
+      - "51055"
+    healthcheck:
+      test: [ "CMD", "/service", "-healthcheck" ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres-db:5432/wish?sslmode=disable&search_path=notify
+      REDIS_URL: redis://redis:6379/10?protocol=3
+      LOG_COLOR: "false"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}
+      OTEL_TRACES_SAMPLER_ARG: ${OTEL_TRACES_SAMPLER_ARG:-1.0}
+      # Пустой токен выключает канал Telegram: лента приложения работает
+      # и без бота.
+      NOTIFY_TELEGRAM_TOKEN: ${NOTIFY_TELEGRAM_TOKEN:-}
+      NOTIFY_TELEGRAM_BOT: ${NOTIFY_TELEGRAM_BOT:-}
+      NOTIFY_WS_ORIGINS: ${NOTIFY_WS_ORIGINS:-}
+      NOTIFY_RATE_LIMIT: ${NOTIFY_RATE_LIMIT:-10}
+      NOTIFY_RATE_WINDOW: ${NOTIFY_RATE_WINDOW:-1m}
+      LOG_FILE: /logs/notify.log
+    volumes:
+      - ./.logs/notify:/logs

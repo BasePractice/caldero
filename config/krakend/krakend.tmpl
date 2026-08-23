@@ -189,6 +189,231 @@
           ]
         }
       }
+    },
+    {
+      "@comment": "Защищённый: публикация события оповещения",
+      "endpoint": "/api/v1/notify/events",
+      "method": "POST",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type",
+        "Content-Length"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://notify:51055"
+          ],
+          "url_pattern": "/notify/events",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "@comment": "Защищённый: лента оповещений с длинным опросом",
+      "endpoint": "/api/v1/notify/messages",
+      "method": "GET",
+      "output_encoding": "no-op",
+      "timeout": "30s",
+      "input_query_strings": [
+        "after",
+        "limit",
+        "wait"
+      ],
+      "input_headers": [
+        "Content-Type"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://notify:51055"
+          ],
+          "url_pattern": "/notify/messages",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "@comment": "Защищённый: настройки оповещений",
+      "endpoint": "/api/v1/notify/preferences",
+      "method": "GET",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://notify:51055"
+          ],
+          "url_pattern": "/notify/preferences",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "@comment": "Защищённый: изменение настроек оповещений",
+      "endpoint": "/api/v1/notify/preferences",
+      "method": "PUT",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type",
+        "Content-Length"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://notify:51055"
+          ],
+          "url_pattern": "/notify/preferences",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "@comment": "Защищённый: код привязки Telegram",
+      "endpoint": "/api/v1/notify/telegram/link",
+      "method": "POST",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type",
+        "Content-Length"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://notify:51055"
+          ],
+          "url_pattern": "/notify/telegram/link",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "@comment": "Защищённый: состояние привязки Telegram",
+      "endpoint": "/api/v1/notify/telegram",
+      "method": "GET",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://notify:51055"
+          ],
+          "url_pattern": "/notify/telegram",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+      }
     }
   ],
   "sequential_start": true,

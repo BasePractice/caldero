@@ -1,0 +1,133 @@
+### Публикация события себе
+POST {{notify.url}}/notify/events
+Content-Type: application/json
+X-Authorized-Id: {{user_id}}
+
+{
+  "user_id": "{{user_id}}",
+  "type": "WISHLIST_ITEM_RESERVED",
+  "payload": {
+    "item": "Кофеварка"
+  },
+  "dedup_key": "wishlist-item-1-reserved"
+}
+
+> {%
+    client.assert(response.status === 202, "Событие не принято: " + response.status)
+    client.assert(response.body.duplicate === false, "Первая публикация не должна быть повтором")
+    client.global.set("event_id", response.body.id)
+%}
+
+### Повтор публикации с тем же ключом не создаёт второе сообщение
+POST {{notify.url}}/notify/events
+Content-Type: application/json
+X-Authorized-Id: {{user_id}}
+
+{
+  "user_id": "{{user_id}}",
+  "type": "WISHLIST_ITEM_RESERVED",
+  "payload": {
+    "item": "Кофеварка"
+  },
+  "dedup_key": "wishlist-item-1-reserved"
+}
+
+> {%
+    client.assert(response.status === 202, "Повтор не принят: " + response.status)
+    client.assert(response.body.duplicate === true, "Повтор не распознан")
+    client.assert(response.body.id === client.global.get("event_id"), "Повтор создал второе событие")
+%}
+
+### Оповещение чужому пользователю без роли оператора запрещено
+POST {{notify.url}}/notify/events
+Content-Type: application/json
+X-Authorized-Id: {{user_id}}
+
+{
+  "user_id": "00000000-0000-0000-0000-000000000001",
+  "type": "WISHLIST_ITEM_GIFTED",
+  "payload": {
+    "item": "Кофеварка"
+  }
+}
+
+> {%
+    client.assert(response.status === 403, "Чужие оповещения должны требовать роль оператора")
+%}
+
+### Событие с неизвестным типом отклоняется
+POST {{notify.url}}/notify/events
+Content-Type: application/json
+X-Authorized-Id: {{user_id}}
+
+{
+  "user_id": "{{user_id}}",
+  "type": "WHATEVER"
+}
+
+> {%
+    client.assert(response.status === 400, "Неизвестный тип должен отклоняться")
+%}
+
+### Лента с начала
+GET {{notify.url}}/notify/messages?after=0
+Accept: application/json
+X-Authorized-Id: {{user_id}}
+
+> {%
+    client.assert(response.status === 200, "Лента не отдана")
+    client.global.set("cursor", response.body.cursor)
+%}
+
+### Длинный опрос: запрос ждёт нового сообщения до 10 секунд
+GET {{notify.url}}/notify/messages?after={{cursor}}&wait=10
+Accept: application/json
+X-Authorized-Id: {{user_id}}
+
+> {%
+    client.assert(response.status === 200, "Опрос завершился ошибкой")
+%}
+
+### Настройки оповещений
+GET {{notify.url}}/notify/preferences
+Accept: application/json
+X-Authorized-Id: {{user_id}}
+
+> {%
+    client.assert(response.status === 200, "Настройки не отданы")
+%}
+
+### Выключить Telegram для смен состояния котла
+PUT {{notify.url}}/notify/preferences
+Content-Type: application/json
+X-Authorized-Id: {{user_id}}
+
+[
+  {
+    "type": "CALDRON_STATE_CHANGED",
+    "channel": "TELEGRAM",
+    "enabled": false
+  }
+]
+
+> {%
+    client.assert(response.status === 204, "Настройка не сохранена: " + response.status)
+%}
+
+### Состояние привязки Telegram
+GET {{notify.url}}/notify/telegram
+Accept: application/json
+X-Authorized-Id: {{user_id}}
+
+> {%
+    client.assert(response.status === 200, "Состояние привязки не отдано")
+%}
+
+### Код привязки Telegram (503, если токен бота не задан)
+POST {{notify.url}}/notify/telegram/link
+X-Authorized-Id: {{user_id}}
+
+> {%
+    client.assert(response.status === 200 || response.status === 503,
+        "Неожиданный ответ привязки: " + response.status)
+%}

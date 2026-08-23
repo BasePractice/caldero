@@ -9,3 +9,4 @@ CREATE SCHEMA wallet;
 CREATE SCHEMA credit;
 CREATE SCHEMA account;
 CREATE SCHEMA users;
+CREATE SCHEMA notify;

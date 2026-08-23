@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -95,6 +96,27 @@ type Config struct {
 	// с провайдером. Ноль отключает сверку, и тогда потерянный вебхук
 	// оставляет операцию незавершённой навсегда.
 	PaymentReconcileInterval time.Duration
+
+	// NotifyTelegramToken — токен бота. Пустое значение выключает канал
+	// Telegram целиком: без токена бот не может ни отправить сообщение,
+	// ни принять привязку.
+	NotifyTelegramToken string
+	// NotifyTelegramBot — имя бота для ссылки привязки вида t.me/бот.
+	NotifyTelegramBot string
+	// NotifyTelegramAPI — база адресов Bot API. Задаётся только стендом,
+	// где вместо Telegram отвечает заглушка.
+	NotifyTelegramAPI string
+	// NotifyWebSocketOrigins — источники, которым разрешено открывать
+	// WebSocket. Пустой список оставляет проверку по умолчанию: источник
+	// должен совпадать с хостом, то есть браузерный клиент со своего
+	// домена подключиться не сможет, пока домен не указан здесь.
+	NotifyWebSocketOrigins []string
+	// NotifyBindingCodeTTL — сколько живёт код привязки мессенджера.
+	NotifyBindingCodeTTL time.Duration
+	// NotifyRateLimit и NotifyRateWindow ограничивают число сообщений
+	// одному пользователю в один канал за окно. Ноль снимает ограничение.
+	NotifyRateLimit  int
+	NotifyRateWindow time.Duration
 
 	// DebugStatsviz открывает страницу состояния рантайма на порту метрик.
 	// По умолчанию выключено: страница не аутентифицирована.
@@ -251,6 +273,37 @@ func LoadConfig() (Config, error) {
 		return Config{}, fmt.Errorf("parsing PAYMENT_RECONCILE_INTERVAL: %w", err)
 	}
 	cfg.PaymentReconcileInterval = reconcileInterval
+
+	cfg.NotifyTelegramToken = env("NOTIFY_TELEGRAM_TOKEN", "")
+	cfg.NotifyTelegramBot = env("NOTIFY_TELEGRAM_BOT", "")
+	cfg.NotifyTelegramAPI = env("NOTIFY_TELEGRAM_API", "")
+	if origins := env("NOTIFY_WS_ORIGINS", ""); origins != "" {
+		cfg.NotifyWebSocketOrigins = strings.Split(origins, ",")
+		for i, origin := range cfg.NotifyWebSocketOrigins {
+			cfg.NotifyWebSocketOrigins[i] = strings.TrimSpace(origin)
+		}
+	}
+
+	bindingTTL, err := time.ParseDuration(env("NOTIFY_BINDING_CODE_TTL", "15m"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing NOTIFY_BINDING_CODE_TTL: %w", err)
+	}
+	cfg.NotifyBindingCodeTTL = bindingTTL
+
+	rateLimit, err := strconv.Atoi(env("NOTIFY_RATE_LIMIT", "10"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing NOTIFY_RATE_LIMIT: %w", err)
+	}
+	if rateLimit < 0 {
+		return Config{}, fmt.Errorf("NOTIFY_RATE_LIMIT must not be negative, got %d", rateLimit)
+	}
+	cfg.NotifyRateLimit = rateLimit
+
+	rateWindow, err := time.ParseDuration(env("NOTIFY_RATE_WINDOW", "1m"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing NOTIFY_RATE_WINDOW: %w", err)
+	}
+	cfg.NotifyRateWindow = rateWindow
 
 	connLifetime, err := time.ParseDuration(env("DB_CONN_MAX_LIFETIME", "30m"))
 	if err != nil {

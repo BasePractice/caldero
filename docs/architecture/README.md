@@ -46,11 +46,16 @@ graph TB
         credit["credit<br/>кредиты и графики"]
         account["account<br/>счета"]
         wallet["wallet<br/>кошельки и транзакции<br/>gRPC"]
+        notify["notify<br/>оповещения<br/>очередь доставки"]
     end
 
     subgraph data["Данные"]
         pg[("PostgreSQL<br/>схема на сервис")]
-        redis[("Redis<br/>кэш")]
+        redis[("Redis<br/>кэш и шина оповещений")]
+    end
+
+    subgraph ext["Внешние системы"]
+        telegram["Telegram Bot API"]
     end
 
     subgraph obs["Наблюдаемость"]
@@ -63,12 +68,16 @@ graph TB
     gateway -->|"HTTP<br/>X-Authorized-Id, X-Roles"| users
     gateway --> credit
     gateway --> account
+    gateway --> notify
 
     users --> pg
     credit --> pg
     account --> pg
     wallet --> pg
     wallet --> redis
+    notify --> pg
+    notify --> redis
+    notify -->|"Bot API"| telegram
 
     svc -.->|метрики| prometheus
     svc -.->|трассы| jaeger
@@ -81,6 +90,13 @@ graph TB
 Кошелёк не подключён к шлюзу: KrakenD Community Edition не проксирует
 gRPC-бэкенды. Обращается к нему сервис кредитов — при погашении кредита
 средства списываются с кошелька пользователя.
+
+Оповещения через шлюз доступны не полностью по той же причине: WebSocket
+KrakenD Community Edition тоже не проксирует (EXT-05). Снаружи работает
+длинный опрос, а сокет остаётся внутри контура до появления отдельного
+маршрута вместе с интерфейсом. Redis нужен сервису оповещений не как кэш,
+а как шина: доставку выполняет тот экземпляр, который взял задание
+из очереди, а соединение пользователя держит другой.
 
 ```mermaid
 sequenceDiagram
@@ -109,6 +125,7 @@ sequenceDiagram
 | `credit` | кредиты, платежи, архив кредитов | `credit` | HTTP |
 | `account` | счета | `account` | HTTP |
 | `wallet` | кошельки, транзакции | `wallet` | gRPC |
+| `notify` | события, очередь доставки, лента сообщений, привязки мессенджеров | `notify` | HTTP, WebSocket |
 
 Правило одно: в чужую схему не ходит никто. Данные другого сервиса
 запрашиваются его методами, а не запросом в его таблицы.

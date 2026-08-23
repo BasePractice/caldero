@@ -1,0 +1,30 @@
+{{/*
+    Тексты оповещений. Отдельно от кода: формулировка меняется чаще
+    любой логики, и менять её должно быть можно, не трогая доставку.
+
+    Имя блока — «ТИП_СОБЫТИЯ.title» и «ТИП_СОБЫТИЯ.body». Подстановки
+    берутся из payload события. Отсутствие ключа — ошибка, а не пустая
+    строка: сообщение с провалом посреди фразы хуже недоставленного,
+    поэтому необязательные поля оформляются через {{"{{"}}if{{"}}"}}.
+*/}}
+
+{{define "WISHLIST_ITEM_RESERVED.title"}}Подарок зарезервирован{{end}}
+{{define "WISHLIST_ITEM_RESERVED.body"}}Кто-то из друзей собирается подарить «{{.item}}» из вашего списка желаний. Кто именно — узнаете при вручении.{{end}}
+
+{{define "WISHLIST_ITEM_GIFTED.title"}}Подарок вручён{{end}}
+{{define "WISHLIST_ITEM_GIFTED.body"}}Подарок «{{.item}}» отмечен как вручённый и убран из списка желаний.{{end}}
+
+{{define "CALDRON_MEMBER_ADDED.title"}}Вас добавили в котёл{{end}}
+{{define "CALDRON_MEMBER_ADDED.body"}}Вас пригласили в котёл «{{.caldron}}». Взнос — {{.amount}} ₽. Пока все участники не внесут средства, розыгрыш не начнётся.{{end}}
+
+{{define "CALDRON_STATE_CHANGED.title"}}Котёл сменил состояние{{end}}
+{{define "CALDRON_STATE_CHANGED.body"}}Котёл «{{.caldron}}»: {{.state}}.{{end}}
+
+{{define "CALDRON_DRAW_RESULT.title"}}Итоги розыгрыша{{end}}
+{{define "CALDRON_DRAW_RESULT.body"}}Котёл «{{.caldron}}» разыгран. Победитель — {{.winner}}.{{end}}
+
+{{define "PAYMENT_SETTLED.title"}}Платёж завершён{{end}}
+{{define "PAYMENT_SETTLED.body"}}Операция на {{.amount}} ₽ завершена: {{.status}}.{{end}}
+
+{{define "CONFIRMATION_CODE.title"}}Код подтверждения{{end}}
+{{define "CONFIRMATION_CODE.body"}}Код подтверждения: {{.code}}. Он действует {{.minutes}} минут. Никому его не сообщайте.{{end}}

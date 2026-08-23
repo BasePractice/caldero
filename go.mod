@@ -4,6 +4,7 @@ go 1.25.13
 
 require (
 	github.com/arl/statsviz v0.6.0
+	github.com/coder/websocket v1.8.15
 	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/golang-migrate/migrate/v4 v4.18.3
 	github.com/google/uuid v1.6.0

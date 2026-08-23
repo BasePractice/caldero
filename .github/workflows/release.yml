@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [ wallet, credit, account, users ]
+        service: [ wallet, credit, account, users, notify ]
     steps:
       - uses: actions/checkout@v5
 
