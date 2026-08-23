@@ -76,6 +76,26 @@ type Config struct {
 	// Профили раскрываютвнутреннее устройство сервиса, поэтому по умолчанию выключен.
 	DebugPprof bool
 
+	// PaymentProvider выбирает платёжного провайдера. Значение SANDBOX
+	// означает песочницу: приём и вывод настоящих денег требует статуса
+	// платёжного агента или договора с ним (EXT-01).
+	PaymentProvider string
+	// PaymentWebhookSecret — общий секрет подписи вебхуков провайдера.
+	// Пустое значение отключает приём вебхуков: непроверенный вебхук —
+	// это возможность зачислить себе любую сумму запросом снаружи.
+	PaymentWebhookSecret string
+	// Комиссия платёжного контура. Тариф у каждого провайдера свой
+	// и меняется без изменения кода, поэтому живёт в конфигурации.
+	// Доля — в базисных пунктах, суммы — в копейках.
+	PaymentFeeBasisPoints int64
+	PaymentFeeFixed       int64
+	PaymentFeeMin         int64
+	PaymentFeeMax         int64
+	// PaymentReconcileInterval — как часто сверять незавершённые операции
+	// с провайдером. Ноль отключает сверку, и тогда потерянный вебхук
+	// оставляет операцию незавершённой навсегда.
+	PaymentReconcileInterval time.Duration
+
 	// DebugStatsviz открывает страницу состояния рантайма на порту метрик.
 	// По умолчанию выключено: страница не аутентифицирована.
 	DebugStatsviz bool
@@ -203,6 +223,34 @@ func LoadConfig() (Config, error) {
 		return Config{}, fmt.Errorf("parsing DB_MAX_IDLE_CONNS: %w", err)
 	}
 	cfg.DBMaxIdleConns = maxIdle
+
+	cfg.PaymentProvider = env("PAYMENT_PROVIDER", "SANDBOX")
+	cfg.PaymentWebhookSecret = env("PAYMENT_WEBHOOK_SECRET", "")
+
+	for _, fee := range []struct {
+		key   string
+		value *int64
+	}{
+		{"PAYMENT_FEE_BASIS_POINTS", &cfg.PaymentFeeBasisPoints},
+		{"PAYMENT_FEE_FIXED", &cfg.PaymentFeeFixed},
+		{"PAYMENT_FEE_MIN", &cfg.PaymentFeeMin},
+		{"PAYMENT_FEE_MAX", &cfg.PaymentFeeMax},
+	} {
+		parsed, err := strconv.ParseInt(env(fee.key, "0"), 10, 64)
+		if err != nil {
+			return Config{}, fmt.Errorf("parsing %s: %w", fee.key, err)
+		}
+		if parsed < 0 {
+			return Config{}, fmt.Errorf("%s must not be negative, got %d", fee.key, parsed)
+		}
+		*fee.value = parsed
+	}
+
+	reconcileInterval, err := time.ParseDuration(env("PAYMENT_RECONCILE_INTERVAL", "15m"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing PAYMENT_RECONCILE_INTERVAL: %w", err)
+	}
+	cfg.PaymentReconcileInterval = reconcileInterval
 
 	connLifetime, err := time.ParseDuration(env("DB_CONN_MAX_LIFETIME", "30m"))
 	if err != nil {
