@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strings"
 	"time"
 
@@ -222,10 +223,83 @@ func (s *ds) DeleteRefreshTokenSession(ctx context.Context, signature string) er
 	return s.deleteTokenSession(ctx, "refresh", signature)
 }
 
-func (s *ds) createTokenSession(ctx context.Context, tokenType, signature string, request fosite.Requester) error {
-	data, err := json.Marshal(request)
+// tokenSession — то, что действительно кладётся в БД. Сериализовать
+// fosite.Request целиком нельзя: поля Client и Session объявлены
+// интерфейсами, и json.Unmarshal падает с
+// "cannot unmarshal object into Go struct field Request.client".
+// Клиент восстанавливается по идентификатору, сессия раскладывается
+// в переданный конкретный тип.
+type tokenSession struct {
+	RequestID         string          `json:"request_id"`
+	ClientID          string          `json:"client_id"`
+	RequestedAt       time.Time       `json:"requested_at"`
+	RequestedScope    []string        `json:"requested_scope"`
+	GrantedScope      []string        `json:"granted_scope"`
+	RequestedAudience []string        `json:"requested_audience"`
+	GrantedAudience   []string        `json:"granted_audience"`
+	Form              url.Values      `json:"form"`
+	Session           json.RawMessage `json:"session"`
+}
+
+// encodeTokenSession и decodeTokenSession вынесены отдельно от работы с БД:
+// именно здесь была ошибка, и проверить их можно без поднятой базы.
+func encodeTokenSession(request fosite.Requester) ([]byte, error) {
+	sessionData, err := json.Marshal(request.GetSession())
 	if err != nil {
-		return fmt.Errorf("marshalling %s token session: %w", tokenType, err)
+		return nil, fmt.Errorf("marshalling session: %w", err)
+	}
+	data, err := json.Marshal(tokenSession{
+		RequestID:         request.GetID(),
+		ClientID:          request.GetClient().GetID(),
+		RequestedAt:       request.GetRequestedAt(),
+		RequestedScope:    request.GetRequestedScopes(),
+		GrantedScope:      request.GetGrantedScopes(),
+		RequestedAudience: request.GetRequestedAudience(),
+		GrantedAudience:   request.GetGrantedAudience(),
+		Form:              request.GetRequestForm(),
+		Session:           sessionData,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshalling token session: %w", err)
+	}
+	return data, nil
+}
+
+// decodeTokenSession восстанавливает запрос. Сессия раскладывается
+// в переданный экземпляр: он приходит конкретным типом, тогда как поле
+// Session в fosite.Request — интерфейс, и разложить в него JSON нельзя.
+func decodeTokenSession(data []byte, session fosite.Session, client fosite.Client) (*fosite.Request, string, error) {
+	var stored tokenSession
+	if err := json.Unmarshal(data, &stored); err != nil {
+		return nil, "", fmt.Errorf("unmarshalling token session: %w", err)
+	}
+	if client == nil {
+		return nil, stored.ClientID, nil
+	}
+	if session != nil && len(stored.Session) > 0 {
+		if err := json.Unmarshal(stored.Session, session); err != nil {
+			return nil, stored.ClientID, fmt.Errorf("unmarshalling session: %w", err)
+		}
+	}
+
+	request := fosite.NewRequest()
+	request.ID = stored.RequestID
+	request.RequestedAt = stored.RequestedAt
+	request.Client = client
+	request.RequestedScope = stored.RequestedScope
+	// Без granted scope проверка прав на защищённых эндпоинтах не сработает.
+	request.GrantedScope = stored.GrantedScope
+	request.RequestedAudience = stored.RequestedAudience
+	request.GrantedAudience = stored.GrantedAudience
+	request.Form = stored.Form
+	request.Session = session
+	return request, stored.ClientID, nil
+}
+
+func (s *ds) createTokenSession(ctx context.Context, tokenType, signature string, request fosite.Requester) error {
+	data, err := encodeTokenSession(request)
+	if err != nil {
+		return fmt.Errorf("encoding %s token session: %w", tokenType, err)
 	}
 
 	// Срок жизни берётся по типу токена: у refresh он на порядок длиннее
@@ -261,21 +335,32 @@ func (s *ds) getTokenSession(ctx context.Context, tokenType, signature string, s
 		signature,
 		tokenType,
 	).Scan(&data, &expiresAt)
-
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fosite.ErrNotFound
+	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("loading %s token session: %w", tokenType, err)
 	}
-
-	var req fosite.Request
-	if err := json.Unmarshal(data, &req); err != nil {
-		return nil, err
-	}
-
 	if expiresAt.Before(time.Now()) {
 		return nil, fosite.ErrTokenExpired
 	}
 
-	return &req, nil
+	// Первый проход нужен, чтобы узнать клиента: он хранится по
+	// идентификатору, а не встроенным объектом.
+	_, clientId, err := decodeTokenSession(data, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("decoding %s token session: %w", tokenType, err)
+	}
+	client, err := s.GetClient(ctx, clientId)
+	if err != nil {
+		return nil, fmt.Errorf("loading client %s of %s token: %w", clientId, tokenType, err)
+	}
+
+	request, _, err := decodeTokenSession(data, session, client)
+	if err != nil {
+		return nil, fmt.Errorf("decoding %s token session: %w", tokenType, err)
+	}
+	return request, nil
 }
 
 func (s *ds) deleteTokenSession(ctx context.Context, tokenType, signature string) error {
@@ -284,7 +369,10 @@ func (s *ds) deleteTokenSession(ctx context.Context, tokenType, signature string
 		signature,
 		tokenType,
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("deleting %s token session: %w", tokenType, err)
+	}
+	return nil
 }
 
 func (s *ds) RevokeRefreshToken(ctx context.Context, requestId string) error {
