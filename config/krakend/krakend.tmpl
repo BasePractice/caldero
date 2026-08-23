@@ -1439,6 +1439,91 @@
           ]
         }
       }
+    },
+    {
+      "@comment": "Защищённый: запрос кода подтверждения телефона или почты",
+      "endpoint": "/api/v1/profile/confirmations",
+      "method": "POST",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type",
+        "Content-Length",
+        "Authorization"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://users:51053"
+          ],
+          "url_pattern": "/profile/confirmations",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+,
+        "qos/ratelimit/router": {
+          "@comment": "Отправка кода — это сообщение на чужой номер за наш счёт, поэтому предел стоит и на шлюзе.",
+          "max_rate": 10,
+          "capacity": 10,
+          "client_max_rate": 1,
+          "client_capacity": 1,
+          "strategy": "ip"
+        }
+      }
+    },
+    {
+      "@comment": "Защищённый: проверка кода подтверждения",
+      "endpoint": "/api/v1/profile/confirmations/verify",
+      "method": "POST",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type",
+        "Content-Length",
+        "Authorization"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://users:51053"
+          ],
+          "url_pattern": "/profile/confirmations/verify",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+      }
     }
   ],
   "sequential_start": true,

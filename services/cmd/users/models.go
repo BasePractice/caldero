@@ -15,8 +15,20 @@ type User struct {
 	Email          sql.NullString
 	Phone          sql.NullString
 	PhoneConfirmed bool
+	EmailConfirmed bool
 	Gender         sql.NullString
 	CreatedAt      time.Time
+}
+
+// Contact возвращает контакт нужного вида и признак его подтверждения.
+//
+// Собрано в одном месте: иначе каждая операция подтверждения повторяла бы
+// выбор между двумя полями и рано или поздно перепутала бы их.
+func (u User) Contact(kind ConfirmationKind) (string, bool) {
+	if kind == ConfirmEmail {
+		return u.Email.String, u.EmailConfirmed
+	}
+	return u.Phone.String, u.PhoneConfirmed
 }
 
 // Profile собирает полный профиль владельца.
@@ -28,6 +40,7 @@ func (u User) Profile() Profile {
 		Email:          u.Email.String,
 		Phone:          u.Phone.String,
 		PhoneConfirmed: u.PhoneConfirmed,
+		EmailConfirmed: u.EmailConfirmed,
 		Gender:         u.Gender.String,
 		AvatarURL:      AvatarURL(u.Email.String),
 		CreatedAt:      u.CreatedAt,

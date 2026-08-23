@@ -32,5 +32,8 @@
 {{define "PAYMENT_SETTLED.title"}}Платёж завершён{{end}}
 {{define "PAYMENT_SETTLED.body"}}Операция на {{.amount}} ₽ завершена: {{.status}}.{{end}}
 
+{{define "CONFIRMATION_LINK.title"}}Подтверждение почты{{end}}
+{{define "CONFIRMATION_LINK.body"}}Чтобы подтвердить адрес, откройте ссылку: {{.link}}. Она действует {{.minutes}} минут. Если вы этого не запрашивали, просто не открывайте её.{{end}}
+
 {{define "CONFIRMATION_CODE.title"}}Код подтверждения{{end}}
 {{define "CONFIRMATION_CODE.body"}}Код подтверждения: {{.code}}. Он действует {{.minutes}} минут. Никому его не сообщайте.{{end}}

@@ -155,6 +155,21 @@ type Config struct {
 	// отмены оставляет средства участников в котле.
 	CaldronRefundInterval time.Duration
 
+	// ConfirmationTTL — сколько живёт код подтверждения контакта.
+	ConfirmationTTL time.Duration
+	// ConfirmationCooldown — минимальная пауза между отправками кода
+	// одному пользователю. Без неё эндпоинт отправки превращается
+	// в средство рассылки за чужой счёт.
+	ConfirmationCooldown time.Duration
+	// ConfirmationRateLimit и ConfirmationRateWindow ограничивают число
+	// кодов за окно.
+	ConfirmationRateLimit  int
+	ConfirmationRateWindow time.Duration
+	// PublicBaseURL — адрес, по которому система доступна снаружи.
+	// Из него собирается ссылка подтверждения почты; пустое значение
+	// означает, что ссылку показать негде и в письмо уйдёт код.
+	PublicBaseURL string
+
 	// DebugStatsviz открывает страницу состояния рантайма на порту метрик.
 	// По умолчанию выключено: страница не аутентифицирована.
 	DebugStatsviz bool
@@ -390,6 +405,35 @@ func LoadConfig() (Config, error) {
 		return Config{}, fmt.Errorf("parsing CALDRON_REFUND_INTERVAL: %w", err)
 	}
 	cfg.CaldronRefundInterval = refundInterval
+
+	confirmationTTL, err := time.ParseDuration(env("CONFIRMATION_TTL", "15m"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing CONFIRMATION_TTL: %w", err)
+	}
+	cfg.ConfirmationTTL = confirmationTTL
+
+	confirmationCooldown, err := time.ParseDuration(env("CONFIRMATION_COOLDOWN", "1m"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing CONFIRMATION_COOLDOWN: %w", err)
+	}
+	cfg.ConfirmationCooldown = confirmationCooldown
+
+	confirmationLimit, err := strconv.Atoi(env("CONFIRMATION_RATE_LIMIT", "5"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing CONFIRMATION_RATE_LIMIT: %w", err)
+	}
+	if confirmationLimit < 1 {
+		return Config{}, fmt.Errorf("CONFIRMATION_RATE_LIMIT must be positive, got %d", confirmationLimit)
+	}
+	cfg.ConfirmationRateLimit = confirmationLimit
+
+	confirmationWindow, err := time.ParseDuration(env("CONFIRMATION_RATE_WINDOW", "1h"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing CONFIRMATION_RATE_WINDOW: %w", err)
+	}
+	cfg.ConfirmationRateWindow = confirmationWindow
+
+	cfg.PublicBaseURL = env("PUBLIC_BASE_URL", "")
 
 	connLifetime, err := time.ParseDuration(env("DB_CONN_MAX_LIFETIME", "30m"))
 	if err != nil {

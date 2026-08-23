@@ -36,6 +36,10 @@ const (
 	EventPaymentSettled EventType = "PAYMENT_SETTLED"
 	// EventConfirmationCode — код подтверждения телефона или почты.
 	EventConfirmationCode EventType = "CONFIRMATION_CODE"
+	// EventConfirmationLink — ссылка подтверждения почты. Токен длиной
+	// в тридцать два байта руками не переписывают, поэтому у почты
+	// отдельное сообщение со ссылкой.
+	EventConfirmationLink EventType = "CONFIRMATION_LINK"
 )
 
 // EventTypes перечисляет известные типы событий.
@@ -50,6 +54,7 @@ func EventTypes() []EventType {
 		EventCaldronDrawResult,
 		EventPaymentSettled,
 		EventConfirmationCode,
+		EventConfirmationLink,
 	}
 }
 
@@ -191,8 +196,13 @@ func (p Preference) Validate() error {
 // Код подтверждения по умолчанию не уходит в Telegram: до подтверждения
 // привязки бот может быть чужим, а код — это доступ к учётной записи.
 func DefaultEnabled(eventType EventType, channel Channel) bool {
-	if channel == ChannelTelegram && eventType == EventConfirmationCode {
-		return false
+	if channel != ChannelTelegram {
+		return true
 	}
-	return true
+	switch eventType {
+	case EventConfirmationCode, EventConfirmationLink:
+		return false
+	default:
+		return true
+	}
 }

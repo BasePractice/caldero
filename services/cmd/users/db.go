@@ -44,6 +44,18 @@ type DatabaseUsers interface {
 	GetUserById(ctx context.Context, id uuid.UUID) (*User, error)
 	UpdateProfile(ctx context.Context, id uuid.UUID, update ProfileUpdate) (*User, error)
 	Authenticate(ctx context.Context, username, secret string) (string, error)
+
+	// Подтверждение телефона и почты.
+	CreateConfirmation(ctx context.Context, confirmation Confirmation) (Confirmation, error)
+	// ActiveConfirmation отдаёт последний код, который ещё можно предъявить.
+	ActiveConfirmation(ctx context.Context, user uuid.UUID, kind ConfirmationKind) (Confirmation, error)
+	// CountConfirmations считает выданные коды за окно: без этого
+	// эндпоинт отправки превращается в средство рассылки за чужой счёт.
+	CountConfirmations(ctx context.Context, user uuid.UUID, kind ConfirmationKind, window time.Duration) (int, time.Time, error)
+	// FailConfirmation засчитывает неудачную попытку.
+	FailConfirmation(ctx context.Context, id uuid.UUID) error
+	// ConfirmContact отмечает контакт подтверждённым.
+	ConfirmContact(ctx context.Context, id uuid.UUID, user uuid.UUID, kind ConfirmationKind, target string) error
 	GetUserRoles(ctx context.Context, userId uuid.UUID) ([]string, error)
 	DeleteExpiredTokens(ctx context.Context) (int64, error)
 
@@ -245,12 +257,12 @@ func (s *ds) GetLastKey(ctx context.Context) (string, error) {
 }
 
 const userColumns = `user_id, username, password_hash, display_name, email,
-	phone, phone_confirmed, gender, created_at`
+	phone, phone_confirmed, email_confirmed, gender, created_at`
 
 func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	var u User
 	err := row.Scan(&u.Id, &u.Username, &u.PasswordHash, &u.DisplayName, &u.Email,
-		&u.Phone, &u.PhoneConfirmed, &u.Gender, &u.CreatedAt)
+		&u.Phone, &u.PhoneConfirmed, &u.EmailConfirmed, &u.Gender, &u.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -281,6 +293,9 @@ func (s *ds) UpdateProfile(ctx context.Context, id uuid.UUID, update ProfileUpda
 			-- прежний номер, а не новый.
 			phone_confirmed = CASE WHEN $4 IS NOT NULL AND $4 IS DISTINCT FROM phone
 			                       THEN FALSE ELSE phone_confirmed END,
+			-- То же с почтой: подтверждён был прежний адрес.
+			email_confirmed = CASE WHEN $3 IS NOT NULL AND $3 IS DISTINCT FROM email
+			                       THEN FALSE ELSE email_confirmed END,
 			updated_at   = now()
 		WHERE user_id = $1
 		RETURNING `+userColumns,
@@ -693,4 +708,144 @@ func NewDatabaseUsers(ctx context.Context, cfg services.Config) (DatabaseUsers, 
 		return nil, fmt.Errorf("creating key cipher: %w", err)
 	}
 	return store, nil
+}
+
+func (d ds) CreateConfirmation(
+	ctx context.Context,
+	confirmation Confirmation,
+) (Confirmation, error) {
+	created, err := scanConfirmation(d.db.QueryRowContext(ctx, `
+		INSERT INTO confirmation (user_id, kind, target, code_hash, expires_at)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, user_id, kind, target, code_hash, attempts, expires_at, confirmed_at, created_at`,
+		confirmation.UserId, confirmation.Kind, confirmation.Target,
+		confirmation.CodeHash, confirmation.ExpiresAt))
+	if err != nil {
+		return Confirmation{}, fmt.Errorf("creating %s confirmation for %s: %w",
+			confirmation.Kind, confirmation.UserId, err)
+	}
+	return created, nil
+}
+
+func (d ds) ActiveConfirmation(
+	ctx context.Context,
+	user uuid.UUID,
+	kind ConfirmationKind,
+) (Confirmation, error) {
+	confirmation, err := scanConfirmation(d.db.QueryRowContext(ctx, `
+		SELECT id, user_id, kind, target, code_hash, attempts, expires_at, confirmed_at, created_at
+		FROM confirmation
+		WHERE user_id = $1 AND kind = $2 AND confirmed_at IS NULL
+		  AND expires_at > current_timestamp AND attempts < $3
+		ORDER BY created_at DESC
+		LIMIT 1`, user, kind, MaxAttempts))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Confirmation{}, ErrNoConfirmation
+	}
+	if err != nil {
+		return Confirmation{}, fmt.Errorf("loading %s confirmation of %s: %w", kind, user, err)
+	}
+	return confirmation, nil
+}
+
+func (d ds) CountConfirmations(
+	ctx context.Context,
+	user uuid.UUID,
+	kind ConfirmationKind,
+	window time.Duration,
+) (int, time.Time, error) {
+	var (
+		count int
+		last  sql.NullTime
+	)
+	err := d.db.QueryRowContext(ctx, `
+		SELECT count(*), max(created_at)
+		FROM confirmation
+		WHERE user_id = $1 AND kind = $2
+		  AND created_at > current_timestamp - $3::interval`,
+		user, kind, fmt.Sprintf("%d seconds", int(window.Seconds()))).Scan(&count, &last)
+	if err != nil {
+		return 0, time.Time{}, fmt.Errorf("counting %s confirmations of %s: %w", kind, user, err)
+	}
+	return count, last.Time, nil
+}
+
+func (d ds) FailConfirmation(ctx context.Context, id uuid.UUID) error {
+	if _, err := d.db.ExecContext(ctx,
+		`UPDATE confirmation SET attempts = attempts + 1 WHERE id = $1`, id); err != nil {
+		return fmt.Errorf("counting failed attempt of confirmation %s: %w", id, err)
+	}
+	return nil
+}
+
+func (d ds) ConfirmContact(
+	ctx context.Context,
+	id, user uuid.UUID,
+	kind ConfirmationKind,
+	target string,
+) error {
+	return d.inTx(ctx, func(tx *sql.Tx) error {
+		// Контакт сверяется в той же транзакции: между проверкой кода
+		// и отметкой пользователь мог сменить номер, и подтверждать
+		// тогда нечего.
+		var current sql.NullString
+		column := "phone"
+		if kind == ConfirmEmail {
+			column = "email"
+		}
+		if err := tx.QueryRowContext(ctx,
+			`SELECT `+column+` FROM users WHERE user_id = $1 FOR UPDATE`, user).Scan(&current); err != nil {
+			return fmt.Errorf("locking user %s: %w", user, err)
+		}
+		if !strings.EqualFold(current.String, target) {
+			return ErrTargetChanged
+		}
+
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE users SET `+column+`_confirmed = TRUE, updated_at = current_timestamp
+			 WHERE user_id = $1`, user); err != nil {
+			return fmt.Errorf("confirming %s of user %s: %w", kind, user, err)
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE confirmation SET confirmed_at = current_timestamp WHERE id = $1`, id); err != nil {
+			return fmt.Errorf("marking confirmation %s used: %w", id, err)
+		}
+		return nil
+	})
+}
+
+func scanConfirmation(scanner interface{ Scan(...any) error }) (Confirmation, error) {
+	var (
+		confirmation Confirmation
+		confirmedAt  sql.NullTime
+	)
+	if err := scanner.Scan(&confirmation.Id, &confirmation.UserId, &confirmation.Kind,
+		&confirmation.Target, &confirmation.CodeHash, &confirmation.Attempts,
+		&confirmation.ExpiresAt, &confirmedAt, &confirmation.CreatedAt); err != nil {
+		return Confirmation{}, err
+	}
+	if confirmedAt.Valid {
+		confirmation.ConfirmedAt = &confirmedAt.Time
+	}
+	return confirmation, nil
+}
+
+func (d ds) inTx(ctx context.Context, do func(tx *sql.Tx) error) error {
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("starting transaction: %w", err)
+	}
+	defer func() {
+		// Откат после успешной фиксации возвращает ErrTxDone и ничего
+		// не меняет, поэтому проверять его нечего.
+		_ = tx.Rollback()
+	}()
+
+	if err = do(tx); err != nil {
+		return err
+	}
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("committing transaction: %w", err)
+	}
+	return nil
 }

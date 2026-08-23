@@ -39,6 +39,7 @@ type Profile struct {
 	Email          string    `json:"email,omitempty"`
 	Phone          string    `json:"phone,omitempty"`
 	PhoneConfirmed bool      `json:"phone_confirmed"`
+	EmailConfirmed bool      `json:"email_confirmed"`
 	Gender         string    `json:"gender,omitempty"`
 	AvatarURL      string    `json:"avatar_url,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`

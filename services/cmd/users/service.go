@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"wish/services"
+	"wish/services/shared/notify"
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/google/uuid"
@@ -31,6 +32,14 @@ type Service struct {
 	keyManager     KeyManager
 	db             DatabaseUsers
 	cfg            services.Config
+	// notifier доставляет коды подтверждения. Сервис оповещений может
+	// быть выключен — тогда код останется недоставленным, и об этом
+	// честно сообщается вызывающему.
+	notifier *notify.Client
+	// confirmationSecret — ключ хеширования кодов подтверждения. Тот же,
+	// что подписывает токены: заводить второй секрет ради одной таблицы
+	// значит удваивать то, что нужно беречь.
+	confirmationSecret []byte
 
 	rotationMu   sync.Mutex
 	lastRotation time.Time
@@ -106,11 +115,13 @@ func newService(ctx context.Context, cfg services.Config) (*Service, error) {
 		compose.OAuth2TokenRevocationFactory,
 	)
 	return &Service{
-		oauth2Config:   oauth2Config,
-		oauth2Provider: oauth2Provider,
-		keyManager:     keyManager,
-		db:             db,
-		cfg:            cfg,
+		oauth2Config:       oauth2Config,
+		oauth2Provider:     oauth2Provider,
+		keyManager:         keyManager,
+		db:                 db,
+		cfg:                cfg,
+		notifier:           notify.NewClient(cfg.NotifyEndpoint, cfg.ServiceUserId),
+		confirmationSecret: secret,
 	}, nil
 }
 

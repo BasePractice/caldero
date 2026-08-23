@@ -20,6 +20,7 @@ var payloads = map[notify.EventType]map[string]string{
 	notify.EventCaldronDrawResult:     {"caldron": "День рождения", "winner": "Пётр"},
 	notify.EventPaymentSettled:        {"amount": "1500", "status": "успешно"},
 	notify.EventConfirmationCode:      {"code": "123456", "minutes": "15"},
+	notify.EventConfirmationLink:      {"link": "https://example.invalid/confirm?code=abc", "minutes": "15"},
 }
 
 func TestTemplatesCoverAllEvents(t *testing.T) {

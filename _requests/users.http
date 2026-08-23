@@ -142,3 +142,64 @@ X-Authorized-Id: {{user_id}}
     client.assert(!response.body.phone, "Телефон не должен быть виден посторонним")
     client.assert(!response.body.email, "Почта не должна быть видна посторонним")
 %}
+
+### Запрос кода подтверждения телефона
+POST {{users.url}}/profile/confirmations
+Content-Type: application/json
+Authorization: Bearer {{access_token}}
+
+{
+  "kind": "PHONE"
+}
+
+> {%
+    client.assert(response.status === 200 || response.status === 409 || response.status === 429,
+        "Неожиданный ответ запроса кода: " + response.status)
+    if (response.status === 200) {
+        client.assert(response.body.code === undefined,
+            "Код не должен возвращаться в ответе: он уходит на контакт")
+        client.assert(response.body.expires_at !== undefined, "Не сказано, сколько живёт код")
+    }
+%}
+
+### Повторный запрос упирается в ограничение частоты
+POST {{users.url}}/profile/confirmations
+Content-Type: application/json
+Authorization: Bearer {{access_token}}
+
+{
+  "kind": "PHONE"
+}
+
+> {%
+    client.assert(response.status === 429 || response.status === 409,
+        "Повторный запрос должен ограничиваться: " + response.status)
+%}
+
+### Неверный код не подтверждает контакт
+POST {{users.url}}/profile/confirmations/verify
+Content-Type: application/json
+Authorization: Bearer {{access_token}}
+
+{
+  "kind": "PHONE",
+  "code": "000000"
+}
+
+> {%
+    client.assert(response.status === 400 || response.status === 409,
+        "Неверный код должен отклоняться: " + response.status)
+%}
+
+### Неизвестный вид подтверждения отклоняется
+POST {{users.url}}/profile/confirmations
+Content-Type: application/json
+Authorization: Bearer {{access_token}}
+
+{
+  "kind": "TELEGRAM"
+}
+
+> {%
+    client.assert(response.status === 400, "Неизвестный вид должен отклоняться")
+%}

@@ -267,6 +267,14 @@ services:
       OAUTH2_ISSUER: ${OAUTH2_ISSUER:-http://localhost:8080/api/v1}
       ADMIN_TOKEN: ${ADMIN_TOKEN:-}
       KEY_MASTER_KEY: ${KEY_MASTER_KEY:-}
+      # Коды подтверждения уходят через сервис оповещений.
+      NOTIFY_ENDPOINT: ${NOTIFY_ENDPOINT:-http://notify:51055}
+      SERVICE_USER_ID: ${SERVICE_USER_ID:-11111111-1111-1111-1111-111111111111}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
+      CONFIRMATION_TTL: ${CONFIRMATION_TTL:-15m}
+      CONFIRMATION_COOLDOWN: ${CONFIRMATION_COOLDOWN:-1m}
+      CONFIRMATION_RATE_LIMIT: ${CONFIRMATION_RATE_LIMIT:-5}
+      CONFIRMATION_RATE_WINDOW: ${CONFIRMATION_RATE_WINDOW:-1h}
       LOG_FILE: /logs/users.log
     volumes:
       - ./.logs/users:/logs
