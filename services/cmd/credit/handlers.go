@@ -3,13 +3,13 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
-	"strconv"
 
 	"wish/services"
 	"wish/services/shared/credit"
+
+	"github.com/google/uuid"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -35,13 +35,12 @@ func registerHttpHandlers(db Database) http.Handler {
 			return
 		}
 		id := r.PathValue("id")
-		idInt, err := strconv.ParseUint(id, 10, 64)
+		creditId, err := uuid.Parse(id)
 		if err != nil {
-			slog.Error("Invalid id", slog.String("id", id), slog.String("err", err.Error()))
 			http.Error(w, "Invalid id", http.StatusBadRequest)
 			return
 		}
-		c, err := db.Get(r.Context(), idInt)
+		c, err := db.Get(r.Context(), creditId)
 		if errors.Is(err, ErrCreditNotFound) {
 			http.Error(w, "Not found", http.StatusNotFound)
 			return
@@ -105,6 +104,6 @@ func createCredit(db Database, w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Can't create credit", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("X-Credit-Id", fmt.Sprintf("%d", id))
+	w.Header().Set("X-Credit-Id", id.String())
 	w.WriteHeader(http.StatusCreated)
 }

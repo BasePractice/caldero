@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"strconv"
 
 	"wish/services"
 	"wish/services/shared/account"
+
+	"github.com/google/uuid"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -69,7 +70,7 @@ func createAccount(db Database, w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Can't create account", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("X-Account-Id", strconv.FormatInt(id, 10))
+	w.Header().Set("X-Account-Id", id.String())
 	w.WriteHeader(http.StatusCreated)
 }
 
@@ -79,7 +80,7 @@ func getAccount(db Database, w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "Invalid id", http.StatusBadRequest)
 		return
@@ -87,7 +88,7 @@ func getAccount(db Database, w http.ResponseWriter, r *http.Request) {
 
 	a, err := db.Get(r.Context(), id)
 	if err != nil {
-		slog.Error("Get account", slog.Int64("id", id), slog.String("err", err.Error()))
+		slog.Error("Get account", slog.String("id", id.String()), slog.String("err", err.Error()))
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
@@ -95,13 +96,13 @@ func getAccount(db Database, w http.ResponseWriter, r *http.Request) {
 	// как несуществующий, чтобы не подтверждать его наличие перебором.
 	if a.UserId != operator.Id {
 		slog.Warn("Attempt to read foreign account",
-			slog.Int64("id", id), slog.String("operator", operator.Id.String()))
+			slog.String("id", id.String()), slog.String("operator", operator.Id.String()))
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	if err = json.NewEncoder(w).Encode(a); err != nil {
-		slog.Error("Encode json", slog.Int64("id", id), slog.String("err", err.Error()))
+		slog.Error("Encode json", slog.String("id", id.String()), slog.String("err", err.Error()))
 	}
 }
