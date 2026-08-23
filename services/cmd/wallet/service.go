@@ -21,7 +21,7 @@ type service struct {
 func (s service) Information(ctx context.Context, request *wallet.InformationRequest) (*wallet.InformationReplyList, error) {
 	authorized, err := services.GrpcAuthorized(ctx)
 	if err != nil {
-		slog.Debug("Unauthorized information request", slog.String("err", err.Error()))
+		slog.DebugContext(ctx, "Unauthorized information request", slog.String("err", err.Error()))
 		return nil, status.Error(codes.Unauthenticated, "not authorized")
 	}
 
@@ -33,7 +33,7 @@ func (s service) Information(ctx context.Context, request *wallet.InformationReq
 		// Чужой кошелёк доступен только оператору: без проверки достаточно
 		// подставить чужой uuid, чтобы прочитать чужой баланс и транзакции.
 		if !authorized.CanActOnBehalfOf(owner) {
-			slog.Warn("Attempt to read foreign wallet",
+			slog.WarnContext(ctx, "Attempt to read foreign wallet",
 				slog.String("authorized", authorized.Id.String()))
 			return nil, status.Error(codes.PermissionDenied, "wallet belongs to another user")
 		}
@@ -43,7 +43,7 @@ func (s service) Information(ctx context.Context, request *wallet.InformationReq
 	if err = s.db.Information(ctx, owner, func(reply *wallet.InformationReply) {
 		replies = append(replies, reply)
 	}); err != nil {
-		slog.Error("Failed to load wallets", slog.String("err", err.Error()))
+		slog.ErrorContext(ctx, "Failed to load wallets", slog.String("err", err.Error()))
 		return nil, status.Error(codes.Internal, "can't load wallets")
 	}
 	return &wallet.InformationReplyList{Replies: replies}, nil

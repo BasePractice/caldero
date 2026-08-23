@@ -1,23 +1,25 @@
+# Сервисы пишут JSON-логи в файл (переменная LOG_FILE) и одновременно
+# в stdout, чтобы docker compose logs продолжал работать.
 filebeat.inputs:
-- type: filestream
-  enabled: true
-  paths:
-    - /logs/credit/*.log
-  fields:
-    service: "credit"
-
-- type: filestream
-  enabled: true
-  paths:
-    - /logs/wallet/*.log
-  fields:
-    service: "wallet"
-- type: filestream
-  enabled: true
-  paths:
-    - /logs/users/*.log
-  fields:
-    service: "users"
+  - type: filestream
+    id: wish-services
+    enabled: true
+    paths:
+      - /logs/*/*.log
+    parsers:
+      # Записи уже в JSON: разбирать их здесь дешевле, чем grok-ом в logstash.
+      - ndjson:
+          target: ""
+          overwrite_keys: true
+          add_error_key: true
+    # Имя сервиса берётся из каталога: /logs/credit/credit.log -> credit.
+    processors:
+      - dissect:
+          tokenizer: "/logs/%{service}/%{filename}"
+          field: "log.file.path"
+          target_prefix: "fields"
 
 output.logstash:
-  hosts: ["logstash:5044"]
+  hosts: [ "logstash:5044" ]
+
+logging.level: info

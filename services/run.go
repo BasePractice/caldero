@@ -182,9 +182,13 @@ func Close(name string, closer io.Closer) {
 // не доходит.
 func Recover(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Контекст берётся до вызова обработчика: в отложенной функции
+		// обращение к r уже смешивает восстановление после паники
+		// с чтением состояния запроса.
+		ctx := r.Context()
 		defer func() {
 			if rec := recover(); rec != nil {
-				slog.Error("Recovered from panic in handler",
+				slog.ErrorContext(ctx, "Recovered from panic in handler",
 					slog.String("method", r.Method),
 					slog.String("path", r.URL.Path),
 					slog.String("panic", fmt.Sprintf("%v", rec)),
@@ -206,7 +210,7 @@ func RecoverUnaryInterceptor(
 ) (resp any, err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			slog.Error("Recovered from panic in grpc handler",
+			slog.ErrorContext(ctx, "Recovered from panic in grpc handler",
 				slog.String("method", info.FullMethod),
 				slog.String("panic", fmt.Sprintf("%v", rec)),
 				slog.String("stack", string(debug.Stack())))

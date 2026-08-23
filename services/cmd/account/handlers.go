@@ -31,18 +31,18 @@ func createAccount(db Database, w http.ResponseWriter, r *http.Request) {
 
 	a, err := services.DecodeJSON[account.CreateAccount](w, r)
 	if err != nil {
-		slog.Error("Failed decoding account", slog.String("error", err.Error()))
+		slog.ErrorContext(r.Context(), "Failed decoding account", slog.String("error", err.Error()))
 		services.WriteDecodeError(w, err)
 		return
 	}
 	if err = a.Validate(); err != nil {
-		slog.Debug("Account validation failed",
+		slog.DebugContext(r.Context(), "Account validation failed",
 			slog.String("account", a.String()), slog.String("reason", err.Error()))
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if !operator.CanActOnBehalfOf(a.UserId) {
-		slog.Warn("Attempt to create account for another user without operator role",
+		slog.WarnContext(r.Context(), "Attempt to create account for another user without operator role",
 			slog.String("operator", operator.Id.String()))
 		http.Error(w, "Creating an account for another user requires the operator role",
 			http.StatusForbidden)
@@ -55,7 +55,7 @@ func createAccount(db Database, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		slog.Error("Failed to create account",
+		slog.ErrorContext(r.Context(), "Failed to create account",
 			slog.String("account", a.String()),
 			slog.String("error", err.Error()))
 		http.Error(w, "Can't create account", http.StatusInternalServerError)
@@ -79,14 +79,14 @@ func getAccount(db Database, w http.ResponseWriter, r *http.Request) {
 
 	a, err := db.Get(r.Context(), id)
 	if err != nil {
-		slog.Error("Get account", slog.String("id", id.String()), slog.String("err", err.Error()))
+		slog.ErrorContext(r.Context(), "Get account", slog.String("id", id.String()), slog.String("err", err.Error()))
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
 	// Идентификатор счёта последовательный, поэтому чужой счёт отдаётся
 	// как несуществующий, чтобы не подтверждать его наличие перебором.
 	if !operator.CanActOnBehalfOf(a.UserId) {
-		slog.Warn("Attempt to read foreign account",
+		slog.WarnContext(r.Context(), "Attempt to read foreign account",
 			slog.String("id", id.String()), slog.String("operator", operator.Id.String()))
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
@@ -94,6 +94,6 @@ func getAccount(db Database, w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if err = json.NewEncoder(w).Encode(a); err != nil {
-		slog.Error("Encode json", slog.String("id", id.String()), slog.String("err", err.Error()))
+		slog.ErrorContext(r.Context(), "Encode json", slog.String("id", id.String()), slog.String("err", err.Error()))
 	}
 }

@@ -171,7 +171,7 @@ func (s *Service) handleCreateClient(w http.ResponseWriter, r *http.Request) {
 	// bcrypt, и открытый текст не совпал бы никогда.
 	hashed, err := bcrypt.GenerateFromPassword([]byte(clientSecret), bcrypt.DefaultCost)
 	if err != nil {
-		slog.Error("Failed to hash client secret", slog.String("err", err.Error()))
+		slog.ErrorContext(r.Context(), "Failed to hash client secret", slog.String("err", err.Error()))
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -182,7 +182,7 @@ func (s *Service) handleCreateClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		slog.Error("Failed to create client", slog.String("err", err.Error()))
+		slog.ErrorContext(r.Context(), "Failed to create client", slog.String("err", err.Error()))
 		http.Error(w, "Can't create client", http.StatusInternalServerError)
 		return
 	}
@@ -205,7 +205,7 @@ func (s *Service) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		slog.Error("Failed to hashing password", slog.String("err", err.Error()))
+		slog.ErrorContext(r.Context(), "Failed to hashing password", slog.String("err", err.Error()))
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -213,11 +213,11 @@ func (s *Service) handleRegister(w http.ResponseWriter, r *http.Request) {
 	user, err := s.db.CreateUser(r.Context(), username, string(hashedPassword))
 	if err != nil {
 		if s.db.IsUniqueConstraintError(err) {
-			slog.Error("User already exists", slog.String("username", username), slog.String("err", err.Error()))
+			slog.WarnContext(r.Context(), "User already exists", slog.String("username", username), slog.String("err", err.Error()))
 			http.Error(w, "Username already exists", http.StatusConflict)
 			return
 		}
-		slog.Error("Failed to create user", slog.String("err", err.Error()))
+		slog.ErrorContext(r.Context(), "Failed to create user", slog.String("err", err.Error()))
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -232,7 +232,7 @@ func (s *Service) handleToken(w http.ResponseWriter, r *http.Request) {
 	session := s.newSession(ctx, uuid.Nil)
 	accessRequest, err := s.oauth2Provider.NewAccessRequest(ctx, r, session)
 	if err != nil {
-		slog.Debug("Access request rejected", slog.String("err", err.Error()))
+		slog.DebugContext(ctx, "Access request rejected", slog.String("err", err.Error()))
 		s.oauth2Provider.WriteAccessError(ctx, w, accessRequest, err)
 		return
 	}
@@ -243,7 +243,7 @@ func (s *Service) handleToken(w http.ResponseWriter, r *http.Request) {
 
 	response, err := s.oauth2Provider.NewAccessResponse(ctx, accessRequest)
 	if err != nil {
-		slog.Debug("Access response failed", slog.String("err", err.Error()))
+		slog.DebugContext(ctx, "Access response failed", slog.String("err", err.Error()))
 		s.oauth2Provider.WriteAccessError(ctx, w, accessRequest, err)
 		return
 	}
@@ -260,14 +260,14 @@ func (s *Service) applyRoles(ctx context.Context, session *jwtSession) {
 	}
 	userId, err := uuid.Parse(subject)
 	if err != nil {
-		slog.Error("Session subject is not a uuid", slog.String("err", err.Error()))
+		slog.ErrorContext(ctx, "Session subject is not a uuid", slog.String("err", err.Error()))
 		return
 	}
 	roles, err := s.db.GetUserRoles(ctx, userId)
 	if err != nil {
 		// Отсутствие ролей не повод не выдавать токен: пользователь просто
 		// получит права по умолчанию.
-		slog.Error("Can't load user roles", slog.String("err", err.Error()))
+		slog.ErrorContext(ctx, "Can't load user roles", slog.String("err", err.Error()))
 		return
 	}
 	if len(roles) == 0 {
@@ -298,7 +298,7 @@ func (s *Service) protect(protected http.HandlerFunc) http.HandlerFunc {
 		_, requester, err := s.oauth2Provider.IntrospectToken(
 			r.Context(), token, fosite.AccessToken, s.newSession(r.Context(), uuid.Nil))
 		if err != nil {
-			slog.Debug("Token introspection failed", slog.String("err", err.Error()))
+			slog.DebugContext(r.Context(), "Token introspection failed", slog.String("err", err.Error()))
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -346,7 +346,7 @@ func (s *Service) authorizeAdmin(r *http.Request) bool {
 
 func (s *Service) handleRotateKeys(w http.ResponseWriter, r *http.Request) {
 	if !s.authorizeAdmin(r) {
-		slog.Warn("Unauthorized key rotation attempt",
+		slog.WarnContext(r.Context(), "Unauthorized key rotation attempt",
 			slog.String("remote", r.RemoteAddr))
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -364,7 +364,7 @@ func (s *Service) handleRotateKeys(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.keyManager.RotateKeys(r.Context()); err != nil {
-		slog.Error("Failed to rotate keys", slog.String("err", err.Error()))
+		slog.ErrorContext(r.Context(), "Failed to rotate keys", slog.String("err", err.Error()))
 		http.Error(w, "Can't rotate keys", http.StatusInternalServerError)
 		return
 	}
@@ -379,7 +379,7 @@ func (s *Service) handleRevoke(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	err := s.oauth2Provider.NewRevocationRequest(ctx, r)
 	if err != nil {
-		slog.Debug("Revocation request rejected", slog.String("err", err.Error()))
+		slog.DebugContext(ctx, "Revocation request rejected", slog.String("err", err.Error()))
 	}
 	s.oauth2Provider.WriteRevocationResponse(ctx, w, err)
 }
@@ -392,7 +392,7 @@ func (s *Service) newSession(ctx context.Context, userId uuid.UUID) *jwtSession 
 	// Без kid проверяющая сторона не знает, каким ключом из JWKS проверять
 	// подпись, и отвергает корректный токен.
 	if kid, err := s.keyManager.GetPublicKeyId(ctx); err != nil {
-		slog.Error("Can't resolve signing key id", slog.String("err", err.Error()))
+		slog.ErrorContext(ctx, "Can't resolve signing key id", slog.String("err", err.Error()))
 	} else if kid != "" {
 		headers.Add("kid", kid)
 	}

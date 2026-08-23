@@ -35,7 +35,7 @@ func registerHttpHandlers(db Database) http.Handler {
 			return
 		}
 		if err != nil {
-			slog.Error("Get credit", slog.String("id", id), slog.String("err", err.Error()))
+			slog.ErrorContext(r.Context(), "Get credit", slog.String("id", id), slog.String("err", err.Error()))
 			http.Error(w, "Can't load credit", http.StatusInternalServerError)
 			return
 		}
@@ -43,21 +43,21 @@ func registerHttpHandlers(db Database) http.Handler {
 		// отдаётся как несуществующий: 403 подтвердил бы, что он есть,
 		// и оставил бы возможность перебора.
 		if !operator.CanActOnBehalfOf(c.UserId) && c.CreatorId != operator.Id {
-			slog.Warn("Attempt to read foreign credit schedule",
+			slog.WarnContext(r.Context(), "Attempt to read foreign credit schedule",
 				slog.String("id", id), slog.String("operator", operator.Id.String()))
 			http.Error(w, "Not found", http.StatusNotFound)
 			return
 		}
 		payments, err := monthPaymentCalculation(*c)
 		if err != nil {
-			slog.Error("Payment calculation", slog.String("id", id), slog.String("err", err.Error()))
+			slog.ErrorContext(r.Context(), "Payment calculation", slog.String("id", id), slog.String("err", err.Error()))
 			http.Error(w, "Can't calculate payment schedule", http.StatusUnprocessableEntity)
 			return
 		}
 		w.Header().Set("X-Credit-Id", id)
 		w.Header().Set("Content-Type", "application/json")
 		if err = json.NewEncoder(w).Encode(payments); err != nil {
-			slog.Error("Encode json", slog.String("id", id), slog.String("err", err.Error()))
+			slog.ErrorContext(r.Context(), "Encode json", slog.String("id", id), slog.String("err", err.Error()))
 			return
 		}
 	})
@@ -74,12 +74,12 @@ func createCredit(db Database, w http.ResponseWriter, r *http.Request) {
 
 	c, err := services.DecodeJSON[credit.CreateCredit](w, r)
 	if err != nil {
-		slog.Error("Failed decoding credit", slog.String("error", err.Error()))
+		slog.ErrorContext(r.Context(), "Failed decoding credit", slog.String("error", err.Error()))
 		services.WriteDecodeError(w, err)
 		return
 	}
 	if err = c.Validate(); err != nil {
-		slog.Debug("Credit validation failed",
+		slog.DebugContext(r.Context(), "Credit validation failed",
 			slog.String("credit", c.String()), slog.String("reason", err.Error()))
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -89,7 +89,7 @@ func createCredit(db Database, w http.ResponseWriter, r *http.Request) {
 	// (user_id + creator_id), но роли оператора в системе не было:
 	// любой пользователь мог оформить кредит на любого другого.
 	if !operator.CanActOnBehalfOf(c.UserId) {
-		slog.Warn("Attempt to issue credit to another user without operator role",
+		slog.WarnContext(r.Context(), "Attempt to issue credit to another user without operator role",
 			slog.String("operator", operator.Id.String()))
 		http.Error(w, "Issuing a credit to another user requires the operator role",
 			http.StatusForbidden)
@@ -102,7 +102,7 @@ func createCredit(db Database, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		slog.Error("Failed to create credit",
+		slog.ErrorContext(r.Context(), "Failed to create credit",
 			slog.String("credit", c.String()),
 			slog.String("error", err.Error()))
 		http.Error(w, "Can't create credit", http.StatusInternalServerError)

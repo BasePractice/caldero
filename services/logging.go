@@ -1,7 +1,9 @@
 package services
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -12,7 +14,33 @@ import (
 	"github.com/lmittmann/tint"
 	"github.com/mattn/go-colorable"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/otel/trace"
 )
+
+// traceHandler добавляет к записи идентификаторы трассы. Без них лог и трасса
+// живут отдельно, и по записи в Kibana нельзя перейти к тому, что происходило
+// в этом же запросе.
+type traceHandler struct {
+	slog.Handler
+}
+
+func (h traceHandler) Handle(ctx context.Context, record slog.Record) error {
+	if span := trace.SpanContextFromContext(ctx); span.IsValid() {
+		record.AddAttrs(
+			slog.String("trace_id", span.TraceID().String()),
+			slog.String("span_id", span.SpanID().String()),
+		)
+	}
+	return h.Handler.Handle(ctx, record)
+}
+
+func (h traceHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return traceHandler{h.Handler.WithAttrs(attrs)}
+}
+
+func (h traceHandler) WithGroup(name string) slog.Handler {
+	return traceHandler{h.Handler.WithGroup(name)}
+}
 
 func DefineLogging(cfg Config) (*slog.Logger, error) {
 	level := slog.LevelDebug
@@ -28,7 +56,9 @@ func DefineLogging(cfg Config) (*slog.Logger, error) {
 		if err != nil {
 			return nil, fmt.Errorf("opening log file %q: %w", cfg.LogFile, err)
 		}
-		handler = slog.NewJSONHandler(file, opts)
+		// Запись идёт и в файл, и в stdout: файл читает сборщик логов,
+		// а stdout нужен, чтобы docker compose logs продолжал работать.
+		handler = slog.NewJSONHandler(io.MultiWriter(os.Stdout, file), opts)
 	case cfg.LogColor:
 		handler = tint.NewHandler(colorable.NewColorable(os.Stdout), &tint.Options{
 			Level:      level,
@@ -39,7 +69,7 @@ func DefineLogging(cfg Config) (*slog.Logger, error) {
 		handler = slog.NewTextHandler(os.Stdout, opts)
 	}
 
-	logger := slog.New(handler)
+	logger := slog.New(traceHandler{handler})
 	slog.SetDefault(logger)
 	return logger, nil
 }
@@ -56,6 +86,7 @@ func DefineMetrics(cfg Config) {
 			slog.Error("Error registering statsviz", slog.String("err", err.Error()))
 		}
 	}
+
 	addr := ":" + strconv.Itoa(cfg.MetricsPort)
 	// Явный сервер, а не http.ListenAndServe: тот не даёт задать таймауты,
 	// и служебный порт остаётся уязвим к медленным соединениям.

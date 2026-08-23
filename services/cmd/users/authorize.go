@@ -62,7 +62,7 @@ func (s *Service) handleAuthorization(w http.ResponseWriter, r *http.Request) {
 
 	authorizeRequest, err := s.oauth2Provider.NewAuthorizeRequest(ctx, r)
 	if err != nil {
-		slog.Debug("Authorize request rejected", slog.String("err", err.Error()))
+		slog.DebugContext(ctx, "Authorize request rejected", slog.String("err", err.Error()))
 		s.oauth2Provider.WriteAuthorizeError(ctx, w, authorizeRequest, err)
 		return
 	}
@@ -89,14 +89,14 @@ func (s *Service) handleAuthorization(w http.ResponseWriter, r *http.Request) {
 			s.renderLogin(w, page, http.StatusUnauthorized)
 			return
 		}
-		slog.Error("Authentication failed", slog.String("err", err.Error()))
+		slog.ErrorContext(ctx, "Authentication failed", slog.String("err", err.Error()))
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	userId, err := uuid.Parse(subject)
 	if err != nil {
-		slog.Error("Authenticated subject is not a uuid", slog.String("err", err.Error()))
+		slog.ErrorContext(ctx, "Authenticated subject is not a uuid", slog.String("err", err.Error()))
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -115,7 +115,7 @@ func (s *Service) handleAuthorization(w http.ResponseWriter, r *http.Request) {
 
 	response, err := s.oauth2Provider.NewAuthorizeResponse(ctx, authorizeRequest, session)
 	if err != nil {
-		slog.Debug("Authorize response failed", slog.String("err", err.Error()))
+		slog.DebugContext(ctx, "Authorize response failed", slog.String("err", err.Error()))
 		s.oauth2Provider.WriteAuthorizeError(ctx, w, authorizeRequest, err)
 		return
 	}

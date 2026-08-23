@@ -89,14 +89,17 @@ services:
     volumes:
       - ./config/logstash/logstash.conf:/usr/share/logstash/pipeline/logstash.conf
     command: [ "-f", "/usr/share/logstash/pipeline/logstash.conf" ]
-#  filebeat:
-#    image: elastic/filebeat:8.17.5
-#    depends_on:
-#      logstash:
-#        condition: service_started
-#    volumes:
-#      - ./config/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml
-#      - ./.logs:/logs
+  filebeat:
+    image: elastic/filebeat:8.18.0
+    # Конфигурация должна принадлежать root и быть недоступной на запись
+    # другим — иначе filebeat отказывается её читать.
+    user: root
+    command: [ "filebeat", "-e", "--strict.perms=false" ]
+    depends_on:
+      - logstash
+    volumes:
+      - ./config/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - ./.logs:/logs:ro
   prometheus:
     image: prom/prometheus
     volumes:
@@ -191,7 +194,7 @@ services:
       LOG_COLOR: "false"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}
       OTEL_TRACES_SAMPLER_ARG: ${OTEL_TRACES_SAMPLER_ARG:-1.0}
-#      LOG_FILE: /logs/wallet.log
+      LOG_FILE: /logs/wallet.log
     volumes:
       - ./.logs/wallet:/logs
   credit:
@@ -224,7 +227,7 @@ services:
       LOG_COLOR: "false"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}
       OTEL_TRACES_SAMPLER_ARG: ${OTEL_TRACES_SAMPLER_ARG:-1.0}
-#      LOG_FILE: /logs/credit.log
+      LOG_FILE: /logs/credit.log
     volumes:
       - ./.logs/credit:/logs
   users:
@@ -261,7 +264,7 @@ services:
       OAUTH2_ISSUER: ${OAUTH2_ISSUER:-http://localhost:8080/api/v1}
       ADMIN_TOKEN: ${ADMIN_TOKEN:-}
       KEY_MASTER_KEY: ${KEY_MASTER_KEY:-}
-#      LOG_FILE: /logs/users.log
+      LOG_FILE: /logs/users.log
     volumes:
       - ./.logs/users:/logs
   account:
@@ -294,6 +297,6 @@ services:
       LOG_COLOR: "false"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}
       OTEL_TRACES_SAMPLER_ARG: ${OTEL_TRACES_SAMPLER_ARG:-1.0}
-    #      LOG_FILE: /logs/users.log
+      LOG_FILE: /logs/account.log
     volumes:
       - ./.logs/account:/logs
