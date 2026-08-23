@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 )
 
@@ -117,6 +118,32 @@ type Config struct {
 	// одному пользователю в один канал за окно. Ноль снимает ограничение.
 	NotifyRateLimit  int
 	NotifyRateWindow time.Duration
+
+	// ServiceUserId — от чьего имени сервисы вызывают друг друга там, где
+	// нужна роль оператора: публикация оповещения чужому пользователю,
+	// чтение чужого кошелька. Это не человек, а идентификатор источника
+	// в логах; границу держит то, что порты сервисов не опубликованы.
+	ServiceUserId uuid.UUID
+	// NotifyEndpoint — адрес сервиса оповещений. Пустое значение выключает
+	// оповещения: операция проходит, сообщение не отправляется.
+	NotifyEndpoint string
+
+	// MarketplaceProviders — подключённые торговые площадки. STUB означает
+	// заглушку для локального стенда: доступа к API площадок нет (ADR 0004).
+	MarketplaceProviders []string
+	// MarketplaceCacheTTL — сколько живёт карточка товара в кэше.
+	MarketplaceCacheTTL time.Duration
+
+	// WishlistReservationTTL — на сколько подарок резервируется за дарителем.
+	// Без срока брошенный резерв блокирует подарок навсегда.
+	WishlistReservationTTL time.Duration
+	// WishlistReleaseInterval — как часто освобождать просроченные резервы.
+	// Ноль отключает освобождение.
+	WishlistReleaseInterval time.Duration
+	// FeeWalletId — кошелёк, на который удерживается комиссия. Пустое
+	// значение означает, что комиссия не удерживается: списывать её
+	// «в никуда» значило бы нарушить сходимость средств в системе.
+	FeeWalletId uuid.UUID
 
 	// DebugStatsviz открывает страницу состояния рантайма на порту метрик.
 	// По умолчанию выключено: страница не аутентифицирована.
@@ -277,12 +304,7 @@ func LoadConfig() (Config, error) {
 	cfg.NotifyTelegramToken = env("NOTIFY_TELEGRAM_TOKEN", "")
 	cfg.NotifyTelegramBot = env("NOTIFY_TELEGRAM_BOT", "")
 	cfg.NotifyTelegramAPI = env("NOTIFY_TELEGRAM_API", "")
-	if origins := env("NOTIFY_WS_ORIGINS", ""); origins != "" {
-		cfg.NotifyWebSocketOrigins = strings.Split(origins, ",")
-		for i, origin := range cfg.NotifyWebSocketOrigins {
-			cfg.NotifyWebSocketOrigins[i] = strings.TrimSpace(origin)
-		}
-	}
+	cfg.NotifyWebSocketOrigins = splitList(env("NOTIFY_WS_ORIGINS", ""))
 
 	bindingTTL, err := time.ParseDuration(env("NOTIFY_BINDING_CODE_TTL", "15m"))
 	if err != nil {
@@ -305,6 +327,46 @@ func LoadConfig() (Config, error) {
 	}
 	cfg.NotifyRateWindow = rateWindow
 
+	if id := env("SERVICE_USER_ID", ""); id != "" {
+		serviceUser, err := uuid.Parse(id)
+		if err != nil {
+			return Config{}, fmt.Errorf("parsing SERVICE_USER_ID: %w", err)
+		}
+		cfg.ServiceUserId = serviceUser
+	}
+	cfg.NotifyEndpoint = env("NOTIFY_ENDPOINT", "")
+
+	cfg.MarketplaceProviders = splitList(env("MARKETPLACE_PROVIDERS", "STUB"))
+
+	marketplaceTTL, err := time.ParseDuration(env("MARKETPLACE_CACHE_TTL", "10m"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing MARKETPLACE_CACHE_TTL: %w", err)
+	}
+	cfg.MarketplaceCacheTTL = marketplaceTTL
+
+	reservationTTL, err := time.ParseDuration(env("WISHLIST_RESERVATION_TTL", "72h"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing WISHLIST_RESERVATION_TTL: %w", err)
+	}
+	if reservationTTL <= 0 {
+		return Config{}, fmt.Errorf("WISHLIST_RESERVATION_TTL must be positive, got %s", reservationTTL)
+	}
+	cfg.WishlistReservationTTL = reservationTTL
+
+	wishlistRelease, err := time.ParseDuration(env("WISHLIST_RELEASE_INTERVAL", "5m"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing WISHLIST_RELEASE_INTERVAL: %w", err)
+	}
+	cfg.WishlistReleaseInterval = wishlistRelease
+
+	if id := env("FEE_WALLET_ID", ""); id != "" {
+		feeWallet, err := uuid.Parse(id)
+		if err != nil {
+			return Config{}, fmt.Errorf("parsing FEE_WALLET_ID: %w", err)
+		}
+		cfg.FeeWalletId = feeWallet
+	}
+
 	connLifetime, err := time.ParseDuration(env("DB_CONN_MAX_LIFETIME", "30m"))
 	if err != nil {
 		return Config{}, fmt.Errorf("parsing DB_CONN_MAX_LIFETIME: %w", err)
@@ -312,6 +374,18 @@ func LoadConfig() (Config, error) {
 	cfg.DBConnMaxLifetime = connLifetime
 
 	return cfg, nil
+}
+
+// splitList разбирает список значений, разделённых запятой.
+func splitList(value string) []string {
+	if value == "" {
+		return nil
+	}
+	items := strings.Split(value, ",")
+	for i, item := range items {
+		items[i] = strings.TrimSpace(item)
+	}
+	return items
 }
 
 func env(key, defaultValue string) string {

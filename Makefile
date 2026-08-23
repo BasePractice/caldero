@@ -1,6 +1,6 @@
 # Пути к инструментам берутся из PATH: в прежних build.sh и build.cmd они были
 # захардкожены под конкретные машины.
-SERVICES := wallet credit account users notify
+SERVICES := wallet credit account users notify wishlist
 BIN      := .bin
 GOFLAGS  := -trimpath
 VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
@@ -85,7 +85,7 @@ down: ## Остановить стенд
 	docker compose down
 
 logs: ## Логи сервисов
-	docker compose logs -f wallet credit account users notify
+	docker compose logs -f wallet credit account users notify wishlist
 
 migrate-status: ## Показать применённые версии схем
 	@for s in $(SERVICES); do \

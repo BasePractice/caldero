@@ -1,0 +1,153 @@
+### Добавление товара в список желаний
+POST {{wishlist.url}}/wishlist/items
+Content-Type: application/json
+X-Authorized-Id: {{user_id}}
+
+{
+  "kind": "PRODUCT",
+  "priority": 1,
+  "provider": "STUB",
+  "product_id": "coffee-machine",
+  "comment": "Давно хотел"
+}
+
+> {%
+    client.assert(response.status === 201, "Элемент не создан: " + response.status)
+    client.assert(response.body.price > 0, "Цена не взята из карточки площадки")
+    client.assert(response.body.state === "VISIBLE", "Новый элемент должен быть виден")
+    client.global.set("item_id", response.body.id)
+%}
+
+### Цена и название от клиента не принимаются
+POST {{wishlist.url}}/wishlist/items
+Content-Type: application/json
+X-Authorized-Id: {{user_id}}
+
+{
+  "kind": "PRODUCT",
+  "priority": 1,
+  "provider": "STUB",
+  "product_id": "coffee-machine",
+  "price": 1
+}
+
+> {%
+    client.assert(response.status === 400, "Цена из запроса должна отклоняться")
+%}
+
+### Денежный элемент списка
+POST {{wishlist.url}}/wishlist/items
+Content-Type: application/json
+X-Authorized-Id: {{user_id}}
+
+{
+  "kind": "MONEY",
+  "priority": 2,
+  "amount": 3000000,
+  "title": "На велосипед"
+}
+
+> {%
+    client.assert(response.status === 201, "Денежный элемент не создан: " + response.status)
+    client.global.set("money_item_id", response.body.id)
+%}
+
+### Свой список
+GET {{wishlist.url}}/wishlist/items
+Accept: application/json
+X-Authorized-Id: {{user_id}}
+
+> {%
+    client.assert(response.status === 200, "Список не отдан")
+    client.assert(response.body.length >= 2, "В списке меньше элементов, чем добавлено")
+%}
+
+### Чужой список: видно только то, что владелец готов принять
+GET {{wishlist.url}}/wishlist/{{user_id}}/items
+Accept: application/json
+X-Authorized-Id: 00000000-0000-0000-0000-000000000002
+
+> {%
+    client.assert(response.status === 200, "Чужой список не отдан")
+    response.body.forEach(function (item) {
+        client.assert(item.state === "VISIBLE", "В чужом списке виден элемент в состоянии " + item.state)
+        client.assert(item.giver_id === undefined, "Чужому видно, кто выбрал подарок")
+    })
+%}
+
+### Свой подарок зарезервировать нельзя
+POST {{wishlist.url}}/wishlist/items/{{item_id}}/reserve
+X-Authorized-Id: {{user_id}}
+
+> {%
+    client.assert(response.status === 403, "Резерв собственного подарка должен запрещаться")
+%}
+
+### Даритель резервирует подарок
+POST {{wishlist.url}}/wishlist/items/{{item_id}}/reserve
+X-Authorized-Id: 00000000-0000-0000-0000-000000000002
+
+> {%
+    client.assert(response.status === 200, "Резерв не поставлен: " + response.status)
+    client.assert(response.body.state === "CHOSEN", "Состояние после резерва: " + response.body.state)
+    client.assert(response.body.reserved_until !== undefined, "Резерв без срока")
+%}
+
+### Второй даритель того же подарка уже не видит
+POST {{wishlist.url}}/wishlist/items/{{item_id}}/reserve
+X-Authorized-Id: 00000000-0000-0000-0000-000000000003
+
+> {%
+    client.assert(response.status === 404, "Выбранный подарок не должен быть доступен другим")
+%}
+
+### Акцепт до подтверждения невозможен
+POST {{wishlist.url}}/wishlist/items/{{item_id}}/accept
+X-Authorized-Id: 00000000-0000-0000-0000-000000000002
+
+> {%
+    client.assert(response.status === 409, "Акцепт без подтверждения должен отклоняться")
+%}
+
+### Одаряемый подтверждает дарение
+POST {{wishlist.url}}/wishlist/items/{{item_id}}/confirm
+X-Authorized-Id: {{user_id}}
+
+> {%
+    client.assert(response.status === 200, "Подтверждение не прошло: " + response.status)
+    client.assert(response.body.state === "CONFIRMED", "Состояние: " + response.body.state)
+%}
+
+### Даритель акцептует подарок
+POST {{wishlist.url}}/wishlist/items/{{item_id}}/accept
+X-Authorized-Id: 00000000-0000-0000-0000-000000000002
+
+> {%
+    client.assert(response.status === 200, "Акцепт не прошёл: " + response.status)
+    client.assert(response.body.state === "ACCEPTED", "Состояние: " + response.body.state)
+%}
+
+### Акцептованный подарок больше не меняется
+POST {{wishlist.url}}/wishlist/items/{{item_id}}/cancel
+X-Authorized-Id: 00000000-0000-0000-0000-000000000002
+
+> {%
+    client.assert(response.status === 409, "Терминальное состояние не должно меняться")
+%}
+
+### Выбранные мной подарки
+GET {{wishlist.url}}/wishlist/chosen
+Accept: application/json
+X-Authorized-Id: 00000000-0000-0000-0000-000000000002
+
+> {%
+    client.assert(response.status === 200, "Список выбранного не отдан")
+%}
+
+### Удаление денежного элемента
+DELETE {{wishlist.url}}/wishlist/items/{{money_item_id}}
+X-Authorized-Id: {{user_id}}
+
+> {%
+    client.assert(response.status === 204, "Элемент не удалён: " + response.status)
+%}

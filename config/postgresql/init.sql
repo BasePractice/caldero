@@ -10,3 +10,4 @@ CREATE SCHEMA credit;
 CREATE SCHEMA account;
 CREATE SCHEMA users;
 CREATE SCHEMA notify;
+CREATE SCHEMA wishlist;

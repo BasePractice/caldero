@@ -21,6 +21,11 @@ const (
 	EventWishlistItemReserved EventType = "WISHLIST_ITEM_RESERVED"
 	// EventWishlistItemGifted — подарок вручён.
 	EventWishlistItemGifted EventType = "WISHLIST_ITEM_GIFTED"
+	// EventWishlistItemConfirmed — одаряемый согласился принять подарок.
+	// Адресуется дарителю: это ему решать, что делать дальше.
+	EventWishlistItemConfirmed EventType = "WISHLIST_ITEM_CONFIRMED"
+	// EventWishlistItemRejected — одаряемый отказался от подарка.
+	EventWishlistItemRejected EventType = "WISHLIST_ITEM_REJECTED"
 	// EventCaldronMemberAdded — пользователя добавили в котёл.
 	EventCaldronMemberAdded EventType = "CALDRON_MEMBER_ADDED"
 	// EventCaldronStateChanged — котёл сменил состояние.
@@ -38,6 +43,8 @@ func EventTypes() []EventType {
 	return []EventType{
 		EventWishlistItemReserved,
 		EventWishlistItemGifted,
+		EventWishlistItemConfirmed,
+		EventWishlistItemRejected,
 		EventCaldronMemberAdded,
 		EventCaldronStateChanged,
 		EventCaldronDrawResult,

@@ -47,6 +47,7 @@ graph TB
         account["account<br/>счета"]
         wallet["wallet<br/>кошельки и транзакции<br/>gRPC"]
         notify["notify<br/>оповещения<br/>очередь доставки"]
+        wishlist["wishlist<br/>списки желаний<br/>резервы подарков"]
     end
 
     subgraph data["Данные"]
@@ -56,6 +57,7 @@ graph TB
 
     subgraph ext["Внешние системы"]
         telegram["Telegram Bot API"]
+        market["Маркетплейсы<br/>заглушка на стенде"]
     end
 
     subgraph obs["Наблюдаемость"]
@@ -69,6 +71,7 @@ graph TB
     gateway --> credit
     gateway --> account
     gateway --> notify
+    gateway --> wishlist
 
     users --> pg
     credit --> pg
@@ -78,6 +81,11 @@ graph TB
     notify --> pg
     notify --> redis
     notify -->|"Bot API"| telegram
+    wishlist --> pg
+    wishlist --> redis
+    wishlist -->|"gRPC"| wallet
+    wishlist -->|"HTTP"| notify
+    wishlist --> market
 
     svc -.->|метрики| prometheus
     svc -.->|трассы| jaeger
@@ -112,6 +120,11 @@ sequenceDiagram
     Cr-->>C: 201
 ```
 
+Тем же путём идёт денежный подарок: список желаний вызывает кошелёк
+от имени дарителя, а комиссию удерживает вторым переводом — уже после
+того, как подарок дошёл. Не удержанная комиссия остаётся потерей системы,
+а не пользователя.
+
 Распределённой транзакции здесь нет и быть не может: разные сервисы,
 разные базы. Порядок выбран так, чтобы худший исход был безопасным —
 сначала списание, затем запись. Если запись не удалась, повтор с тем же
@@ -126,6 +139,7 @@ sequenceDiagram
 | `account` | счета | `account` | HTTP |
 | `wallet` | кошельки, транзакции | `wallet` | gRPC |
 | `notify` | события, очередь доставки, лента сообщений, привязки мессенджеров | `notify` | HTTP, WebSocket |
+| `wishlist` | элементы списков желаний, резервы, состояния подарков | `wishlist` | HTTP |
 
 Правило одно: в чужую схему не ходит никто. Данные другого сервиса
 запрашиваются его методами, а не запросом в его таблицы.

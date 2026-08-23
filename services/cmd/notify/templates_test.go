@@ -11,13 +11,15 @@ import (
 // для каждого типа события. Тест держит их рядом с шаблонами: иначе
 // расхождение обнаружится в момент доставки, а не при сборке.
 var payloads = map[notify.EventType]map[string]string{
-	notify.EventWishlistItemReserved: {"item": "Кофеварка"},
-	notify.EventWishlistItemGifted:   {"item": "Кофеварка"},
-	notify.EventCaldronMemberAdded:   {"caldron": "День рождения", "amount": "1500"},
-	notify.EventCaldronStateChanged:  {"caldron": "День рождения", "state": "готов к розыгрышу"},
-	notify.EventCaldronDrawResult:    {"caldron": "День рождения", "winner": "Пётр"},
-	notify.EventPaymentSettled:       {"amount": "1500", "status": "успешно"},
-	notify.EventConfirmationCode:     {"code": "123456", "minutes": "15"},
+	notify.EventWishlistItemReserved:  {"item": "Кофеварка"},
+	notify.EventWishlistItemGifted:    {"item": "Кофеварка"},
+	notify.EventWishlistItemConfirmed: {"item": "Кофеварка"},
+	notify.EventWishlistItemRejected:  {"item": "Кофеварка"},
+	notify.EventCaldronMemberAdded:    {"caldron": "День рождения", "amount": "1500"},
+	notify.EventCaldronStateChanged:   {"caldron": "День рождения", "state": "готов к розыгрышу"},
+	notify.EventCaldronDrawResult:     {"caldron": "День рождения", "winner": "Пётр"},
+	notify.EventPaymentSettled:        {"amount": "1500", "status": "успешно"},
+	notify.EventConfirmationCode:      {"code": "123456", "minutes": "15"},
 }
 
 func TestTemplatesCoverAllEvents(t *testing.T) {
