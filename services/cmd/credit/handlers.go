@@ -56,7 +56,12 @@ func registerHttpHandlers(ctx context.Context, db Database) http.Handler {
 			http.Error(w, "Not found", http.StatusNotFound)
 			return
 		}
-		payments := mothPaymentCalculation(*c)
+		payments, err := monthPaymentCalculation(*c)
+		if err != nil {
+			slog.Error("Payment calculation", slog.String("id", id), slog.String("err", err.Error()))
+			http.Error(w, "Can't calculate payment schedule", http.StatusUnprocessableEntity)
+			return
+		}
 		w.Header().Set("X-Credit-Id", id)
 		w.Header().Set("Content-Type", "application/json")
 		if err = json.NewEncoder(w).Encode(payments); err != nil {

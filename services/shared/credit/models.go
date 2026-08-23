@@ -7,6 +7,10 @@ import (
 	"github.com/google/uuid"
 )
 
+// MaxMonth — верхняя граница срока кредита. Без неё срок задаёт размер
+// среза платежей напрямую и приходит из запроса пользователя.
+const MaxMonth = 600
+
 type Percent uint
 
 type Payment struct {
@@ -18,32 +22,33 @@ type Payment struct {
 }
 
 type Credit struct {
-	UserId       uuid.UUID
-	CreatorId    uuid.UUID
-	Type         string
-	Kind         string
-	Month        uint
-	Percent      Percent
-	Balance      uint
-	AlreadyPayed uint
-	CreatedAt    time.Time
-	LastPayedAt  *time.Time
+	UserId      uuid.UUID
+	CreatorId   uuid.UUID
+	Type        string
+	Kind        string
+	Month       uint
+	Percent     Percent
+	Balance     uint
+	AlreadyPaid uint
+	CreatedAt   time.Time
+	LastPaidAt  *time.Time
 }
 
 type CreateCredit struct {
-	UserId       uuid.UUID  `json:"user_id"`
-	Type         string     `json:"type" default:"SIMPLE"`
-	Kind         string     `json:"kind" default:"ANN"`
-	Month        uint       `json:"month" default:"6"`
-	Percent      Percent    `json:"percent" default:"10"`
-	Balance      uint       `json:"balance"`
-	AlreadyPayed uint       `json:"already_payed"`
-	CreatedAt    time.Time  `json:"created_at"`
-	LastPayedAt  *time.Time `json:"last_payed_at"`
+	UserId      uuid.UUID  `json:"user_id"`
+	Type        string     `json:"type" default:"SIMPLE"`
+	Kind        string     `json:"kind" default:"ANN"`
+	Month       uint       `json:"month" default:"6"`
+	Percent     Percent    `json:"percent" default:"10"`
+	Balance     uint       `json:"balance"`
+	AlreadyPaid uint       `json:"already_payed"`
+	CreatedAt   time.Time  `json:"created_at"`
+	LastPaidAt  *time.Time `json:"last_payed_at"`
 }
 
 func (c CreateCredit) Validate() bool {
-	return c.UserId != uuid.Nil && c.Percent >= 10 && c.Balance > 100 && c.Month > 1
+	return c.UserId != uuid.Nil && c.Percent >= 10 && c.Balance > 100 &&
+		c.Month > 1 && c.Month <= MaxMonth
 }
 
 func (c CreateCredit) String() string {

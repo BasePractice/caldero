@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log/slog"
+	"fmt"
 	"math"
 	"time"
 
@@ -17,35 +17,54 @@ type MonthPayment struct {
 	Percent     uint      `json:"percent"`
 }
 
-func mothPaymentCalculation(credit credit.Credit) []MonthPayment {
-	if credit.Kind == "ANN" {
-		var summ = float64(credit.Balance - credit.AlreadyPayed)
-		var alreadyPaidMonth uint
-		var offset time.Time
-		if credit.LastPayedAt == nil {
-			alreadyPaidMonth = 0
-			offset = time.Now()
-		} else {
-			//FIXME: переделать, примерное значение
-			alreadyPaidMonth = uint(credit.LastPayedAt.Sub(credit.CreatedAt).Hours() / 24 / 30)
-			offset = *credit.LastPayedAt
-		}
-		var needMonth = credit.Month - alreadyPaidMonth
-		var monthPercent = float64(credit.Percent) / 12 / 100
-		var need = (summ * monthPercent * math.Pow(1+monthPercent, float64(needMonth))) /
-			(math.Pow(1+monthPercent, float64(needMonth)) - 1)
-		payments := make([]MonthPayment, needMonth)
-
-		for i := range payments {
-			payments[i] = MonthPayment{
-				ExpiredAt: offset,
-				Value:     uint(need),
-			}
-			offset = offset.AddDate(0, 1, 0)
-		}
-		return payments
-	} else {
-		slog.Warn("credit kind not implement yet", slog.String("kind", credit.Kind))
-		return []MonthPayment{}
+func monthPaymentCalculation(c credit.Credit) ([]MonthPayment, error) {
+	if c.Kind != "ANN" {
+		return nil, fmt.Errorf("credit kind %q is not supported yet", c.Kind)
 	}
+	if c.Month == 0 || c.Month > credit.MaxMonth {
+		return nil, fmt.Errorf("credit term must be between 1 and %d months, got %d",
+			credit.MaxMonth, c.Month)
+	}
+	// При нулевой ставке формула аннуитета вырождается в 0/0.
+	if c.Percent == 0 {
+		return nil, fmt.Errorf("credit percent must be positive")
+	}
+	if c.AlreadyPaid > c.Balance {
+		return nil, fmt.Errorf("paid amount %d exceeds credit balance %d",
+			c.AlreadyPaid, c.Balance)
+	}
+
+	offset := time.Now()
+	var paidMonth uint
+	if c.LastPaidAt != nil {
+		if c.LastPaidAt.Before(c.CreatedAt) {
+			return nil, fmt.Errorf("last payment %s is earlier than credit creation %s",
+				c.LastPaidAt.Format(time.DateOnly), c.CreatedAt.Format(time.DateOnly))
+		}
+		//FIXME: переделать, примерное значение
+		paidMonth = uint(c.LastPaidAt.Sub(c.CreatedAt).Hours() / 24 / 30)
+		offset = *c.LastPaidAt
+	}
+	// Месяцы беззнаковые: без этой проверки вычитание уходит в переполнение,
+	// и make получает порядка 1.8e19 элементов.
+	if paidMonth >= c.Month {
+		return nil, fmt.Errorf("credit term of %d months is over: %d months already paid",
+			c.Month, paidMonth)
+	}
+
+	needMonth := c.Month - paidMonth
+	principal := float64(c.Balance - c.AlreadyPaid)
+	monthPercent := float64(c.Percent) / 12 / 100
+	growth := math.Pow(1+monthPercent, float64(needMonth))
+	need := principal * monthPercent * growth / (growth - 1)
+
+	payments := make([]MonthPayment, needMonth)
+	for i := range payments {
+		payments[i] = MonthPayment{
+			ExpiredAt: offset,
+			Value:     uint(math.Round(need)),
+		}
+		offset = offset.AddDate(0, 1, 0)
+	}
+	return payments, nil
 }
