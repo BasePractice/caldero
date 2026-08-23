@@ -14,12 +14,14 @@ trap cleanup EXIT
 echo "поднимаю $IMAGE"
 docker run -d --name "$CONTAINER" -e POSTGRES_PASSWORD=postgres "$IMAGE" >/dev/null
 
-# pg_isready отвечает утвердительно уже во время initdb, когда сервер поднят
-# временно и только на unix-сокете, — поэтому ждём успешного запроса,
-# а не готовности сокета.
+# Во время initdb сервер поднимается временно и уже принимает соединения
+# по unix-сокету — и pg_isready, и обычный запрос в этот момент проходят,
+# после чего сервер перезапускается и следующая команда падает.
+# Признак настоящей готовности — вторая строка о готовности в логах.
 ready=0
 for _ in $(seq 1 90); do
-    if docker exec -i "$CONTAINER" psql -U postgres -c "SELECT 1" >/dev/null 2>&1; then
+    started=$(docker logs "$CONTAINER" 2>&1 | grep -c "database system is ready to accept connections" || true)
+    if [ "$started" -ge 2 ] && docker exec -i "$CONTAINER" psql -U postgres -c "SELECT 1" >/dev/null 2>&1; then
         ready=1
         break
     fi

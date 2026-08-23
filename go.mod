@@ -1,6 +1,6 @@
 module wish
 
-go 1.25.3
+go 1.25.13
 
 require (
 	github.com/arl/statsviz v0.6.0
