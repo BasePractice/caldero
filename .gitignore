@@ -2,6 +2,16 @@
 .pg
 .prometheus
 .bin
+
+# Бинарники сервисов, собранные в корне: go build без -o кладёт их сюда,
+# и в репозиторий они попадать не должны
+/wallet
+/credit
+/account
+/users
+/notify
+/wishlist
+/caldron
 .logs
 .env
 .env.local
