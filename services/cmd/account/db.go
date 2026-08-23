@@ -22,6 +22,8 @@ type Database interface {
 	Get(ctx context.Context, id uuid.UUID) (*account.Account, error)
 	// Close освобождает соединения с БД
 	Close() error
+	// Stats нужен для публикации метрик пула соединений.
+	Stats() sql.DBStats
 }
 
 type ds struct {
@@ -55,6 +57,10 @@ func (d ds) Get(ctx context.Context, id uuid.UUID) (*account.Account, error) {
 		a.StartedAt = &startedAt.Time
 	}
 	return &a, nil
+}
+
+func (d ds) Stats() sql.DBStats {
+	return d.db.Stats()
 }
 
 func (d ds) Close() error {

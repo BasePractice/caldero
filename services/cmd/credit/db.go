@@ -23,6 +23,8 @@ type Database interface {
 	Get(ctx context.Context, id uuid.UUID) (*credit.Credit, error)
 	// Close освобождает соединения с БД
 	Close() error
+	// Stats нужен для публикации метрик пула соединений.
+	Stats() sql.DBStats
 }
 
 type ds struct {
@@ -66,6 +68,10 @@ func (d ds) Create(ctx context.Context, c credit.CreateCredit, operator *service
 		return uuid.Nil, fmt.Errorf("failed to create credit: %w", err)
 	}
 	return id, nil
+}
+
+func (d ds) Stats() sql.DBStats {
+	return d.db.Stats()
 }
 
 func (d ds) Close() error {

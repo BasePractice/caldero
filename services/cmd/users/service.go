@@ -126,6 +126,11 @@ func (s *Service) CleanupExpiredTokens(ctx context.Context) error {
 	return nil
 }
 
+// Stats отдаёт состояние пула соединений для метрик.
+func (s *Service) Stats() services.StatsProvider {
+	return s.db
+}
+
 // Close освобождает ресурсы сервиса.
 func (s *Service) Close() error {
 	return s.db.Close()

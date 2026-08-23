@@ -55,6 +55,8 @@ type DatabaseUsers interface {
 	CreateClient(ctx context.Context, clientId, clientSecret, redirectUri, scopes, responseType, grantTypes string) error
 	// Close освобождает соединения с БД
 	Close() error
+	// Stats нужен для публикации метрик пула соединений.
+	Stats() sql.DBStats
 }
 
 type ds struct {
@@ -605,6 +607,10 @@ func (s *ds) SetClientAssertionJWT(ctx context.Context, jti string, exp time.Tim
 
 func splitCSV(input string) []string {
 	return strings.Split(input, ",")
+}
+
+func (s *ds) Stats() sql.DBStats {
+	return s.db.Stats()
 }
 
 func (s *ds) Close() error {

@@ -58,6 +58,7 @@
 | **T-028** | `.dockerignore` |
 | **T-029** | `Makefile` вместо `build.sh` / `build.cmd` с хардкодом путей |
 | **T-030** | CI: build, vet, test `-race`, gofmt, golangci-lint, `go mod tidy -diff`, govulncheck |
+| **T-070** | Проверка прогона CI на GitHub и настройка доставки (CD) |
 | **T-031** | Секреты из `docker-compose.yml` и Grafana в `.env` |
 
 ## Блок E. Качество, тесты, наблюдаемость

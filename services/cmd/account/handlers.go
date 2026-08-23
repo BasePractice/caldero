@@ -9,30 +9,17 @@ import (
 	"wish/services/shared/account"
 
 	"github.com/google/uuid"
-
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-)
-
-var (
-	accountCreateCounter = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "account_create_counter",
-		Help: "Number of Create calls",
-	})
 )
 
 func registerHttpHandlers(db Database) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /account", func(w http.ResponseWriter, r *http.Request) {
-		accountCreateCounter.Inc()
 		createAccount(db, w, r)
 	})
 	mux.HandleFunc("GET /account/{id}", func(w http.ResponseWriter, r *http.Request) {
 		getAccount(db, w, r)
 	})
-	prometheus.MustRegister(accountCreateCounter)
-	mux.HandleFunc("GET /metrics", promhttp.Handler().ServeHTTP)
-	return mux
+	return services.Measure("account", mux)
 }
 
 func createAccount(db Database, w http.ResponseWriter, r *http.Request) {

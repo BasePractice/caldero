@@ -11,6 +11,7 @@ import (
 	"github.com/arl/statsviz"
 	"github.com/lmittmann/tint"
 	"github.com/mattn/go-colorable"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func DefineLogging(cfg Config) (*slog.Logger, error) {
@@ -43,17 +44,17 @@ func DefineLogging(cfg Config) (*slog.Logger, error) {
 	return logger, nil
 }
 
-// DefineMetrics поднимает служебный порт. Пока на нём живёт только statsviz,
-// который публикует внутреннее состояние рантайма без аутентификации,
-// поэтому по умолчанию порт не открывается вовсе.
+// DefineMetrics поднимает служебный порт с /metrics. Порт отдельный от
+// публичного: метрики не должны быть доступны снаружи вместе с API.
+// statsviz подключается только при отладке — он публикует внутреннее
+// состояние рантайма без какой-либо аутентификации.
 func DefineMetrics(cfg Config) {
-	if !cfg.DebugStatsviz {
-		return
-	}
 	mux := http.NewServeMux()
-	if err := statsviz.Register(mux); err != nil {
-		slog.Error("Error registering metrics", slog.String("err", err.Error()))
-		return
+	mux.Handle("GET /metrics", promhttp.Handler())
+	if cfg.DebugStatsviz {
+		if err := statsviz.Register(mux); err != nil {
+			slog.Error("Error registering statsviz", slog.String("err", err.Error()))
+		}
 	}
 	addr := ":" + strconv.Itoa(cfg.MetricsPort)
 	// Явный сервер, а не http.ListenAndServe: тот не даёт задать таймауты,

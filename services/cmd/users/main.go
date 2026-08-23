@@ -29,6 +29,7 @@ func main() {
 			return fmt.Errorf("creating service: %w", err)
 		}
 		defer services.Close("service", service)
+		services.RegisterDBStats("users", service.Stats())
 
 		go services.RunPeriodic(ctx, "token-cleanup", cfg.TokenCleanupInterval,
 			service.CleanupExpiredTokens)

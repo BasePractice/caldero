@@ -2,6 +2,8 @@ package main
 
 import (
 	"net/http"
+
+	"wish/services"
 )
 
 func registerHttpHandlers(service *Service) http.Handler {
@@ -15,5 +17,5 @@ func registerHttpHandlers(service *Service) http.Handler {
 	mux.HandleFunc("POST /clients", service.handleCreateClient)
 	mux.HandleFunc("POST /rotate-keys", service.handleRotateKeys)
 	mux.HandleFunc("POST /revoke", service.handleRevoke)
-	return mux
+	return services.Measure("users", mux)
 }

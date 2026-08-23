@@ -10,22 +10,11 @@ import (
 	"wish/services/shared/credit"
 
 	"github.com/google/uuid"
-
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-)
-
-var (
-	creditCreateCounter = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "credit_create_counter",
-		Help: "Number of Create calls",
-	})
 )
 
 func registerHttpHandlers(db Database) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /credit", func(w http.ResponseWriter, r *http.Request) {
-		creditCreateCounter.Inc()
 		createCredit(db, w, r)
 	})
 	mux.HandleFunc("GET /credits/{id}/schedule", func(w http.ResponseWriter, r *http.Request) {
@@ -72,9 +61,8 @@ func registerHttpHandlers(db Database) http.Handler {
 			return
 		}
 	})
-	prometheus.MustRegister(creditCreateCounter)
-	mux.HandleFunc("GET /metrics", promhttp.Handler().ServeHTTP)
-	return mux
+	// /metrics живёт на служебном порту, а не рядом с публичным API.
+	return services.Measure("credit", mux)
 }
 
 func createCredit(db Database, w http.ResponseWriter, r *http.Request) {

@@ -1,41 +1,46 @@
-# my global config
 global:
-  scrape_interval: 5s # Set the scrape interval to every 15 seconds. Default is every 1 minute.
-  evaluation_interval: 5s # Evaluate rules every 15 seconds. The default is every 1 minute.
-  # scrape_timeout is set to the global default (10s).
+  # 15 секунд вместо секунды: прежний интервал был избыточен в 15 раз
+  # и нагружал сервисы ради данных, которые никто не читает так часто.
+  scrape_interval: 15s
+  evaluation_interval: 15s
 
-# Alertmanager configuration
 alerting:
   alertmanagers:
     - static_configs:
         - targets:
           # - alertmanager:9093
 
-# Load rules once and periodically evaluate them according to the global 'evaluation_interval'.
 rule_files:
 # - "first_rules.yml"
-# - "second_rules.yml"
 
-# A scrape configuration containing exactly one endpoint to scrape:
-# Here it's Prometheus itself.
 scrape_configs:
   - job_name: "prometheus"
-    scrape_interval: 5s
     static_configs:
-      - targets: ['localhost:9090']
+      - targets: [ 'localhost:9090' ]
         labels:
           app: "prometheus"
-  - job_name: "credit"
+
+  # Метрики отдаются на служебном порту, а не рядом с публичным API.
+  # Порт наружу не публикуется, но внутри сети compose доступен.
+  - job_name: "wish-services"
     metrics_path: /metrics
-    scrape_interval: 1s
     static_configs:
-      - targets: ['credit:51052']
+      - targets: [ 'wallet:8081' ]
+        labels:
+          app: "wallet"
+      - targets: [ 'credit:8081' ]
         labels:
           app: "credit"
-  - job_name: "account"
-    metrics_path: /metrics
-    scrape_interval: 1s
-    static_configs:
-      - targets: ['account:51054']
+      - targets: [ 'users:8081' ]
+        labels:
+          app: "users"
+      - targets: [ 'account:8081' ]
         labels:
           app: "account"
+
+  - job_name: "krakend"
+    metrics_path: /metrics
+    static_configs:
+      - targets: [ 'krakend:8090' ]
+        labels:
+          app: "krakend"

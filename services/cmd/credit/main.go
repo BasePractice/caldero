@@ -29,6 +29,7 @@ func main() {
 			return err
 		}
 		defer services.Close("database", db)
+		services.RegisterDBStats("credit", db)
 
 		return services.ServeHTTP(ctx, fmt.Sprintf(":%d", *port),
 			registerHttpHandlers(db))

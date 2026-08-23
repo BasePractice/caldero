@@ -21,6 +21,8 @@ type DatabaseWallet interface {
 	Information(ctx context.Context, userId uuid.UUID, cb func(reply *wallet.InformationReply)) error
 	// Close освобождает соединения с БД
 	Close() error
+	// Stats нужен для публикации метрик пула соединений.
+	Stats() sql.DBStats
 }
 
 type ds struct {
@@ -134,6 +136,10 @@ func (d ds) selectWallets(ctx context.Context, userId uuid.UUID, cb func(reply *
 		return false, fmt.Errorf("reading wallets of user %s: %w", userId, err)
 	}
 	return found, nil
+}
+
+func (d ds) Stats() sql.DBStats {
+	return d.db.Stats()
 }
 
 func (d ds) Close() error {
