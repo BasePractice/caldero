@@ -26,3 +26,6 @@ docs/book/*.pdf
 
 # Учётные данные для коллекций запросов
 _requests/http-client.private.env.json
+
+# Профиль покрытия: артефакт прогона тестов
+.cover

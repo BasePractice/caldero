@@ -91,3 +91,39 @@ func TestBreakerIgnoresExpectedErrors(t *testing.T) {
 		t.Errorf("состояние %s, ожидалось closed", breaker.State())
 	}
 }
+
+func TestBreakerStateString(t *testing.T) {
+	tests := []struct {
+		state BreakerState
+		want  string
+	}{
+		{BreakerClosed, "closed"},
+		{BreakerOpen, "open"},
+		{BreakerHalfOpen, "half-open"},
+		{BreakerState(42), "unknown"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.want, func(t *testing.T) {
+			if got := test.state.String(); got != test.want {
+				t.Errorf("получено %q, ожидалось %q", got, test.want)
+			}
+		})
+	}
+}
+
+// TestNewBreakerDefaults: порог меньше единицы и отсутствующий признак
+// отказа приходят из конфигурации, и размыкатель обязан оставаться
+// работоспособным, а не делить на ноль.
+func TestNewBreakerDefaults(t *testing.T) {
+	breaker := NewBreaker("зависимость", 0, time.Minute, nil)
+	if breaker.threshold != 1 {
+		t.Errorf("порог %d, ожидался 1", breaker.threshold)
+	}
+	if breaker.isFailure == nil {
+		t.Fatal("признак отказа не подставлен")
+	}
+	if !breaker.isFailure(errors.New("любая ошибка")) {
+		t.Error("по умолчанию отказом должна считаться любая ошибка")
+	}
+}

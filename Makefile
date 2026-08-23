@@ -2,13 +2,15 @@
 # захардкожены под конкретные машины.
 SERVICES := wallet credit account users notify wishlist caldron web
 BIN      := .bin
+COVER    := .cover
+COVER_MIN ?= 0
 GOFLAGS  := -trimpath
 VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 REVISION ?= $(shell git rev-parse HEAD 2>/dev/null)
 LDFLAGS  := -X wish/services.Version=$(VERSION) -X wish/services.Revision=$(REVISION)
 
 .DEFAULT_GOAL := help
-.PHONY: help build wasm docs docs-check test test-race test-integration lint vet fmt fmt-check tidy-check proto up down logs migrate-status migrate-check vuln bench load-test proto-check images clean save-keycloak-config
+.PHONY: help build wasm docs docs-check test test-race test-integration cover lint vet fmt fmt-check tidy-check proto up down logs migrate-status migrate-check vuln bench load-test proto-check images clean save-keycloak-config
 
 help: ## Показать список целей
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -52,6 +54,14 @@ test-race: ## Прогнать тесты с детектором гонок
 
 test-integration: ## Прогнать интеграционные тесты (нужен docker)
 	go test -race -tags=integration ./...
+
+# Покрытие считается одним прогоном с тегом integration: репозитории покрыты
+# именно интеграционными тестами, и без них картина занижена вдвое. Порог
+# берётся из COVER_MIN, чтобы CI поднимал его по мере роста, не трогая цель.
+cover: ## Посчитать покрытие по объединённому профилю (нужен docker)
+	@mkdir -p $(COVER)
+	go test -tags=integration -coverprofile=$(COVER)/all.out ./...
+	@go run ./tools/cover -profile $(COVER)/all.out -min $(COVER_MIN)
 
 vet: ## go vet
 	go vet ./...

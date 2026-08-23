@@ -8,6 +8,7 @@ package testsupport
 import (
 	"context"
 	"database/sql"
+	"embed"
 	"fmt"
 	"testing"
 	"time"
@@ -22,6 +23,7 @@ import (
 
 const (
 	postgresImage = "postgres:16-alpine"
+	redisImage    = "redis:7-alpine"
 	startupWait   = 60 * time.Second
 )
 
@@ -81,4 +83,48 @@ func Prepare(t *testing.T, schema string) services.Config {
 		DBMaxIdleConns:    2,
 		DBConnMaxLifetime: time.Minute,
 	}
+}
+
+// PrepareRedis поднимает Redis и возвращает конфигурацию, указывающую
+// на него. Отдельного модуля testcontainers для этого не требуется:
+// образ поднимается обычным контейнером, а готовность определяется
+// по строке в журнале.
+func PrepareRedis(t *testing.T) services.Config {
+	t.Helper()
+	ctx := context.Background()
+
+	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: testcontainers.ContainerRequest{
+			Image:        redisImage,
+			ExposedPorts: []string{"6379/tcp"},
+			WaitingFor: wait.ForLog("Ready to accept connections").
+				WithStartupTimeout(startupWait),
+		},
+		Started: true,
+	})
+	if err != nil {
+		t.Fatalf("не удалось поднять Redis: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := testcontainers.TerminateContainer(container); err != nil {
+			t.Logf("не удалось остановить контейнер: %v", err)
+		}
+	})
+
+	endpoint, err := container.PortEndpoint(ctx, "6379/tcp", "")
+	if err != nil {
+		t.Fatalf("не удалось получить адрес Redis: %v", err)
+	}
+	return services.Config{RedisURL: "redis://" + endpoint + "/0"}
+}
+
+//go:embed migrations/*.sql
+var probeMigrations embed.FS
+
+// ProbeMigrations отдаёт схему-заглушку. Нужна там, где проверяется сам
+// механизм миграций, а не схема конкретного сервиса: NewDatabase принимает
+// embed.FS, и директиву embed нельзя написать в пакете, где нет каталога
+// migrations.
+func ProbeMigrations() embed.FS {
+	return probeMigrations
 }

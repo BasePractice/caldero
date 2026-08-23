@@ -102,3 +102,23 @@ func TestBackoffGrowsAndIsBounded(t *testing.T) {
 		previous = delay
 	}
 }
+
+// TestDefaultRetryPolicy фиксирует значения по умолчанию: их меняют редко,
+// а на поведение при недоступной зависимости они влияют напрямую.
+func TestDefaultRetryPolicy(t *testing.T) {
+	retriable := func(error) bool { return false }
+	policy := DefaultRetryPolicy("вызов кошелька", retriable)
+
+	if policy.Attempts != 3 {
+		t.Errorf("попыток %d, ожидалось 3", policy.Attempts)
+	}
+	if policy.BaseDelay != 100*time.Millisecond || policy.MaxDelay != 2*time.Second {
+		t.Errorf("задержки %s и %s", policy.BaseDelay, policy.MaxDelay)
+	}
+	if policy.Description != "вызов кошелька" {
+		t.Errorf("описание %q потеряно", policy.Description)
+	}
+	if policy.Retriable == nil || policy.Retriable(errors.New("любая")) {
+		t.Error("признак повторяемости не проброшен")
+	}
+}
