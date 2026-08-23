@@ -41,10 +41,10 @@ func createAccount(db Database, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var a account.CreateAccount
-	if err = json.NewDecoder(r.Body).Decode(&a); err != nil {
+	a, err := services.DecodeJSON[account.CreateAccount](w, r)
+	if err != nil {
 		slog.Error("Failed decoding account", slog.String("error", err.Error()))
-		http.Error(w, "Malformed request body", http.StatusBadRequest)
+		services.WriteDecodeError(w, err)
 		return
 	}
 	if !a.Validate() {

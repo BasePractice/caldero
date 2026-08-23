@@ -85,10 +85,10 @@ func createCredit(db Database, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var c credit.CreateCredit
-	if err = json.NewDecoder(r.Body).Decode(&c); err != nil {
+	c, err := services.DecodeJSON[credit.CreateCredit](w, r)
+	if err != nil {
 		slog.Error("Failed decoding credit", slog.String("error", err.Error()))
-		http.Error(w, "Malformed request body", http.StatusBadRequest)
+		services.WriteDecodeError(w, err)
 		return
 	}
 	if !c.Validate() {

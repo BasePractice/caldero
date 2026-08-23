@@ -36,7 +36,10 @@ func main() {
 		}
 		defer services.Close("database", db)
 
-		grpcServer := grpc.NewServer(grpc.UnaryInterceptor(services.RecoverUnaryInterceptor))
+		grpcServer := grpc.NewServer(
+			grpc.UnaryInterceptor(services.RecoverUnaryInterceptor),
+			grpc.MaxRecvMsgSize(services.MaxRequestBody),
+		)
 		wallet.RegisterServiceServer(grpcServer, &service{db: db, cache: cache})
 		return services.ServeGRPC(ctx, listen, grpcServer)
 	})

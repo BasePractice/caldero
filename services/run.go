@@ -53,7 +53,17 @@ func Run(name string, run func(ctx context.Context, cfg Config) error) {
 // запросам завершиться. Раньше сигнал приводил к немедленному os.Exit(0),
 // и соединения обрывались на середине.
 func ServeHTTP(ctx context.Context, addr string, handler http.Handler) error {
-	srv := &http.Server{Addr: addr, Handler: Recover(handler)}
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: Recover(handler),
+		// Без таймаутов сервер по умолчанию держит соединение сколько угодно:
+		// открытых, но не отправленных запросов достаточно, чтобы исчерпать
+		// ресурсы (Slowloris).
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 
 	errCh := make(chan error, 1)
 	go func() {
