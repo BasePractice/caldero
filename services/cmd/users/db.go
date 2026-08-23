@@ -51,24 +51,34 @@ type ds struct {
 	db *sql.DB
 }
 
-func (s *ds) CreateAuthorizeCodeSession(ctx context.Context, code string, request fosite.Requester) (err error) {
-	//TODO implement me
-	panic("implement me")
+// errAuthorizeCodeUnsupported возвращается вместо паники: Authorization Code
+// Flow не реализован, поэтому compose.OAuth2AuthorizeExplicitFactory отключён
+// и до этих методов дойти нельзя. Если фабрику вернут, ошибка укажет причину.
+var errAuthorizeCodeUnsupported = errors.New("authorization code flow is not implemented")
+
+func (s *ds) CreateAuthorizeCodeSession(context.Context, string, fosite.Requester) error {
+	return errAuthorizeCodeUnsupported
 }
 
-func (s *ds) GetAuthorizeCodeSession(ctx context.Context, code string, session fosite.Session) (request fosite.Requester, err error) {
-	//TODO implement me
-	panic("implement me")
+func (s *ds) GetAuthorizeCodeSession(context.Context, string, fosite.Session) (fosite.Requester, error) {
+	return nil, errAuthorizeCodeUnsupported
 }
 
-func (s *ds) InvalidateAuthorizeCodeSession(ctx context.Context, code string) (err error) {
-	//TODO implement me
-	panic("implement me")
+func (s *ds) InvalidateAuthorizeCodeSession(context.Context, string) error {
+	return errAuthorizeCodeUnsupported
 }
 
-func (s *ds) RotateRefreshToken(ctx context.Context, requestID string, refreshTokenSignature string) (err error) {
-	//TODO implement me
-	panic("implement me")
+// RotateRefreshToken вызывается refresh-потоком безусловно, поэтому паника
+// здесь ломала обновление токена. Поведение как в референсной реализации
+// fosite: старая пара отзывается целиком.
+func (s *ds) RotateRefreshToken(ctx context.Context, requestID string, _ string) error {
+	if err := s.RevokeRefreshToken(ctx, requestID); err != nil {
+		return fmt.Errorf("revoking refresh token of request %s: %w", requestID, err)
+	}
+	if err := s.RevokeAccessToken(ctx, requestID); err != nil {
+		return fmt.Errorf("revoking access token of request %s: %w", requestID, err)
+	}
+	return nil
 }
 
 func (s *ds) CreateClient(ctx context.Context, clientId, clientSecret, redirectUri, scopes, responseType, grantTypes string) {

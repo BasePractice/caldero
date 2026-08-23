@@ -3,12 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"wish/services"
-	account "wish/services/shared/account"
+	"wish/services/shared/account"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -26,6 +26,9 @@ func registerHttpHandlers(ctx context.Context, db Database) http.Handler {
 	mux.HandleFunc("POST /account", func(w http.ResponseWriter, r *http.Request) {
 		accountCreateCounter.Inc()
 		createAccount(ctx, db, w, r)
+	})
+	mux.HandleFunc("GET /account/{id}", func(w http.ResponseWriter, r *http.Request) {
+		getAccount(ctx, db, w, r)
 	})
 	prometheus.MustRegister(accountCreateCounter)
 	mux.HandleFunc("GET /metrics", promhttp.Handler().ServeHTTP)
@@ -50,6 +53,14 @@ func createAccount(ctx context.Context, db Database, w http.ResponseWriter, r *h
 		http.Error(w, "Account validation failed", http.StatusBadRequest)
 		return
 	}
+	// Счёт заводится только себе: ролевой модели, которая позволила бы одному
+	// пользователю открывать счета другому, в системе пока нет.
+	if a.UserId != operator.Id {
+		slog.Warn("Attempt to create account for another user",
+			slog.String("operator", operator.Id.String()))
+		http.Error(w, "Can't create account for another user", http.StatusForbidden)
+		return
+	}
 
 	id, err := db.Create(ctx, a, operator)
 	if err != nil {
@@ -59,6 +70,39 @@ func createAccount(ctx context.Context, db Database, w http.ResponseWriter, r *h
 		http.Error(w, "Can't create account", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("X-Account-Id", fmt.Sprintf("%d", id))
+	w.Header().Set("X-Account-Id", strconv.FormatInt(id, 10))
 	w.WriteHeader(http.StatusCreated)
+}
+
+func getAccount(ctx context.Context, db Database, w http.ResponseWriter, r *http.Request) {
+	operator, err := services.HttpAuthorized(r)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid id", http.StatusBadRequest)
+		return
+	}
+
+	a, err := db.Get(ctx, id)
+	if err != nil {
+		slog.Error("Get account", slog.Int64("id", id), slog.String("err", err.Error()))
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	// Идентификатор счёта последовательный, поэтому чужой счёт отдаётся
+	// как несуществующий, чтобы не подтверждать его наличие перебором.
+	if a.UserId != operator.Id {
+		slog.Warn("Attempt to read foreign account",
+			slog.Int64("id", id), slog.String("operator", operator.Id.String()))
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err = json.NewEncoder(w).Encode(a); err != nil {
+		slog.Error("Encode json", slog.Int64("id", id), slog.String("err", err.Error()))
+	}
 }

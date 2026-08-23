@@ -90,9 +90,9 @@ func newService(ctx context.Context, cfg services.Config) (*Service, error) {
 			OpenIDConnectTokenStrategy: compose.NewOpenIDConnectStrategy(keyManager.GetPrivateKey, oauth2Config),
 			Signer:                     &jwt.DefaultSigner{GetPrivateKey: keyManager.GetPrivateKey},
 		},
-		compose.OAuth2AuthorizeExplicitFactory,
+		// OAuth2AuthorizeExplicitFactory отключена: хранилище кодов авторизации
+		// не реализовано, и с ней любой запрос к /auth заканчивался паникой.
 		compose.OAuth2RefreshTokenGrantFactory,
-		//compose.OpenIDConnectExplicitFactory,
 		compose.OAuth2TokenIntrospectionFactory,
 		compose.OAuth2TokenRevocationFactory,
 	)
@@ -158,30 +158,6 @@ func (s *Service) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("X-User-Id", user.Id.String())
 	w.WriteHeader(http.StatusCreated)
-}
-
-func (s *Service) handleAuthorization(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	ar, err := s.oauth2Provider.NewAuthorizeRequest(ctx, r)
-	if err != nil {
-		s.oauth2Provider.WriteAuthorizeError(ctx, w, ar, err)
-		return
-	}
-
-	user, err := s.authenticateUser(r)
-	if err != nil {
-		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
-		return
-	}
-
-	session := s.newSession(user.Id)
-	response, err := s.oauth2Provider.NewAuthorizeResponse(ctx, ar, session)
-	if err != nil {
-		s.oauth2Provider.WriteAuthorizeError(ctx, w, ar, err)
-		return
-	}
-
-	s.oauth2Provider.WriteAuthorizeResponse(ctx, w, ar, response)
 }
 
 func (s *Service) handleToken(w http.ResponseWriter, r *http.Request) {
