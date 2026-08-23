@@ -8,7 +8,7 @@ REVISION ?= $(shell git rev-parse HEAD 2>/dev/null)
 LDFLAGS  := -X wish/services.Version=$(VERSION) -X wish/services.Revision=$(REVISION)
 
 .DEFAULT_GOAL := help
-.PHONY: help build test test-race test-integration lint vet fmt fmt-check tidy-check proto up down logs migrate-status migrate-check vuln images clean save-keycloak-config
+.PHONY: help build test test-race test-integration lint vet fmt fmt-check tidy-check proto up down logs migrate-status migrate-check vuln bench load-test images clean save-keycloak-config
 
 help: ## Показать список целей
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -51,6 +51,15 @@ proto: ## Перегенерировать код из middleware/wallet.proto
 	@command -v protoc-gen-go >/dev/null 2>&1 || { echo "protoc-gen-go не найден: go install google.golang.org/protobuf/cmd/protoc-gen-go@latest"; exit 1; }
 	@command -v protoc-gen-go-grpc >/dev/null 2>&1 || { echo "protoc-gen-go-grpc не найден: go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest"; exit 1; }
 	protoc --go_out=. --go_opt=paths=import --go-grpc_out=. --go-grpc_opt=paths=import middleware/wallet.proto
+
+bench: ## Прогнать бенчмарки
+	go test -run '^$$' -bench . -benchmem ./...
+
+load-test: ## Нагрузочный прогон по сервису кредитов (нужен запущенный сервис)
+	docker run --rm -i --add-host host.docker.internal:host-gateway \
+		-e BASE_URL="$${BASE_URL:-http://host.docker.internal:51052}" \
+		-e OPERATOR_ID="$${OPERATOR_ID:-0f95e97c-0ea4-476f-9146-d015ec22e240}" \
+		-v "$(PWD)/scripts/load":/scripts grafana/k6 run /scripts/credit.js
 
 vuln: ## Проверить известные уязвимости
 	@command -v govulncheck >/dev/null 2>&1 || go install golang.org/x/vuln/cmd/govulncheck@latest

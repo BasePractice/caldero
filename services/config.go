@@ -64,6 +64,10 @@ type Config struct {
 	// OTelSampleRatio — доля трасс, которые выгружаются.
 	OTelSampleRatio float64
 
+	// DebugPprof открывает профилировщик на служебном порту.
+	// Профили раскрываютвнутреннее устройство сервиса, поэтому по умолчанию выключен.
+	DebugPprof bool
+
 	// DebugStatsviz открывает страницу состояния рантайма на порту метрик.
 	// По умолчанию выключено: страница не аутентифицирована.
 	DebugStatsviz bool
@@ -129,6 +133,12 @@ func LoadConfig() (Config, error) {
 		return Config{}, fmt.Errorf("OTEL_TRACES_SAMPLER_ARG must be between 0 and 1, got %v", sampleRatio)
 	}
 	cfg.OTelSampleRatio = sampleRatio
+
+	debugPprof, err := strconv.ParseBool(env("DEBUG_PPROF", "false"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing DEBUG_PPROF: %w", err)
+	}
+	cfg.DebugPprof = debugPprof
 
 	debugStatsviz, err := strconv.ParseBool(env("DEBUG_STATSVIZ", "false"))
 	if err != nil {

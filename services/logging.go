@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"strconv"
 	"time"
@@ -83,6 +84,17 @@ func DefineMetrics(cfg Config, health *Health) {
 	mux.Handle("GET /metrics", promhttp.Handler())
 	if health != nil {
 		mux.Handle("/", health.Handler())
+	}
+	if cfg.DebugPprof {
+		// Профилировщик регистрируется явно, а не импортом net/http/pprof
+		// с побочным эффектом на DefaultServeMux: тот подключил бы его
+		// ко всем серверам процесса, включая публичный.
+		mux.HandleFunc("GET /debug/pprof/", pprof.Index)
+		mux.HandleFunc("GET /debug/pprof/cmdline", pprof.Cmdline)
+		mux.HandleFunc("GET /debug/pprof/profile", pprof.Profile)
+		mux.HandleFunc("GET /debug/pprof/symbol", pprof.Symbol)
+		mux.HandleFunc("GET /debug/pprof/trace", pprof.Trace)
+		slog.Warn("Profiler is enabled on the service port")
 	}
 	if cfg.DebugStatsviz {
 		if err := statsviz.Register(mux); err != nil {
