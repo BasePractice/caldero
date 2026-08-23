@@ -1,6 +1,6 @@
 # Один параметризованный образ вместо четырёх копий: раньше изменение
 # в любом сервисе инвалидировало слои всех четырёх.
-FROM golang:1.24-alpine3.21 AS builder
+FROM golang:1.25-alpine AS builder
 LABEL authors="Pastor"
 
 ARG SERVICE

@@ -60,9 +60,11 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - uses: golangci/golangci-lint-action@v6
+      # Действие v6 ставит golangci-lint v1, а .golangci.yml написан
+      # в формате v2 — прогон падал на разборе конфигурации.
+      - uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v2.13.1
 
   vulnerabilities:
     name: Известные уязвимости
@@ -98,46 +100,16 @@ jobs:
   migrations:
     name: Миграции
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_PASSWORD: postgres
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-        ports:
-          - 5432:5432
     steps:
       - uses: actions/checkout@v4
 
       # Полный цикл up и down: именно здесь ловятся ошибки порядка удаления
       # таблиц и конфликты между миграциями соседних версий.
+      # Тот же скрипт запускается локально через make migrate-check —
+      # расхождение между локальной проверкой и CI уже приводило к тому,
+      # что ошибку находил только CI.
       - name: Прогон up и down
-        env:
-          PGPASSWORD: postgres
-        run: |
-          set -euo pipefail
-          psql -h localhost -U postgres -c "CREATE DATABASE wish"
-          for service in wallet credit account users; do
-            psql -h localhost -U postgres -d wish -c "CREATE SCHEMA $service"
-          done
-          for service in wallet credit account users; do
-            for file in $(ls services/cmd/$service/migrations/*.up.sql | sort -t_ -k1 -n); do
-              echo "up $service/$(basename "$file")"
-              psql -h localhost -U postgres -d wish -v ON_ERROR_STOP=1 -q \
-                -c "SET search_path TO $service" -f "$file"
-            done
-          done
-          for service in wallet credit account users; do
-            for file in $(ls services/cmd/$service/migrations/*.down.sql | sort -t_ -k1 -rn); do
-              echo "down $service/$(basename "$file")"
-              psql -h localhost -U postgres -d wish -v ON_ERROR_STOP=1 -q \
-                -c "SET search_path TO $service" -f "$file"
-            done
-          done
+        run: make migrate-check
 
   gateway:
     name: Конфигурация шлюза
