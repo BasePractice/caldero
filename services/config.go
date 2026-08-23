@@ -26,6 +26,12 @@ type Config struct {
 	AdminToken string
 	// KeyRotationMinInterval ограничивает частоту ротации ключей.
 	KeyRotationMinInterval time.Duration
+
+	// OAuth2GlobalSecret — секрет подписи токенов, ровно 32 байта.
+	// Пустое значение допустимо только для локальной разработки.
+	OAuth2GlobalSecret string
+	// OAuth2Debug включает передачу внутренних деталей ошибок клиенту.
+	OAuth2Debug bool
 }
 
 // LoadConfig читает .env-файлы и окружение. Вызывается первой строкой main:
@@ -51,8 +57,15 @@ func LoadConfig() (Config, error) {
 		LogLevel: env("LOG_LEVEL", "INFO"),
 		LogFile:  env("LOG_FILE", ""),
 
-		AdminToken: env("ADMIN_TOKEN", ""),
+		AdminToken:         env("ADMIN_TOKEN", ""),
+		OAuth2GlobalSecret: env("OAUTH2_GLOBAL_SECRET", ""),
 	}
+
+	oauth2Debug, err := strconv.ParseBool(env("OAUTH2_DEBUG", "false"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing OAUTH2_DEBUG: %w", err)
+	}
+	cfg.OAuth2Debug = oauth2Debug
 
 	rotationInterval, err := time.ParseDuration(env("KEY_ROTATION_MIN_INTERVAL", "1h"))
 	if err != nil {

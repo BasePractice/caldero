@@ -39,7 +39,11 @@ func main() {
 		os.Exit(1)
 	}
 	services.DefineMetrics(cfg)
-	service := newService(ctx, cfg)
+	service, err := newService(ctx, cfg)
+	if err != nil {
+		slog.Error("Can't start service", slog.String("err", err.Error()))
+		os.Exit(1)
+	}
 	handler := registerHttpHandlers(ctx, service)
 	err = http.ListenAndServe(fmt.Sprintf(":%d", *port), handler)
 	if err != nil {

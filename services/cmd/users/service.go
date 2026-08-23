@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -36,18 +37,48 @@ type Service struct {
 	lastRotation time.Time
 }
 
-func newService(ctx context.Context, cfg services.Config) *Service {
-	var secret = make([]byte, 32)
-	_, _ = rand.Read(secret)
+// oauth2Secret возвращает секрет подписи. Раньше он генерировался случайно
+// при каждом старте: токены не переживали рестарт, а два инстанса не могли
+// проверить токены друг друга.
+func oauth2Secret(cfg services.Config) ([]byte, error) {
+	const secretLen = 32
+
+	if cfg.OAuth2GlobalSecret == "" {
+		secret := make([]byte, secretLen)
+		if _, err := rand.Read(secret); err != nil {
+			return nil, fmt.Errorf("generating fallback oauth2 secret: %w", err)
+		}
+		slog.Warn("OAUTH2_GLOBAL_SECRET is not set, using a random secret: " +
+			"issued tokens will not survive a restart and other instances will reject them")
+		return secret, nil
+	}
+
+	secret := []byte(cfg.OAuth2GlobalSecret)
+	if len(secret) != secretLen {
+		return nil, fmt.Errorf("OAUTH2_GLOBAL_SECRET must be exactly %d bytes, got %d",
+			secretLen, len(secret))
+	}
+	return secret, nil
+}
+
+func newService(ctx context.Context, cfg services.Config) (*Service, error) {
+	secret, err := oauth2Secret(cfg)
+	if err != nil {
+		return nil, err
+	}
+
 	var oauth2Config = &fosite.Config{
 		AccessTokenLifespan:        time.Hour,
 		RefreshTokenLifespan:       time.Hour * 24 * 30,
 		IDTokenLifespan:            time.Hour,
-		SendDebugMessagesToClients: true,
+		SendDebugMessagesToClients: cfg.OAuth2Debug,
 		GlobalSecret:               secret,
 	}
 	db := NewDatabaseUsers(cfg)
-	keyManager, _ := NewKeyManager(ctx, db)
+	keyManager, err := NewKeyManager(ctx, db)
+	if err != nil {
+		return nil, fmt.Errorf("creating key manager: %w", err)
+	}
 	var oauth2Provider = compose.Compose(
 		oauth2Config,
 		db,
@@ -68,7 +99,7 @@ func newService(ctx context.Context, cfg services.Config) *Service {
 		keyManager:     keyManager,
 		db:             db,
 		cfg:            cfg,
-	}
+	}, nil
 }
 
 func (s *Service) handleCreateClient(w http.ResponseWriter, r *http.Request) {
