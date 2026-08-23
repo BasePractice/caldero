@@ -143,4 +143,67 @@ func TestCreditRepository(t *testing.T) {
 			t.Fatal("отрицательный баланс кредита должен отвергаться")
 		}
 	})
+
+	t.Run("платёж фиксируется вместе с остатком кредита", func(t *testing.T) {
+		id, err := db.Create(ctx, credit.CreateCredit{
+			UserId: borrower, Type: "SIMPLE", Kind: "ANN",
+			Month: 12, Rate: 15 * credit.BasisPointsInPercent, Balance: 100_000,
+		}, operator)
+		if err != nil {
+			t.Fatalf("создание: %v", err)
+		}
+
+		payment := PaymentRecord{
+			CreditId: id, IdempotencyKey: "pay-" + id.String(),
+			NeedValue: 9_000, Amount: 9_000,
+		}
+		if err := db.RecordPayment(ctx, payment); err != nil {
+			t.Fatalf("запись платежа: %v", err)
+		}
+
+		loaded, err := db.Get(ctx, id)
+		if err != nil {
+			t.Fatalf("чтение: %v", err)
+		}
+		// Платёж и остаток по кредиту меняются одной транзакцией:
+		// разойдись они — это расхождение в деньгах.
+		if loaded.AlreadyPaid != 9_000 {
+			t.Errorf("already_paid = %s, ожидалось 90.00", loaded.AlreadyPaid)
+		}
+		if loaded.LastPaidAt == nil {
+			t.Error("last_paid_at не проставлен платежом")
+		}
+
+		t.Run("повтор с тем же ключом не создаёт второго платежа", func(t *testing.T) {
+			if err := db.RecordPayment(ctx, payment); !errors.Is(err, ErrPaymentAlreadyRecorded) {
+				t.Fatalf("получено %v, ожидалась ErrPaymentAlreadyRecorded", err)
+			}
+			again, err := db.Get(ctx, id)
+			if err != nil {
+				t.Fatalf("чтение: %v", err)
+			}
+			if again.AlreadyPaid != 9_000 {
+				t.Errorf("already_paid = %s после повтора, ожидалось 90.00", again.AlreadyPaid)
+			}
+		})
+	})
+
+	t.Run("платёж по несуществующему кредиту отвергается", func(t *testing.T) {
+		err := db.RecordPayment(ctx, PaymentRecord{
+			CreditId: uuid.New(), IdempotencyKey: "pay-missing",
+			NeedValue: 100, Amount: 100,
+		})
+		if err == nil {
+			t.Fatal("платёж по несуществующему кредиту записан")
+		}
+	})
+
+	t.Run("проба готовности и статистика пула", func(t *testing.T) {
+		if err := db.Ping(ctx); err != nil {
+			t.Errorf("проба готовности: %v", err)
+		}
+		if db.Stats().MaxOpenConnections == 0 {
+			t.Error("статистика пула не заполнена")
+		}
+	})
 }

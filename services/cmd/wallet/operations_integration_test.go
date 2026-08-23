@@ -245,6 +245,129 @@ func TestWalletOperations(t *testing.T) {
 	})
 }
 
+// TestWalletErrorBranches проверяет отказы, которые в обычном сценарии
+// не встречаются: несуществующий кошелёк, неположительная сумма, перевод
+// самому себе. Именно эти ветки решают, увидит ли клиент причину отказа.
+func TestWalletErrorBranches(t *testing.T) {
+	ctx := context.Background()
+	db, err := NewDatabaseWallet(ctx, testsupport.Prepare(t, "wallet"))
+	if err != nil {
+		t.Fatalf("не удалось открыть репозиторий: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	owner := uuid.New()
+	var walletId uuid.UUID
+	if err := db.Information(ctx, owner, func(reply *wallet.InformationReply) {
+		walletId = uuid.MustParse(reply.Id)
+	}); err != nil {
+		t.Fatalf("получение кошелька: %v", err)
+	}
+
+	t.Run("операция по несуществующему кошельку", func(t *testing.T) {
+		_, err := db.Debit(ctx, owner, OperationParams{
+			IdempotencyKey: "missing-1", WalletId: uuid.New(), Value: 100,
+		})
+		if !errors.Is(err, ErrWalletNotFound) {
+			t.Errorf("получено %v, ожидалась ErrWalletNotFound", err)
+		}
+	})
+
+	t.Run("неположительная сумма", func(t *testing.T) {
+		for _, value := range []int64{0, -100} {
+			if _, err := db.Debit(ctx, owner, OperationParams{
+				IdempotencyKey: "bad-value", WalletId: walletId, Value: value,
+			}); !errors.Is(err, ErrInvalidValue) {
+				t.Errorf("сумма %d: получено %v, ожидалась ErrInvalidValue", value, err)
+			}
+		}
+	})
+
+	t.Run("перевод самому себе", func(t *testing.T) {
+		err := func() error {
+			_, err := db.Transfer(ctx, owner, TransferParams{
+				IdempotencyKey: "self-1", SourceId: walletId, TargetId: walletId, Value: 100,
+			})
+			return err
+		}()
+		if !errors.Is(err, ErrSameWallet) {
+			t.Errorf("получено %v, ожидалась ErrSameWallet", err)
+		}
+	})
+
+	t.Run("перевод на несуществующий кошелёк", func(t *testing.T) {
+		if _, err := db.Debit(ctx, owner, OperationParams{
+			IdempotencyKey: "fill-1", WalletId: walletId, Value: 1000,
+		}); err != nil {
+			t.Fatalf("пополнение: %v", err)
+		}
+		_, err := db.Transfer(ctx, owner, TransferParams{
+			IdempotencyKey: "to-nowhere", SourceId: walletId, TargetId: uuid.New(), Value: 100,
+		})
+		if !errors.Is(err, ErrWalletNotFound) {
+			t.Errorf("получено %v, ожидалась ErrWalletNotFound", err)
+		}
+	})
+
+	t.Run("резерв неположительной суммы", func(t *testing.T) {
+		if _, err := db.Reserve(ctx, owner, ReserveParams{
+			IdempotencyKey: "res-bad", WalletId: walletId, Value: 0,
+		}); !errors.Is(err, ErrInvalidValue) {
+			t.Errorf("получено %v, ожидалась ErrInvalidValue", err)
+		}
+	})
+
+	t.Run("завершение несуществующего резерва", func(t *testing.T) {
+		if _, err := db.Confirm(ctx, owner, uuid.New()); !errors.Is(err, ErrReservationNotFound) {
+			t.Errorf("получено %v, ожидалась ErrReservationNotFound", err)
+		}
+		if _, err := db.Reject(ctx, owner, uuid.New()); !errors.Is(err, ErrReservationNotFound) {
+			t.Errorf("получено %v, ожидалась ErrReservationNotFound", err)
+		}
+	})
+
+	t.Run("смена состояния чужого кошелька", func(t *testing.T) {
+		if err := db.ChangeState(ctx, uuid.New(), walletId, "BLOCKED"); !errors.Is(err, ErrWalletNotFound) {
+			t.Errorf("получено %v, ожидалась ErrWalletNotFound", err)
+		}
+	})
+
+	t.Run("смена состояния несуществующего кошелька", func(t *testing.T) {
+		if err := db.ChangeState(ctx, owner, uuid.New(), "BLOCKED"); !errors.Is(err, ErrWalletNotFound) {
+			t.Errorf("получено %v, ожидалась ErrWalletNotFound", err)
+		}
+	})
+
+	t.Run("история чужого кошелька пуста", func(t *testing.T) {
+		transactions, err := db.History(ctx, uuid.New(), walletId, 10, nil)
+		if err != nil && !errors.Is(err, ErrWalletNotFound) {
+			t.Fatalf("история: %v", err)
+		}
+		if len(transactions) != 0 {
+			t.Errorf("чужих транзакций отдано %d", len(transactions))
+		}
+	})
+
+	t.Run("освобождение резервов без просроченных", func(t *testing.T) {
+		released, err := db.ReleaseExpiredReservations(ctx)
+		if err != nil {
+			t.Fatalf("освобождение: %v", err)
+		}
+		if released != 0 {
+			t.Errorf("освобождено %d резервов, ожидался ноль", released)
+		}
+	})
+
+	t.Run("проба готовности и статистика пула", func(t *testing.T) {
+		if err := db.Ping(ctx); err != nil {
+			t.Errorf("проба готовности: %v", err)
+		}
+		if db.Stats().MaxOpenConnections == 0 {
+			t.Error("статистика пула не заполнена")
+		}
+	})
+}
+
 func TestWalletReservations(t *testing.T) {
 	ctx := context.Background()
 	db, err := NewDatabaseWallet(ctx, testsupport.Prepare(t, "wallet"))
