@@ -26,7 +26,7 @@ const shutdownTimeout = 15 * time.Second
 // Run — общая точка входа сервиса: конфигурация, логирование, метрики,
 // контекст, отменяемый по сигналу, и код возврата. Раньше эти сорок строк
 // были продублированы в четырёх main.go вместе со всеми своими ошибками.
-func Run(name string, run func(ctx context.Context, cfg Config) error) {
+func Run(name string, run func(ctx context.Context, cfg Config, health *Health) error) {
 	cfg, err := LoadConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "can't load configuration:", err)
@@ -36,7 +36,8 @@ func Run(name string, run func(ctx context.Context, cfg Config) error) {
 		fmt.Fprintln(os.Stderr, "can't configure logging:", err)
 		os.Exit(1)
 	}
-	DefineMetrics(cfg)
+	health := NewHealth()
+	DefineMetrics(cfg, health)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -50,7 +51,7 @@ func Run(name string, run func(ctx context.Context, cfg Config) error) {
 	}
 	defer stopTracing(ctx)
 
-	if err = run(ctx, cfg); err != nil {
+	if err = run(ctx, cfg, health); err != nil {
 		slog.Error("Service stopped with error",
 			slog.String("service", name), slog.String("err", err.Error()))
 		os.Exit(1)
@@ -61,12 +62,12 @@ func Run(name string, run func(ctx context.Context, cfg Config) error) {
 // ServeHTTP обслуживает запросы до отмены контекста, затем даёт активным
 // запросам завершиться. Раньше сигнал приводил к немедленному os.Exit(0),
 // и соединения обрывались на середине.
-func ServeHTTP(ctx context.Context, addr string, handler http.Handler) error {
+func ServeHTTP(ctx context.Context, cfg Config, addr string, handler http.Handler) error {
 	srv := &http.Server{
 		Addr: addr,
 		// otelhttp снаружи: спан должен охватывать и восстановление после
 		// паники, и измерение, иначе упавший запрос не попадёт в трассу.
-		Handler: otelhttp.NewHandler(Recover(handler), "http",
+		Handler: otelhttp.NewHandler(Recover(LimitInFlight(cfg.MaxInFlightRequests, handler)), "http",
 			otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
 				if r.Pattern != "" {
 					return r.Pattern

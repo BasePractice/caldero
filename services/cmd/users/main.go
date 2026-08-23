@@ -23,18 +23,19 @@ func main() {
 		}
 		return
 	}
-	services.Run("users", func(ctx context.Context, cfg services.Config) error {
+	services.Run("users", func(ctx context.Context, cfg services.Config, health *services.Health) error {
 		service, err := newService(ctx, cfg)
 		if err != nil {
 			return fmt.Errorf("creating service: %w", err)
 		}
 		defer services.Close("service", service)
+		health.Register("database", service.Ping)
 		services.RegisterDBStats("users", service.Stats())
 
 		go services.RunPeriodic(ctx, "token-cleanup", cfg.TokenCleanupInterval,
 			service.CleanupExpiredTokens)
 
-		return services.ServeHTTP(ctx, fmt.Sprintf(":%d", *port),
+		return services.ServeHTTP(ctx, cfg, fmt.Sprintf(":%d", *port),
 			registerHttpHandlers(service))
 	})
 }

@@ -29,7 +29,7 @@ func main() {
 		}
 		return
 	}
-	services.Run("wallet", func(ctx context.Context, cfg services.Config) error {
+	services.Run("wallet", func(ctx context.Context, cfg services.Config, health *services.Health) error {
 		listen, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 		if err != nil {
 			return fmt.Errorf("listening on port %d: %w", *port, err)
@@ -46,6 +46,7 @@ func main() {
 			return err
 		}
 		defer services.Close("database", db)
+		health.Register("database", db.Ping)
 		services.RegisterDBStats("wallet", db)
 
 		// Партиции создаются заранее: когда окно кончится, все транзакции

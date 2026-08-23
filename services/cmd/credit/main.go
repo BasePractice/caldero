@@ -23,15 +23,16 @@ func main() {
 		}
 		return
 	}
-	services.Run("credit", func(ctx context.Context, cfg services.Config) error {
+	services.Run("credit", func(ctx context.Context, cfg services.Config, health *services.Health) error {
 		db, err := NewDatabase(ctx, cfg)
 		if err != nil {
 			return err
 		}
 		defer services.Close("database", db)
+		health.Register("database", db.Ping)
 		services.RegisterDBStats("credit", db)
 
-		return services.ServeHTTP(ctx, fmt.Sprintf(":%d", *port),
+		return services.ServeHTTP(ctx, cfg, fmt.Sprintf(":%d", *port),
 			registerHttpHandlers(db))
 	})
 }

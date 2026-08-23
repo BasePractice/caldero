@@ -57,6 +57,8 @@ type DatabaseUsers interface {
 	Close() error
 	// Stats нужен для публикации метрик пула соединений.
 	Stats() sql.DBStats
+	// Ping нужен пробе готовности.
+	Ping(ctx context.Context) error
 }
 
 type ds struct {
@@ -611,6 +613,10 @@ func splitCSV(input string) []string {
 
 func (s *ds) Stats() sql.DBStats {
 	return s.db.Stats()
+}
+
+func (s *ds) Ping(ctx context.Context) error {
+	return s.db.PingContext(ctx)
 }
 
 func (s *ds) Close() error {

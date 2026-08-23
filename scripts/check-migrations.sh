@@ -14,24 +14,7 @@ trap cleanup EXIT
 echo "поднимаю $IMAGE"
 docker run -d --name "$CONTAINER" -e POSTGRES_PASSWORD=postgres "$IMAGE" >/dev/null
 
-# Во время initdb сервер поднимается временно и уже принимает соединения
-# по unix-сокету — и pg_isready, и обычный запрос в этот момент проходят,
-# после чего сервер перезапускается и следующая команда падает.
-# Признак настоящей готовности — вторая строка о готовности в логах.
-ready=0
-for _ in $(seq 1 90); do
-    started=$(docker logs "$CONTAINER" 2>&1 | grep -c "database system is ready to accept connections" || true)
-    if [ "$started" -ge 2 ] && docker exec -i "$CONTAINER" psql -U postgres -c "SELECT 1" >/dev/null 2>&1; then
-        ready=1
-        break
-    fi
-    sleep 1
-done
-if [ "$ready" != "1" ]; then
-    echo "PostgreSQL не поднялся"
-    docker logs "$CONTAINER" | tail -20
-    exit 1
-fi
+scripts/wait-postgres.sh "$CONTAINER"
 
 docker exec -i "$CONTAINER" psql -U postgres -q -c "CREATE DATABASE wish"
 for service in $SERVICES; do

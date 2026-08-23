@@ -24,6 +24,8 @@ type Database interface {
 	Close() error
 	// Stats нужен для публикации метрик пула соединений.
 	Stats() sql.DBStats
+	// Ping нужен пробе готовности.
+	Ping(ctx context.Context) error
 }
 
 type ds struct {
@@ -61,6 +63,10 @@ func (d ds) Get(ctx context.Context, id uuid.UUID) (*account.Account, error) {
 
 func (d ds) Stats() sql.DBStats {
 	return d.db.Stats()
+}
+
+func (d ds) Ping(ctx context.Context) error {
+	return d.db.PingContext(ctx)
 }
 
 func (d ds) Close() error {

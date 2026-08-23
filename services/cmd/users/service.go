@@ -126,6 +126,11 @@ func (s *Service) CleanupExpiredTokens(ctx context.Context) error {
 	return nil
 }
 
+// Ping нужен пробе готовности.
+func (s *Service) Ping(ctx context.Context) error {
+	return s.db.Ping(ctx)
+}
+
 // Stats отдаёт состояние пула соединений для метрик.
 func (s *Service) Stats() services.StatsProvider {
 	return s.db

@@ -33,6 +33,8 @@ type DatabaseWallet interface {
 
 	// Stats нужен для публикации метрик пула соединений.
 	Stats() sql.DBStats
+	// Ping нужен пробе готовности.
+	Ping(ctx context.Context) error
 }
 
 type ds struct {
@@ -181,6 +183,10 @@ func (d ds) DefaultPartitionRows(ctx context.Context) (int64, error) {
 		return 0, fmt.Errorf("counting rows in default partition: %w", err)
 	}
 	return rows, nil
+}
+
+func (d ds) Ping(ctx context.Context) error {
+	return d.db.PingContext(ctx)
 }
 
 func (d ds) Close() error {

@@ -78,9 +78,12 @@ func DefineLogging(cfg Config) (*slog.Logger, error) {
 // публичного: метрики не должны быть доступны снаружи вместе с API.
 // statsviz подключается только при отладке — он публикует внутреннее
 // состояние рантайма без какой-либо аутентификации.
-func DefineMetrics(cfg Config) {
+func DefineMetrics(cfg Config, health *Health) {
 	mux := http.NewServeMux()
 	mux.Handle("GET /metrics", promhttp.Handler())
+	if health != nil {
+		mux.Handle("/", health.Handler())
+	}
 	if cfg.DebugStatsviz {
 		if err := statsviz.Register(mux); err != nil {
 			slog.Error("Error registering statsviz", slog.String("err", err.Error()))

@@ -48,6 +48,10 @@ type Config struct {
 	// Нулевое значение отключает очистку.
 	TokenCleanupInterval time.Duration
 
+	// MaxInFlightRequests ограничивает число одновременно обрабатываемых
+	// запросов. Ноль снимает ограничение.
+	MaxInFlightRequests int
+
 	// PartitionMaintenanceInterval — как часто проверять окно партиций
 	// транзакций. Ноль отключает обслуживание.
 	PartitionMaintenanceInterval time.Duration
@@ -93,6 +97,12 @@ func LoadConfig() (Config, error) {
 		OAuth2Issuer:       env("OAUTH2_ISSUER", "http://localhost:8080/api/v1"),
 		KeyMasterKey:       env("KEY_MASTER_KEY", ""),
 	}
+
+	maxInFlight, err := strconv.Atoi(env("MAX_IN_FLIGHT_REQUESTS", "256"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing MAX_IN_FLIGHT_REQUESTS: %w", err)
+	}
+	cfg.MaxInFlightRequests = maxInFlight
 
 	partitionInterval, err := time.ParseDuration(env("PARTITION_MAINTENANCE_INTERVAL", "12h"))
 	if err != nil {
