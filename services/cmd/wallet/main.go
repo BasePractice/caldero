@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 
@@ -46,6 +47,33 @@ func main() {
 		}
 		defer services.Close("database", db)
 		services.RegisterDBStats("wallet", db)
+
+		// Партиции создаются заранее: когда окно кончится, все транзакции
+		// пойдут в partition default и партиционирование потеряет смысл.
+		if created, err := db.EnsurePartitions(ctx, cfg.PartitionMonthsAhead); err != nil {
+			return fmt.Errorf("preparing transaction partitions: %w", err)
+		} else if created > 0 {
+			slog.Info("Transaction partitions created", slog.Int("count", created))
+		}
+		go services.RunPeriodic(ctx, "partition-maintenance", cfg.PartitionMaintenanceInterval,
+			func(ctx context.Context) error {
+				created, err := db.EnsurePartitions(ctx, cfg.PartitionMonthsAhead)
+				if err != nil {
+					return err
+				}
+				if created > 0 {
+					slog.Info("Transaction partitions created", slog.Int("count", created))
+				}
+				return nil
+			})
+		services.RegisterDefaultPartitionRows("wallet", func() int64 {
+			rows, err := db.DefaultPartitionRows(ctx)
+			if err != nil {
+				slog.Error("Can't count default partition rows", slog.String("err", err.Error()))
+				return -1
+			}
+			return rows
+		})
 
 		grpcServer := grpc.NewServer(
 			// Обработчик статистики otelgrpc: интерсепторы для трассировки

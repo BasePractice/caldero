@@ -48,6 +48,12 @@ type Config struct {
 	// Нулевое значение отключает очистку.
 	TokenCleanupInterval time.Duration
 
+	// PartitionMaintenanceInterval — как часто проверять окно партиций
+	// транзакций. Ноль отключает обслуживание.
+	PartitionMaintenanceInterval time.Duration
+	// PartitionMonthsAhead — на сколько месяцев вперёд держать партиции.
+	PartitionMonthsAhead int
+
 	// OTelEndpoint — адрес приёмника трасс по OTLP/HTTP.
 	// Пустое значение отключает трассировку.
 	OTelEndpoint string
@@ -87,6 +93,21 @@ func LoadConfig() (Config, error) {
 		OAuth2Issuer:       env("OAUTH2_ISSUER", "http://localhost:8080/api/v1"),
 		KeyMasterKey:       env("KEY_MASTER_KEY", ""),
 	}
+
+	partitionInterval, err := time.ParseDuration(env("PARTITION_MAINTENANCE_INTERVAL", "12h"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing PARTITION_MAINTENANCE_INTERVAL: %w", err)
+	}
+	cfg.PartitionMaintenanceInterval = partitionInterval
+
+	monthsAhead, err := strconv.Atoi(env("PARTITION_MONTHS_AHEAD", "6"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing PARTITION_MONTHS_AHEAD: %w", err)
+	}
+	if monthsAhead < 1 {
+		return Config{}, fmt.Errorf("PARTITION_MONTHS_AHEAD must be positive, got %d", monthsAhead)
+	}
+	cfg.PartitionMonthsAhead = monthsAhead
 
 	cfg.OTelEndpoint = env("OTEL_EXPORTER_OTLP_ENDPOINT", "")
 

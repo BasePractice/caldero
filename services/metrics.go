@@ -105,6 +105,18 @@ type StatsProvider interface {
 	Stats() sql.DBStats
 }
 
+// RegisterDefaultPartitionRows публикует число строк в партиции по умолчанию.
+// Ненулевое значение означает, что окно партиций кончилось: вставки
+// продолжают проходить, но данные снова копятся в одной таблице.
+// Значение -1 означает, что подсчёт не удался.
+func RegisterDefaultPartitionRows(service string, count func() int64) {
+	prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name:        "wish_transaction_default_partition_rows",
+		Help:        "Строк в партиции транзакций по умолчанию",
+		ConstLabels: prometheus.Labels{"service": service},
+	}, func() float64 { return float64(count()) }))
+}
+
 // RegisterDBStats публикует состояние пула соединений. Исчерпание пула
 // выглядит как замедление сервиса, и без этих метрик причину не отличить
 // от медленной базы.

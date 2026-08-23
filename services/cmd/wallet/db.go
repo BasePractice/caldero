@@ -21,6 +21,9 @@ type DatabaseWallet interface {
 	Information(ctx context.Context, userId uuid.UUID, cb func(reply *wallet.InformationReply)) error
 	// Close освобождает соединения с БД
 	Close() error
+	EnsurePartitions(ctx context.Context, monthsAhead int) (int, error)
+	DefaultPartitionRows(ctx context.Context) (int64, error)
+
 	// Stats нужен для публикации метрик пула соединений.
 	Stats() sql.DBStats
 }
@@ -140,6 +143,37 @@ func (d ds) selectWallets(ctx context.Context, userId uuid.UUID, cb func(reply *
 
 func (d ds) Stats() sql.DBStats {
 	return d.db.Stats()
+}
+
+// EnsurePartitions создаёт партиции на monthsAhead месяцев вперёд.
+// Возвращает число созданных: ноль — нормальная ситуация, значит окно
+// ещё не кончилось.
+func (d ds) EnsurePartitions(ctx context.Context, monthsAhead int) (int, error) {
+	created := 0
+	for month := range monthsAhead {
+		var wasCreated bool
+		err := d.db.QueryRowContext(ctx,
+			"SELECT fn_ensure_transaction_partition((date_trunc('month', now()) + ($1 || ' months')::INTERVAL)::DATE)",
+			month).Scan(&wasCreated)
+		if err != nil {
+			return created, fmt.Errorf("creating transaction partition for month +%d: %w", month, err)
+		}
+		if wasCreated {
+			created++
+		}
+	}
+	return created, nil
+}
+
+// DefaultPartitionRows считает строки, попавшие в партицию по умолчанию.
+// Ненулевое значение означает, что окно партиций кончилось и это осталось
+// незамеченным.
+func (d ds) DefaultPartitionRows(ctx context.Context) (int64, error) {
+	var rows int64
+	if err := d.db.QueryRowContext(ctx, "SELECT count(*) FROM transaction_default").Scan(&rows); err != nil {
+		return 0, fmt.Errorf("counting rows in default partition: %w", err)
+	}
+	return rows, nil
 }
 
 func (d ds) Close() error {

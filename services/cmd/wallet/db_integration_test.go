@@ -147,3 +147,85 @@ func TestWalletRepository(t *testing.T) {
 		}
 	})
 }
+
+func TestPartitionMaintenance(t *testing.T) {
+	ctx := context.Background()
+	db, err := NewDatabaseWallet(ctx, testsupport.Prepare(t, "wallet"))
+	if err != nil {
+		t.Fatalf("не удалось открыть репозиторий: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	partitions := func(t *testing.T) int {
+		t.Helper()
+		var count int
+		if err := rawDB(t, db).QueryRowContext(ctx,
+			"SELECT count(*) FROM pg_class WHERE relname LIKE 'transaction_2%' AND relkind = 'r'").
+			Scan(&count); err != nil {
+			t.Fatalf("подсчёт партиций: %v", err)
+		}
+		return count
+	}
+
+	t.Run("создаёт недостающие партиции", func(t *testing.T) {
+		before := partitions(t)
+
+		// Миграция создаёт окно на два года вперёд, поэтому на 6 месяцев
+		// вперёд создавать нечего.
+		created, err := db.EnsurePartitions(ctx, 6)
+		if err != nil {
+			t.Fatalf("создание партиций: %v", err)
+		}
+		if created != 0 {
+			t.Errorf("создано %d партиций, ожидалось 0: окно ещё не кончилось", created)
+		}
+
+		// А за пределами окна — уже есть что создавать.
+		created, err = db.EnsurePartitions(ctx, 40)
+		if err != nil {
+			t.Fatalf("создание партиций: %v", err)
+		}
+		if created == 0 {
+			t.Fatal("за пределами окна партиции должны создаваться")
+		}
+		if after := partitions(t); after != before+created {
+			t.Errorf("партиций стало %d, ожидалось %d", after, before+created)
+		}
+	})
+
+	t.Run("повторный вызов ничего не создаёт", func(t *testing.T) {
+		if _, err := db.EnsurePartitions(ctx, 40); err != nil {
+			t.Fatalf("первый вызов: %v", err)
+		}
+		created, err := db.EnsurePartitions(ctx, 40)
+		if err != nil {
+			t.Fatalf("повторный вызов: %v", err)
+		}
+		if created != 0 {
+			t.Errorf("создано %d партиций, ожидалось 0", created)
+		}
+	})
+
+	t.Run("партиция по умолчанию пуста, пока окно не кончилось", func(t *testing.T) {
+		userId := uuid.New()
+		var walletId string
+		if err := db.Information(ctx, userId, func(reply *wallet.InformationReply) {
+			walletId = reply.Id
+		}); err != nil {
+			t.Fatalf("получение кошелька: %v", err)
+		}
+		if _, err := rawDB(t, db).ExecContext(ctx,
+			"INSERT INTO transaction (target, operation, value) VALUES ($1, 'DEBIT', 10)",
+			walletId); err != nil {
+			t.Fatalf("вставка транзакции: %v", err)
+		}
+
+		rows, err := db.DefaultPartitionRows(ctx)
+		if err != nil {
+			t.Fatalf("подсчёт: %v", err)
+		}
+		if rows != 0 {
+			t.Errorf("в партиции по умолчанию %d строк, ожидалось 0", rows)
+		}
+	})
+}
