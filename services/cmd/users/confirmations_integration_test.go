@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -125,7 +126,7 @@ func TestPhoneConfirmationFlow(t *testing.T) {
 		if wrong == code {
 			wrong = "111111"
 		}
-		if err := service.VerifyConfirmation(ctx, user, ConfirmPhone, wrong); err != ErrWrongCode {
+		if err := service.VerifyConfirmation(ctx, user, ConfirmPhone, wrong); !errors.Is(err, ErrWrongCode) {
 			t.Errorf("получено %v, ожидалась %v", err, ErrWrongCode)
 		}
 		current, err := service.db.GetUserById(ctx, user.Id)
@@ -256,13 +257,13 @@ func TestConfirmationAttemptsAreLimited(t *testing.T) {
 		wrong = "111111"
 	}
 	for i := range MaxAttempts {
-		if err := service.VerifyConfirmation(ctx, user, ConfirmPhone, wrong); err != ErrWrongCode {
+		if err := service.VerifyConfirmation(ctx, user, ConfirmPhone, wrong); !errors.Is(err, ErrWrongCode) {
 			t.Fatalf("попытка %d: получено %v", i, err)
 		}
 	}
 
 	// Код сгорел: шестизначный код иначе подбирается перебором.
-	if err := service.VerifyConfirmation(ctx, user, ConfirmPhone, code); err != ErrNoConfirmation {
+	if err := service.VerifyConfirmation(ctx, user, ConfirmPhone, code); !errors.Is(err, ErrNoConfirmation) {
 		t.Errorf("получено %v, ожидалась %v", err, ErrNoConfirmation)
 	}
 }
@@ -279,7 +280,7 @@ func TestConfirmationExpires(t *testing.T) {
 	}
 	code := events.last(t).Payload["code"]
 
-	if err := service.VerifyConfirmation(ctx, user, ConfirmPhone, code); err != ErrNoConfirmation {
+	if err := service.VerifyConfirmation(ctx, user, ConfirmPhone, code); !errors.Is(err, ErrNoConfirmation) {
 		t.Errorf("истёкший код принят: %v", err)
 	}
 }
@@ -306,7 +307,7 @@ func TestConfirmationFollowsContact(t *testing.T) {
 		t.Error("смена номера не сбросила подтверждение")
 	}
 
-	if err = service.VerifyConfirmation(ctx, updated, ConfirmPhone, code); err != ErrTargetChanged {
+	if err = service.VerifyConfirmation(ctx, updated, ConfirmPhone, code); !errors.Is(err, ErrTargetChanged) {
 		t.Errorf("получено %v, ожидалась %v", err, ErrTargetChanged)
 	}
 }

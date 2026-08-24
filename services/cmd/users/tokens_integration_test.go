@@ -18,10 +18,10 @@ import (
 
 // tokenRequest собирает запрос так, как его сохраняет fosite: клиент
 // и сессия — интерфейсы, и восстанавливаются они по отдельности.
-func tokenRequest(t *testing.T, db DatabaseUsers, clientId string) *fosite.Request {
+func tokenRequest(ctx context.Context, t *testing.T, db DatabaseUsers, clientId string) *fosite.Request {
 	t.Helper()
 
-	client, err := db.GetClient(context.Background(), clientId)
+	client, err := db.GetClient(ctx, clientId)
 	if err != nil {
 		t.Fatalf("чтение клиента: %v", err)
 	}
@@ -42,10 +42,10 @@ func tokenRequest(t *testing.T, db DatabaseUsers, clientId string) *fosite.Reque
 }
 
 // testClient заводит клиента и возвращает его идентификатор.
-func testClient(t *testing.T, db DatabaseUsers) string {
+func testClient(ctx context.Context, t *testing.T, db DatabaseUsers) string {
 	t.Helper()
 	clientId := "client-" + uuid.NewString()[:8]
-	if err := db.CreateClient(context.Background(), clientId, "secret",
+	if err := db.CreateClient(ctx, clientId, "secret",
 		"https://client.example/callback", "openid,read", "code",
 		"authorization_code,refresh_token"); err != nil {
 		t.Fatalf("создание клиента: %v", err)
@@ -64,10 +64,10 @@ func TestRefreshAndPKCESessions(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	clientId := testClient(t, db)
+	clientId := testClient(ctx, t, db)
 
 	t.Run("refresh-сессия сохраняется, читается и удаляется", func(t *testing.T) {
-		request := tokenRequest(t, db, clientId)
+		request := tokenRequest(ctx, t, db, clientId)
 		if err := db.CreateRefreshTokenSession(ctx, "refresh-1", "", request); err != nil {
 			t.Fatalf("сохранение: %v", err)
 		}
@@ -87,7 +87,7 @@ func TestRefreshAndPKCESessions(t *testing.T) {
 	})
 
 	t.Run("PKCE-сессия живёт отдельно от токенов", func(t *testing.T) {
-		request := tokenRequest(t, db, clientId)
+		request := tokenRequest(ctx, t, db, clientId)
 		if err := db.CreatePKCERequestSession(ctx, "pkce-1", request); err != nil {
 			t.Fatalf("сохранение: %v", err)
 		}
@@ -105,7 +105,7 @@ func TestRefreshAndPKCESessions(t *testing.T) {
 	// Ротация вызывается refresh-потоком безусловно: старая пара
 	// отзывается целиком, и обе записи должны исчезнуть.
 	t.Run("ротация отзывает пару токенов", func(t *testing.T) {
-		request := tokenRequest(t, db, clientId)
+		request := tokenRequest(ctx, t, db, clientId)
 		if err := db.CreateAccessTokenSession(ctx, "access-rotate", request); err != nil {
 			t.Fatalf("сохранение access: %v", err)
 		}
@@ -127,7 +127,7 @@ func TestRefreshAndPKCESessions(t *testing.T) {
 	// Перехваченный код отзывает всё, что по нему выдано: молчаливое
 	// «не найдено» оставило бы перехват незамеченным.
 	t.Run("использованный код отличается от несуществующего", func(t *testing.T) {
-		request := tokenRequest(t, db, clientId)
+		request := tokenRequest(ctx, t, db, clientId)
 		if err := db.CreateAuthorizeCodeSession(ctx, "code-1", request); err != nil {
 			t.Fatalf("сохранение кода: %v", err)
 		}
@@ -157,7 +157,7 @@ func TestRefreshAndPKCESessions(t *testing.T) {
 	})
 
 	t.Run("сессия неизвестного клиента не восстанавливается", func(t *testing.T) {
-		request := tokenRequest(t, db, clientId)
+		request := tokenRequest(ctx, t, db, clientId)
 		if err := db.CreateAccessTokenSession(ctx, "access-orphan", request); err != nil {
 			t.Fatalf("сохранение: %v", err)
 		}
