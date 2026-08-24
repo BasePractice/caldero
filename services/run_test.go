@@ -53,17 +53,22 @@ func TestServeHTTPGracefulShutdown(t *testing.T) {
 		serveErr <- ServeHTTP(ctx, Config{MaxInFlightRequests: 4}, addr, handler)
 	}()
 
-	response := make(chan *http.Response, 1)
+	// По каналу уходит код ответа, а не сам ответ: тело закрывается там же,
+	// где получено, иначе его владелец размазан по двум горутинам.
+	response := make(chan int, 1)
 	go func() {
 		for range 100 {
 			resp, err := http.Get("http://" + addr + "/")
-			if err == nil {
-				response <- resp
-				return
+			if err != nil {
+				time.Sleep(10 * time.Millisecond)
+				continue
 			}
-			time.Sleep(10 * time.Millisecond)
+			code := resp.StatusCode
+			_ = resp.Body.Close()
+			response <- code
+			return
 		}
-		response <- nil
+		response <- 0
 	}()
 
 	select {
@@ -77,13 +82,12 @@ func TestServeHTTPGracefulShutdown(t *testing.T) {
 	cancel()
 	close(release)
 
-	resp := <-response
-	if resp == nil {
+	code := <-response
+	if code == 0 {
 		t.Fatal("запрос не дошёл до сервера")
 	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusTeapot {
-		t.Errorf("код ответа %d, ожидался %d", resp.StatusCode, http.StatusTeapot)
+	if code != http.StatusTeapot {
+		t.Errorf("код ответа %d, ожидался %d", code, http.StatusTeapot)
 	}
 
 	if err := <-serveErr; err != nil {

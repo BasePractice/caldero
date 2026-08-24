@@ -218,11 +218,19 @@ func (d *Dispatcher) withinRate(ctx context.Context, task Task) (bool, error) {
 // backoff растит задержку экспоненциально: канал, который не отвечает
 // сейчас, чаще всего не ответит и через секунду.
 func (d *Dispatcher) backoff(attempts int) time.Duration {
-	delay := time.Duration(float64(d.RetryBase) * math.Pow(2, float64(attempts)))
-	if d.RetryMax > 0 && delay > d.RetryMax {
-		delay = d.RetryMax
+	// Сравнение с пределом идёт в float64, до перевода в Duration.
+	// Произведение выходит за диапазон int64 уже на трёх десятках попыток,
+	// а перевод такого значения в целое зависит от архитектуры: на amd64
+	// он заворачивается в минимум, и задержка получается отрицательной —
+	// то есть повтор без паузы вместо паузы подольше.
+	grown := float64(d.RetryBase) * math.Pow(2, float64(attempts))
+	if d.RetryMax > 0 && grown >= float64(d.RetryMax) {
+		return d.RetryMax
 	}
-	return delay
+	if grown >= float64(math.MaxInt64) {
+		return time.Duration(math.MaxInt64)
+	}
+	return time.Duration(grown)
 }
 
 // ErrNoSenders — не подключён ни один канал доставки.

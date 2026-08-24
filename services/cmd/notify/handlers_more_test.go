@@ -461,16 +461,47 @@ func TestSenderChannels(t *testing.T) {
 
 // TestBackoffGrowsAndIsCapped: канал, который не отвечает сейчас, чаще
 // всего не ответит и через секунду, но расти задержка бесконечно не должна.
+//
+// Проверяется свойство на всём диапазоне, а не одна точка: произведение
+// выходит за диапазон int64, и раньше на amd64 задержка становилась
+// отрицательной — задание возвращалось в выборку немедленно.
 func TestBackoffGrowsAndIsCapped(t *testing.T) {
 	dispatcher := newTestDispatcher(t, &fakeDatabase{})
 
-	first := dispatcher.backoff(0)
-	second := dispatcher.backoff(1)
-	if second <= first {
+	previous := time.Duration(0)
+	for attempts := range 64 {
+		delay := dispatcher.backoff(attempts)
+		if delay < 0 {
+			t.Fatalf("попытка %d: отрицательная задержка %s", attempts, delay)
+		}
+		if delay > dispatcher.RetryMax {
+			t.Fatalf("попытка %d: задержка %s больше предела %s",
+				attempts, delay, dispatcher.RetryMax)
+		}
+		if delay < previous {
+			t.Fatalf("попытка %d: задержка %s меньше предыдущей %s",
+				attempts, delay, previous)
+		}
+		previous = delay
+	}
+	if previous != dispatcher.RetryMax {
+		t.Errorf("задержка не дошла до предела: %s вместо %s", previous, dispatcher.RetryMax)
+	}
+	if first, second := dispatcher.backoff(0), dispatcher.backoff(1); second <= first {
 		t.Errorf("задержка не растёт: %s и %s", first, second)
 	}
-	if capped := dispatcher.backoff(30); capped != dispatcher.RetryMax {
-		t.Errorf("задержка %s, ожидался предел %s", capped, dispatcher.RetryMax)
+}
+
+// TestBackoffWithoutCap: без предела задержка обязана упираться в максимум
+// Duration, а не заворачиваться через переполнение.
+func TestBackoffWithoutCap(t *testing.T) {
+	dispatcher := newTestDispatcher(t, &fakeDatabase{})
+	dispatcher.RetryMax = 0
+
+	for _, attempts := range []int{0, 30, 63, 1024} {
+		if delay := dispatcher.backoff(attempts); delay < 0 {
+			t.Errorf("попытка %d: отрицательная задержка %s", attempts, delay)
+		}
 	}
 }
 
