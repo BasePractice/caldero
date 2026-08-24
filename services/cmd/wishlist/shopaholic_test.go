@@ -325,3 +325,37 @@ func TestShoppingHistoryIsPrivate(t *testing.T) {
 		t.Errorf("получено %v, ожидалась %v", err, ErrNotFound)
 	}
 }
+
+// TestShoppingFromUnknownProvider: площадка, которой нет в реестре, —
+// это ненайденный товар, а не сбой сервиса. Без разбора этой ветки
+// клиент получил бы 500 на опечатку в названии площадки.
+func TestShoppingFromUnknownProvider(t *testing.T) {
+	env := newTestEnvironment(t, payment.Fee{}, nil)
+	buyer := uuid.New()
+	env.wallet.fund(buyer, 1_000_000)
+
+	_, err := env.shopaholic.Shop(t.Context(), buyer, wishlist.StartShopping{
+		Budget: 500_000,
+		Items:  []wishlist.ShoppingItem{{Provider: "WHATEVER", ProductId: "x"}},
+	})
+	if !errors.Is(err, ErrProductNotFound) {
+		t.Errorf("получено %v, ожидалась ErrProductNotFound", err)
+	}
+}
+
+// TestShoppingWithUnavailableMarketplace: без цен отбирать нечего,
+// и прогон обязан честно отказать, а не купить наугад.
+func TestShoppingWithUnavailableMarketplace(t *testing.T) {
+	env := newTestEnvironment(t, payment.Fee{}, nil)
+	env.stub.Unavailable = true
+	buyer := uuid.New()
+	env.wallet.fund(buyer, 1_000_000)
+
+	_, err := env.shopaholic.Shop(t.Context(), buyer, wishlist.StartShopping{
+		Budget: 500_000,
+		Items:  []wishlist.ShoppingItem{{Provider: marketplace.ProviderStub, ProductId: "coffee-machine"}},
+	})
+	if !errors.Is(err, ErrMarketplaceUnavailable) {
+		t.Errorf("получено %v, ожидалась ErrMarketplaceUnavailable", err)
+	}
+}

@@ -287,12 +287,29 @@ func TestAddParticipantErrors(t *testing.T) {
 		})
 	}
 
-	// Заявка без участника отвергается — но кодом 500 вместо 400: проверка
-	// требует режима котла и потому живёт в сервисе, а её ошибка не разобрана
-	// в writeError. Исправление — T-084.
+	// Проверка заявки требует режима котла и потому живёт в сервисе.
+	// Её ошибка обязана доезжать до клиента как 400 с причиной: иначе
+	// на обычную опечатку в запросе он получает 500 и не понимает,
+	// что чинить.
 	t.Run("без участника", func(t *testing.T) {
-		if code := call(handler, http.MethodPost, path, `{}`, creator).Code; code < 400 {
-			t.Errorf("код ответа %d: заявка без участника принята", code)
+		recorder := call(handler, http.MethodPost, path, `{}`, creator)
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("код ответа %d, ожидался %d (%s)",
+				recorder.Code, http.StatusBadRequest, recorder.Body)
+		}
+		if !strings.Contains(recorder.Body.String(), "user_id") {
+			t.Errorf("ответ %q не называет причину", recorder.Body)
+		}
+	})
+
+	t.Run("сумма в режиме точного взноса", func(t *testing.T) {
+		// Сумму в этом режиме задаёт котёл: присланная клиентом
+		// молча игнорировалась бы.
+		body := `{"user_id":"` + uuid.NewString() + `","amount":100000}`
+		recorder := call(handler, http.MethodPost, path, body, creator)
+		if recorder.Code != http.StatusBadRequest {
+			t.Errorf("код ответа %d, ожидался %d (%s)",
+				recorder.Code, http.StatusBadRequest, recorder.Body)
 		}
 	})
 }

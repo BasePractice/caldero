@@ -317,8 +317,11 @@ func writeError(ctx context.Context, w http.ResponseWriter, message string, err 
 	case errors.Is(err, ErrForbidden), errors.Is(err, caldron.ErrForbiddenTransition):
 		http.Error(w, "Forbidden", http.StatusForbidden)
 	case errors.Is(err, caldron.ErrInvalidContribution),
+		errors.Is(err, caldron.ErrInvalidParticipant),
 		errors.Is(err, caldron.ErrTooManyGifts), errors.Is(err, caldron.ErrGiftsTooExpensive):
-		// Сумма не подходит под правила котла — это ошибка в запросе.
+		// Запрос не подходит под правила котла — это ошибка в запросе.
+		// Проверки, которым нужен сам котёл, живут в сервисе, и без
+		// разбора их ошибок здесь они попадали бы в ветку по умолчанию.
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrAlreadyPaid), errors.Is(err, ErrNotReady),
 		errors.Is(err, ErrDrawRequired), errors.Is(err, caldron.ErrInvalidTransition):

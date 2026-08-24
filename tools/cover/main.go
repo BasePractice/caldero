@@ -96,7 +96,7 @@ func main() {
 
 	total := percent(kept)
 	if *min > 0 && total < *min {
-		fmt.Fprintf(os.Stderr, "\nпокрытие %.1f%% ниже порога %.1f%%\n", total, *min)
+		fmt.Fprintf(os.Stderr, "\nпокрытие %.2f%% ниже порога %g%%\n", total, *min)
 		os.Exit(1)
 	}
 }
@@ -337,5 +337,8 @@ func report(kept, dropped []block) {
 		fmt.Printf("  %-32s %s\n", what, e.reason)
 	}
 
-	fmt.Printf("\nвсего: %.1f%%\n", percent(kept))
+	// Итог печатается с той же точностью, с какой сравнивается с порогом:
+	// округлённые до десятой 90.0 % при пороге 90 давали отчёт и вердикт,
+	// противоречащие друг другу.
+	fmt.Printf("\nвсего: %.2f%%\n", percent(kept))
 }

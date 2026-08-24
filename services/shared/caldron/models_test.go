@@ -121,6 +121,12 @@ func TestAddParticipantValidate(t *testing.T) {
 			if (err != nil) != test.wantErr {
 				t.Errorf("Validate() = %v, ожидалась ошибка: %v", err, test.wantErr)
 			}
+			// Отказ обязан быть доменной ошибкой: проверка выполняется
+			// в сервисе, и по обычной ошибке обработчик не отличит
+			// некорректный запрос от сбоя базы.
+			if test.wantErr && !errors.Is(err, ErrInvalidParticipant) {
+				t.Errorf("получено %v, ожидалась ErrInvalidParticipant", err)
+			}
 		})
 	}
 }

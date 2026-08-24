@@ -264,20 +264,30 @@ type AddParticipant struct {
 	Amount credit.Amount `json:"amount,omitempty"`
 }
 
+// ErrInvalidParticipant — заявка на участие не проходит проверку.
+//
+// Отдельная ошибка нужна потому, что проверка требует режима котла
+// и потому выполняется в сервисе, а не в обработчике. Без доменной
+// ошибки её причина неотличима от сбоя базы: обработчик отвечал 500
+// и писал в журнал ERROR на обычную опечатку в запросе.
+var ErrInvalidParticipant = errors.New("invalid participant request")
+
 // Validate проверяет запрос в контексте котла: без него нельзя понять,
 // нужна ли сумма.
 func (a AddParticipant) Validate(mode ContributionMode) error {
 	if a.UserId == uuid.Nil {
-		return errors.New("user_id is required")
+		return fmt.Errorf("%w: user_id is required", ErrInvalidParticipant)
 	}
 	if mode == ModeIndividual {
 		if a.Amount < MinContribution {
-			return fmt.Errorf("amount must be at least %s in %s mode", MinContribution, ModeIndividual)
+			return fmt.Errorf("%w: amount must be at least %s in %s mode",
+				ErrInvalidParticipant, MinContribution, ModeIndividual)
 		}
 		return nil
 	}
 	if a.Amount != 0 {
-		return fmt.Errorf("amount is set by the caldron in %s mode", mode)
+		return fmt.Errorf("%w: amount is set by the caldron in %s mode",
+			ErrInvalidParticipant, mode)
 	}
 	return nil
 }
