@@ -1,114 +1,86 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
 	"wish/services/shared/notify"
 )
 
-// TelegramAPI — база адресов Bot API Telegram. Вынесена, чтобы тест мог
-// подставить свой сервер: обращаться к настоящему Telegram из тестов нельзя.
-const TelegramAPI = "https://api.telegram.org"
-
 const (
-	// telegramTimeout ограничивает обычный запрос к Bot API.
-	telegramTimeout = 10 * time.Second
-	// telegramPollTimeout — сколько Bot API держит запрос обновлений,
-	// пока их нет. Длинный опрос дешевле частых коротких запросов.
-	telegramPollTimeout = 25 * time.Second
-	// maxMessageLength — предел Bot API на длину сообщения.
-	maxMessageLength = 4096
+	// botTimeout ограничивает обычный запрос к Bot API.
+	botTimeout = 10 * time.Second
+	// botPollTimeout — сколько Bot API держит запрос обновлений, пока их
+	// нет. Длинный опрос дешевле частых коротких запросов. Значение
+	// укладывается в пределы обеих площадок: Telegram ограничений
+	// не задаёт, МАКС принимает от 0 до 90 секунд.
+	botPollTimeout = 25 * time.Second
 )
 
-// MessengerConfig описывает бота конкретного мессенджера.
+// bot — общая часть настроек бота. Различия площадок живут в диалекте,
+// а канал, адрес, токен и имя бота нужны одинаково всем.
+type bot struct {
+	channel notify.Channel
+	api     string
+	token   string
+	name    string
+}
+
+// botUpdate — обновление в том виде, в каком оно нужно привязке. Площадки
+// сообщают о событиях по-разному, но привязке нужны чат, текст команды
+// и признак того, что бота запустили или остановили.
+type botUpdate struct {
+	ChatId int64
+	// Text — текст сообщения или команда, собранная из другого события:
+	// в МАКС код привязки приходит не сообщением, а полем payload
+	// события запуска бота.
+	Text string
+	// Started и Stopped — пользователь запустил или остановил бота.
+	// Telegram о таких событиях не сообщает вовсе, и там оба признака
+	// всегда ложны.
+	Started bool
+	Stopped bool
+}
+
+// dialect — протокол конкретной площадки.
 //
-// Протокол задаётся конфигурацией, а не кодом: у ботов один и тот же
-// набор действий — отправить сообщение, забрать обновления, узнать
-// о блокировке, — но адреса и имена полей у каждой площадки свои.
-// Выдумывать чужой формат нельзя, поэтому он приходит извне, а значения
-// по умолчанию заданы только для Telegram, где они известны.
-type MessengerConfig struct {
-	Channel notify.Channel
-	// API — база адресов, Token — токен бота, BotName нужен для ссылки
-	// привязки.
-	API     string
-	Token   string
-	BotName string
-	// MethodPath — шаблон пути метода. Подстановки: {token} и {method}.
-	MethodPath string
-	// SendMethod и UpdatesMethod — имена методов отправки и получения
-	// обновлений.
-	SendMethod    string
-	UpdatesMethod string
-	// ChatField и TextField — имена полей в запросе отправки.
-	ChatField string
-	TextField string
+// Общее у ботов только действия: отправить сообщение, забрать обновления,
+// дать ссылку привязки. Всё остальное различается, и подстановкой имён
+// полей это не сводится: у Telegram токен в пути, получатель в теле
+// запроса и ответ в конверте `{ok, result}`, у МАКС токен в заголовке,
+// получатель в строке запроса, а ответ — сам результат.
+type dialect interface {
+	// Send отправляет текст в чат.
+	Send(ctx context.Context, chatId int64, text string) error
+	// Updates забирает порцию обновлений начиная с курсора и возвращает
+	// курсор для следующего запроса. Что такое курсор, решает площадка:
+	// у Telegram это номер следующего обновления, у МАКС — метка,
+	// присланная в ответе.
+	Updates(ctx context.Context, cursor int64) ([]botUpdate, int64, error)
+	// BindingLink — ссылка, по которой бот получает код без ручного ввода.
+	BindingLink(code string) string
 }
 
-// TelegramConfig собирает настройки Telegram: у него формат известен,
-// и повторять его в конфигурации стенда незачем.
-func TelegramConfig(token, api, botName string) MessengerConfig {
-	if api == "" {
-		api = TelegramAPI
-	}
-	return MessengerConfig{
-		Channel: notify.ChannelTelegram, API: api, Token: token, BotName: botName,
-		MethodPath: "/bot{token}/{method}",
-		SendMethod: "sendMessage", UpdatesMethod: "getUpdates",
-		ChatField: "chat_id", TextField: "text",
-	}
-}
-
-// Validate проверяет, что бота можно поднять: без адреса и токена
-// он не отправит ничего, и узнать об этом лучше при старте.
-func (c MessengerConfig) Validate() error {
-	missing := make([]string, 0, 4)
-	for field, value := range map[string]string{
-		"API": c.API, "TOKEN": c.Token, "METHOD_PATH": c.MethodPath,
-		"SEND_METHOD": c.SendMethod, "CHAT_FIELD": c.ChatField, "TEXT_FIELD": c.TextField,
-	} {
-		if value == "" {
-			missing = append(missing, field)
-		}
-	}
-	if len(missing) > 0 {
-		sort.Strings(missing)
-		return fmt.Errorf("messenger %s is missing: %s", c.Channel, strings.Join(missing, ", "))
-	}
-	return nil
-}
-
-// Messenger — доставка ботом и привязка аккаунта.
+// Messenger — доставка ботом и привязка аккаунта. Привязка написана один
+// раз на все площадки: различает их только диалект.
 type Messenger struct {
-	db     Database
-	config MessengerConfig
-	client *http.Client
+	db      Database
+	bot     bot
+	dialect dialect
 }
 
-func NewMessenger(db Database, config MessengerConfig) *Messenger {
-	return &Messenger{
-		db:     db,
-		config: config,
-		// Таймаут запроса больше времени длинного опроса: иначе клиент
-		// обрывал бы каждое ожидание обновлений.
-		client: &http.Client{Timeout: telegramPollTimeout + telegramTimeout},
-	}
-}
+func (t *Messenger) Channel() notify.Channel { return t.bot.channel }
 
-func (t *Messenger) Channel() notify.Channel { return t.config.Channel }
+// BindingLink собирает ссылку, по которой бот получает код без ручного ввода.
+func (t *Messenger) BindingLink(code string) string { return t.dialect.BindingLink(code) }
 
 // BindingCodeHash считает хеш кода привязки.
 //
@@ -117,19 +89,19 @@ func (t *Messenger) Channel() notify.Channel { return t.config.Channel }
 // токен бота: смена токена обесценивает старые коды, и это правильно —
 // они всё равно живут минуты.
 func (t *Messenger) BindingCodeHash(code string) []byte {
-	mac := hmac.New(sha256.New, []byte(t.config.Token))
+	mac := hmac.New(sha256.New, []byte(t.bot.token))
 	// hash.Hash по контракту не возвращает ошибку записи.
 	_, _ = mac.Write([]byte(strings.ToUpper(code)))
 	return mac.Sum(nil)
 }
 
 func (t *Messenger) Send(ctx context.Context, task Task, title, body string) error {
-	binding, err := t.db.MessengerBinding(ctx, t.config.Channel, task.UserId)
+	binding, err := t.db.MessengerBinding(ctx, t.bot.channel, task.UserId)
 	if errors.Is(err, ErrNotFound) {
 		return ErrChannelUnbound
 	}
 	if err != nil {
-		return fmt.Errorf("loading telegram binding: %w", err)
+		return fmt.Errorf("loading %s binding: %w", t.bot.channel, err)
 	}
 	if binding.Blocked {
 		return ErrChannelBlocked
@@ -137,21 +109,11 @@ func (t *Messenger) Send(ctx context.Context, task Task, title, body string) err
 
 	// Разметка не используется: в тексте оказываются названия товаров
 	// и имена, введённые людьми, и любая разметка на них ломается.
-	text := title + "\n\n" + body
-	if len(text) > maxMessageLength {
-		text = text[:maxMessageLength]
-	}
-
-	err = t.call(ctx, t.config.SendMethod, map[string]any{
-		t.config.ChatField: binding.ChatId,
-		t.config.TextField: text,
-	}, nil)
-
-	var api *telegramError
-	if errors.As(err, &api) && api.Code == http.StatusForbidden {
+	err = t.dialect.Send(ctx, binding.ChatId, title+"\n\n"+body)
+	if errors.Is(err, ErrChannelBlocked) {
 		// Бот заблокирован пользователем. Отмечаем это, иначе каждое
 		// следующее событие будет заново упираться в тот же отказ.
-		if blockErr := t.db.BlockMessenger(ctx, t.config.Channel, task.UserId); blockErr != nil {
+		if blockErr := t.db.BlockMessenger(ctx, t.bot.channel, task.UserId); blockErr != nil {
 			slog.ErrorContext(ctx, "Can't mark messenger blocked",
 				slog.String("user", task.UserId.String()), slog.String("err", blockErr.Error()))
 		}
@@ -163,40 +125,58 @@ func (t *Messenger) Send(ctx context.Context, task Task, title, body string) err
 // Run обрабатывает обновления бота до отмены контекста: по команде
 // /start с кодом привязывает чат к пользователю.
 func (t *Messenger) Run(ctx context.Context) error {
-	var offset int64
+	var cursor int64
 	for {
 		if ctx.Err() != nil {
 			//nolint:nilerr // отмена контекста — штатная остановка бота, а не сбой
 			return nil
 		}
 
-		updates, err := t.updates(ctx, offset)
+		updates, next, err := t.dialect.Updates(ctx, cursor)
 		if err != nil {
 			if ctx.Err() != nil {
 				//nolint:nilerr // сбой на фоне отмены — следствие остановки, а не её причина
 				return nil
 			}
 			slog.WarnContext(ctx, "Can't read messenger updates",
-				slog.String("channel", string(t.config.Channel)), slog.String("err", err.Error()))
+				slog.String("channel", string(t.bot.channel)), slog.String("err", err.Error()))
 			// Пауза после сбоя: без неё цикл превращается в непрерывный
 			// поток запросов к недоступному API.
 			select {
 			case <-ctx.Done():
 				return nil
-			case <-time.After(telegramTimeout):
+			case <-time.After(botTimeout):
 			}
 			continue
 		}
+		// Курсор сдвигается и тогда, когда все обновления пропущены:
+		// неподтверждённые обновления площадка повторяет бесконечно.
+		cursor = next
 
 		for _, update := range updates {
-			// Смещение подтверждает обработку: Bot API повторяет
-			// неподтверждённые обновления бесконечно.
-			offset = update.UpdateId + 1
-			if update.Message == nil {
-				continue
+			switch {
+			case update.Stopped:
+				// Площадка сама сообщила, что бота остановили. Ждать
+				// отказа отправки незачем: он всё равно был бы позже.
+				t.setBlocked(ctx, update.ChatId, true)
+			case update.Started:
+				// Бота запустили снова: без снятия отметки оповещения
+				// в этот чат больше не пошли бы никогда.
+				t.setBlocked(ctx, update.ChatId, false)
+				t.handleCommand(ctx, update.ChatId, update.Text)
+			default:
+				t.handleCommand(ctx, update.ChatId, update.Text)
 			}
-			t.handleCommand(ctx, update.Message.Chat.Id, update.Message.Text)
 		}
+	}
+}
+
+// setBlocked отмечает блокировку по чату: о запуске и остановке бота
+// площадка сообщает чатом, а не нашим пользователем.
+func (t *Messenger) setBlocked(ctx context.Context, chatId int64, blocked bool) {
+	if err := t.db.SetMessengerBlocked(ctx, t.bot.channel, chatId, blocked); err != nil {
+		slog.ErrorContext(ctx, "Can't change messenger blocked mark",
+			slog.String("channel", string(t.bot.channel)), slog.String("err", err.Error()))
 	}
 }
 
@@ -211,7 +191,7 @@ func (t *Messenger) handleCommand(ctx context.Context, chatId int64, text string
 		return
 	}
 
-	user, err := t.db.CompleteMessengerBinding(ctx, t.config.Channel, t.BindingCodeHash(fields[1]), chatId)
+	user, err := t.db.CompleteMessengerBinding(ctx, t.bot.channel, t.BindingCodeHash(fields[1]), chatId)
 	if errors.Is(err, ErrNotFound) {
 		// Причина не уточняется: по разнице ответов «код не найден»
 		// и «код просрочен» подбирать код удобнее.
@@ -220,117 +200,38 @@ func (t *Messenger) handleCommand(ctx context.Context, chatId int64, text string
 	}
 	if err != nil {
 		slog.ErrorContext(ctx, "Can't complete messenger binding",
-			slog.String("channel", string(t.config.Channel)), slog.String("err", err.Error()))
+			slog.String("channel", string(t.bot.channel)), slog.String("err", err.Error()))
 		t.reply(ctx, chatId, "Не получилось привязать аккаунт. Попробуйте позже.")
 		return
 	}
 
 	slog.InfoContext(ctx, "Messenger bound",
-		slog.String("channel", string(t.config.Channel)), slog.String("user", user.String()))
+		slog.String("channel", string(t.bot.channel)), slog.String("user", user.String()))
 	t.reply(ctx, chatId, "Аккаунт привязан. Оповещения будут приходить сюда.")
 }
 
 func (t *Messenger) reply(ctx context.Context, chatId int64, text string) {
-	if err := t.call(ctx, t.config.SendMethod, map[string]any{
-		t.config.ChatField: chatId,
-		t.config.TextField: text,
-	}, nil); err != nil {
+	if err := t.dialect.Send(ctx, chatId, text); err != nil {
 		slog.WarnContext(ctx, "Can't reply in messenger", slog.String("err", err.Error()))
 	}
 }
 
-type telegramUpdate struct {
-	UpdateId int64 `json:"update_id"`
-	Message  *struct {
-		Chat struct {
-			Id int64 `json:"id"`
-		} `json:"chat"`
-		Text string `json:"text"`
-	} `json:"message"`
+// newBotClient — клиент для запросов к Bot API. Таймаут запроса больше
+// времени длинного опроса: иначе клиент обрывал бы каждое ожидание
+// обновлений.
+func newBotClient() *http.Client {
+	return &http.Client{Timeout: botPollTimeout + botTimeout}
 }
 
-func (t *Messenger) updates(ctx context.Context, offset int64) ([]telegramUpdate, error) {
-	var updates []telegramUpdate
-	err := t.call(ctx, t.config.UpdatesMethod, map[string]any{
-		"offset":          offset,
-		"timeout":         int(telegramPollTimeout.Seconds()),
-		"allowed_updates": []string{"message"},
-	}, &updates)
-	return updates, err
-}
-
-// telegramError — отказ, о котором сообщил сам Bot API.
-type telegramError struct {
-	Code        int
-	Description string
-}
-
-func (e *telegramError) Error() string {
-	return fmt.Sprintf("telegram api error %d: %s", e.Code, e.Description)
-}
-
-func (t *Messenger) call(ctx context.Context, method string, params map[string]any, result any) error {
-	body, err := json.Marshal(params)
-	if err != nil {
-		return fmt.Errorf("encoding %s request: %w", method, err)
+// truncateMessage укорачивает текст под предел площадки. Предел считается
+// в знаках, а не в байтах: обрезка по байтам разрубила бы кириллицу
+// посередине символа.
+func truncateMessage(text string, limit int) string {
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
 	}
-
-	path := strings.ReplaceAll(t.config.MethodPath, "{token}", t.config.Token)
-	path = strings.ReplaceAll(path, "{method}", method)
-	url := t.config.API + path
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("creating %s request: %w", method, err)
-	}
-	request.Header.Set("Content-Type", "application/json")
-
-	response, err := t.client.Do(request)
-	if err != nil {
-		return fmt.Errorf("%w: calling %s: %w", ErrChannelUnavailable, method, err)
-	}
-	defer func() {
-		// Тело читается до конца выше; здесь остаётся только закрыть.
-		_ = response.Body.Close()
-	}()
-
-	payload, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
-	if err != nil {
-		return fmt.Errorf("%w: reading %s response: %w", ErrChannelUnavailable, method, err)
-	}
-
-	var envelope struct {
-		Ok          bool            `json:"ok"`
-		ErrorCode   int             `json:"error_code"`
-		Description string          `json:"description"`
-		Result      json.RawMessage `json:"result"`
-	}
-	if err = json.Unmarshal(payload, &envelope); err != nil {
-		return fmt.Errorf("%w: decoding %s response: %w", ErrChannelUnavailable, method, err)
-	}
-	if !envelope.Ok {
-		apiErr := &telegramError{Code: envelope.ErrorCode, Description: envelope.Description}
-		if apiErr.Code == 0 {
-			apiErr.Code = response.StatusCode
-		}
-		switch apiErr.Code {
-		case http.StatusForbidden:
-			return apiErr
-		case http.StatusBadRequest:
-			// Чат не найден или удалён: повторять нечего.
-			return fmt.Errorf("%w: %s", ErrChannelUnbound, apiErr.Description)
-		default:
-			// Ограничение частоты и сбои самого Bot API имеет смысл
-			// повторить позже.
-			return fmt.Errorf("%w: %w", ErrChannelUnavailable, apiErr)
-		}
-	}
-
-	if result != nil {
-		if err = json.Unmarshal(envelope.Result, result); err != nil {
-			return fmt.Errorf("decoding %s result: %w", method, err)
-		}
-	}
-	return nil
+	return string(runes[:limit])
 }
 
 // NewBindingCode выдаёт код привязки. Алфавит без похожих знаков: код
@@ -350,47 +251,21 @@ func NewBindingCode(random func([]byte) (int, error)) (string, error) {
 	return string(code), nil
 }
 
-// BindingLink собирает ссылку, по которой бот получает код без ручного ввода.
-func BindingLink(botName, code string) string {
-	if botName == "" {
-		return ""
-	}
-	return fmt.Sprintf("https://t.me/%s?start=%s", botName, code)
-}
-
 // LoadMessengers читает настройки ботов из окружения.
 //
 // Разбор живёт в сервисе, а не в общей конфигурации: набор переменных
-// зависит от числа мессенджеров и нужен только здесь. Telegram описан
-// значениями по умолчанию — его формат известен; для остальных площадок
-// формат задаётся явно, потому что выдумывать чужой протокол нельзя.
-func LoadMessengers(db Database, telegramToken, telegramAPI, telegramBot string) (map[notify.Channel]*Messenger, error) {
+// зависит от числа мессенджеров и нужен только здесь. Токен служит
+// выключателем: без него бот не поднимается, всё остальное известно
+// из документации площадки и задано значениями по умолчанию.
+func LoadMessengers(db Database, telegramToken, telegramAPI, telegramBot string) map[notify.Channel]*Messenger {
 	messengers := make(map[notify.Channel]*Messenger, 2)
 
 	if telegramToken != "" {
-		config := TelegramConfig(telegramToken, telegramAPI, telegramBot)
-		if err := config.Validate(); err != nil {
-			return nil, err
-		}
-		messengers[notify.ChannelTelegram] = NewMessenger(db, config)
+		messengers[notify.ChannelTelegram] = NewTelegram(db, telegramToken, telegramAPI, telegramBot)
 	}
-
 	if token := os.Getenv("NOTIFY_MAX_TOKEN"); token != "" {
-		config := MessengerConfig{
-			Channel:       notify.ChannelMax,
-			API:           os.Getenv("NOTIFY_MAX_API"),
-			Token:         token,
-			BotName:       os.Getenv("NOTIFY_MAX_BOT"),
-			MethodPath:    os.Getenv("NOTIFY_MAX_METHOD_PATH"),
-			SendMethod:    os.Getenv("NOTIFY_MAX_SEND_METHOD"),
-			UpdatesMethod: os.Getenv("NOTIFY_MAX_UPDATES_METHOD"),
-			ChatField:     os.Getenv("NOTIFY_MAX_CHAT_FIELD"),
-			TextField:     os.Getenv("NOTIFY_MAX_TEXT_FIELD"),
-		}
-		if err := config.Validate(); err != nil {
-			return nil, err
-		}
-		messengers[notify.ChannelMax] = NewMessenger(db, config)
+		messengers[notify.ChannelMax] = NewMax(db, token,
+			os.Getenv("NOTIFY_MAX_API"), os.Getenv("NOTIFY_MAX_BOT"))
 	}
-	return messengers, nil
+	return messengers
 }

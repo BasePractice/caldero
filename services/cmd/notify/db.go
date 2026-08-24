@@ -89,6 +89,10 @@ type Database interface {
 	// BlockMessenger помечает бота заблокированным: слать в такой чат
 	// бессмысленно, пока пользователь не разблокирует бота.
 	BlockMessenger(ctx context.Context, provider notify.Channel, user uuid.UUID) error
+	// SetMessengerBlocked меняет отметку блокировки по чату. Нужен там,
+	// где о запуске и остановке бота площадка сообщает событием: в нём
+	// есть чат, но нет нашего пользователя.
+	SetMessengerBlocked(ctx context.Context, provider notify.Channel, chatId int64, blocked bool) error
 
 	Close() error
 	Stats() sql.DBStats
@@ -563,6 +567,21 @@ func (d ds) BlockMessenger(ctx context.Context, provider notify.Channel, user uu
 		WHERE provider = $1 AND user_id = $2`, provider, user)
 	if err != nil {
 		return fmt.Errorf("marking %s blocked for user %s: %w", provider, user, err)
+	}
+	return nil
+}
+
+func (d ds) SetMessengerBlocked(
+	ctx context.Context,
+	provider notify.Channel,
+	chatId int64,
+	blocked bool,
+) error {
+	_, err := d.db.ExecContext(ctx, `
+		UPDATE messenger_binding SET blocked = $3, updated_at = current_timestamp
+		WHERE provider = $1 AND chat_id = $2`, provider, chatId, blocked)
+	if err != nil {
+		return fmt.Errorf("marking %s blocked=%t for chat %d: %w", provider, blocked, chatId, err)
 	}
 	return nil
 }

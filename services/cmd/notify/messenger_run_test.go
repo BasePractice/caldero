@@ -265,7 +265,7 @@ func TestMessengerAPIError(t *testing.T) {
 		_, _ = w.Write([]byte(`{"ok":false,"error_code":403,"description":"bot was blocked by the user"}`))
 	})
 
-	_, err := messenger.updates(t.Context(), 0)
+	_, _, err := messenger.dialect.Updates(t.Context(), 0)
 	if err == nil {
 		t.Fatal("отказ Bot API принят за успех")
 	}
@@ -277,11 +277,10 @@ func TestMessengerAPIError(t *testing.T) {
 
 func TestMessengerTransportError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-	config := TelegramConfig("bot-token", server.URL, "wish_bot")
+	messenger := NewTelegram(&fakeDatabase{}, "bot-token", server.URL, "wish_bot")
 	server.Close()
 
-	messenger := NewMessenger(&fakeDatabase{}, config)
-	if _, err := messenger.updates(t.Context(), 0); err == nil {
+	if _, _, err := messenger.dialect.Updates(t.Context(), 0); err == nil {
 		t.Fatal("недоступный Bot API принят за успех")
 	}
 }

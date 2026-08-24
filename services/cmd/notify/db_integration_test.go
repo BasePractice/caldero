@@ -293,7 +293,7 @@ func TestMessengerBindingLifecycle(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDatabase(t)
 	user := uuid.New()
-	telegram := NewMessenger(db, TelegramConfig("test-token", "", "wish_bot"))
+	telegram := NewTelegram(db, "test-token", "", "wish_bot")
 
 	if _, err := db.MessengerBinding(ctx, notify.ChannelTelegram, user); err == nil {
 		t.Error("привязка найдена до её создания")
@@ -343,6 +343,43 @@ func TestMessengerBindingLifecycle(t *testing.T) {
 		}
 		if !binding.Blocked {
 			t.Error("блокировка не сохранена")
+		}
+	})
+
+	// О запуске и остановке бота площадка сообщает чатом, а не нашим
+	// пользователем: отметка обязана меняться и по чату.
+	t.Run("отметка блокировки меняется по чату", func(t *testing.T) {
+		if err := db.SetMessengerBlocked(ctx, notify.ChannelTelegram, 4242, false); err != nil {
+			t.Fatalf("снятие блокировки: %v", err)
+		}
+		binding, err := db.MessengerBinding(ctx, notify.ChannelTelegram, user)
+		if err != nil {
+			t.Fatalf("чтение привязки: %v", err)
+		}
+		if binding.Blocked {
+			t.Error("блокировка не снята")
+		}
+
+		if err = db.SetMessengerBlocked(ctx, notify.ChannelTelegram, 4242, true); err != nil {
+			t.Fatalf("отметка блокировки: %v", err)
+		}
+		if binding, err = db.MessengerBinding(ctx, notify.ChannelTelegram, user); err != nil {
+			t.Fatalf("чтение привязки: %v", err)
+		}
+		if !binding.Blocked {
+			t.Error("блокировка по чату не сохранена")
+		}
+
+		// Чужой чат не должен задевать привязку: одинаковые
+		// идентификаторы чатов у разных площадок неизбежны.
+		if err = db.SetMessengerBlocked(ctx, notify.ChannelMax, 4242, false); err != nil {
+			t.Fatalf("отметка по другому каналу: %v", err)
+		}
+		if binding, err = db.MessengerBinding(ctx, notify.ChannelTelegram, user); err != nil {
+			t.Fatalf("чтение привязки: %v", err)
+		}
+		if !binding.Blocked {
+			t.Error("отметка по другому каналу сняла блокировку")
 		}
 	})
 }

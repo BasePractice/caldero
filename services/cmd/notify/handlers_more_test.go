@@ -192,17 +192,13 @@ func tooManyPreferences() string {
 }
 
 // testMessenger собирает бота поверх подставного API: настоящий Bot API
-// в тестах недоступен, а формат запроса задаётся конфигурацией.
+// в тестах недоступен, а протокол задаётся диалектом.
 func testMessenger(t *testing.T, db Database, handler http.HandlerFunc) *Messenger {
 	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 
-	config := TelegramConfig("bot-token", server.URL, "wish_bot")
-	if err := config.Validate(); err != nil {
-		t.Fatalf("конфигурация бота: %v", err)
-	}
-	return NewMessenger(db, config)
+	return NewTelegram(db, "bot-token", server.URL, "wish_bot")
 }
 
 func TestLinkMessenger(t *testing.T) {

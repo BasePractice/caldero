@@ -188,48 +188,38 @@ func TestEmailConfigValidation(t *testing.T) {
 func TestLoadMessengers(t *testing.T) {
 	db := &fakeDatabase{}
 
-	messengers, err := LoadMessengers(db, "token", "https://api.invalid", "wish_bot")
-	if err != nil {
-		t.Fatalf("разбор мессенджеров: %v", err)
-	}
+	messengers := LoadMessengers(db, "token", "https://api.invalid", "wish_bot")
 	if len(messengers) != 1 || messengers[notify.ChannelTelegram] == nil {
 		t.Fatalf("мессенджеров %d, ожидался один Telegram", len(messengers))
 	}
 
 	t.Run("без токена бот не поднимается", func(t *testing.T) {
-		empty, err := LoadMessengers(db, "", "", "")
-		if err != nil {
-			t.Fatalf("разбор мессенджеров: %v", err)
-		}
-		if len(empty) != 0 {
+		if empty := LoadMessengers(db, "", "", ""); len(empty) != 0 {
 			t.Errorf("мессенджеров %d, ожидалось ноль", len(empty))
 		}
 	})
 
-	t.Run("неполная настройка площадки роняет старт", func(t *testing.T) {
-		// Протокол чужой площадки задаётся конфигурацией, и половина
-		// настроек означает канал, который молча ничего не отправит.
+	// Токен — единственный выключатель: остальное известно
+	// из документации площадки и задано значениями по умолчанию.
+	t.Run("МАКС поднимается по одному токену", func(t *testing.T) {
 		t.Setenv("NOTIFY_MAX_TOKEN", "max-token")
-		if _, err := LoadMessengers(db, "", "", ""); err == nil {
-			t.Error("бот с неполной настройкой принят")
+
+		loaded := LoadMessengers(db, "", "", "")
+		if loaded[notify.ChannelMax] == nil {
+			t.Fatal("МАКС не поднялся при заданном токене")
+		}
+		if api := loaded[notify.ChannelMax].bot.api; api != MaxAPI {
+			t.Errorf("адрес площадки %q, ожидался %q", api, MaxAPI)
 		}
 	})
 
-	t.Run("полная настройка площадки принимается", func(t *testing.T) {
+	t.Run("адрес площадки переопределяется", func(t *testing.T) {
 		t.Setenv("NOTIFY_MAX_TOKEN", "max-token")
 		t.Setenv("NOTIFY_MAX_API", "https://botapi.invalid")
-		t.Setenv("NOTIFY_MAX_METHOD_PATH", "/{method}?access_token={token}")
-		t.Setenv("NOTIFY_MAX_SEND_METHOD", "messages")
-		t.Setenv("NOTIFY_MAX_UPDATES_METHOD", "updates")
-		t.Setenv("NOTIFY_MAX_CHAT_FIELD", "chat_id")
-		t.Setenv("NOTIFY_MAX_TEXT_FIELD", "text")
 
-		loaded, err := LoadMessengers(db, "", "", "")
-		if err != nil {
-			t.Fatalf("разбор мессенджеров: %v", err)
-		}
-		if loaded[notify.ChannelMax] == nil {
-			t.Error("МАКС не поднялся при полной настройке")
+		loaded := LoadMessengers(db, "", "", "")
+		if api := loaded[notify.ChannelMax].bot.api; api != "https://botapi.invalid" {
+			t.Errorf("адрес площадки %q", api)
 		}
 	})
 }

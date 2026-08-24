@@ -97,6 +97,9 @@ func TestRepositoryReportsBrokenDatabase(t *testing.T) {
 		"BlockMessenger": func() error {
 			return db.BlockMessenger(ctx, notify.ChannelTelegram, user)
 		},
+		"SetMessengerBlocked": func() error {
+			return db.SetMessengerBlocked(ctx, notify.ChannelTelegram, 4242, true)
+		},
 		"Ping": func() error {
 			return db.Ping(ctx)
 		},

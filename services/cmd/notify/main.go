@@ -64,14 +64,11 @@ func main() {
 
 		senders := []Sender{NewInApp(db, bus)}
 
-		// Боты: Telegram описан значениями по умолчанию, остальные
-		// площадки задаются конфигурацией — выдумывать чужой протокол
-		// нельзя, а механизм у них общий.
-		messengers, err := LoadMessengers(db, cfg.NotifyTelegramToken,
+		// Боты: протокол каждой площадки известен из её документации
+		// и живёт в своём диалекте, а привязка у них общая. Токен
+		// служит выключателем — без него бот не поднимается.
+		messengers := LoadMessengers(db, cfg.NotifyTelegramToken,
 			cfg.NotifyTelegramAPI, cfg.NotifyTelegramBot)
-		if err != nil {
-			return err
-		}
 		for _, messenger := range messengers {
 			senders = append(senders, messenger)
 			background(ctx, string(messenger.Channel())+"-updates", messenger.Run)

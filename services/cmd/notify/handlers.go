@@ -268,7 +268,7 @@ func (a *api) linkMessenger(w http.ResponseWriter, r *http.Request) {
 	writeJSON(r.Context(), w, http.StatusOK, map[string]any{
 		"provider":   messenger.Channel(),
 		"code":       code,
-		"link":       BindingLink(messenger.config.BotName, code),
+		"link":       messenger.BindingLink(code),
 		"expires_at": expires,
 	})
 }

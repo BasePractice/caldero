@@ -45,7 +45,7 @@ func newTestTelegram(t *testing.T, db Database, stub *telegramStub) *Messenger {
 	t.Helper()
 	server := httptest.NewServer(stub.handler())
 	t.Cleanup(server.Close)
-	return NewMessenger(db, TelegramConfig("test-token", server.URL, "wish_bot"))
+	return NewTelegram(db, "test-token", server.URL, "wish_bot")
 }
 
 func TestTelegramSend(t *testing.T) {
@@ -181,10 +181,25 @@ func TestBindingCodeAlphabet(t *testing.T) {
 }
 
 func TestBindingLink(t *testing.T) {
-	if link := BindingLink("wish_bot", "ABCD2345"); link != "https://t.me/wish_bot?start=ABCD2345" {
-		t.Errorf("ссылка привязки: %q", link)
+	db := &fakeDatabase{}
+
+	// Вид ссылки у площадок разный: Telegram передаёт код параметром
+	// запроса, МАКС — частью пути.
+	if link := NewTelegram(db, "t", "", "wish_bot").BindingLink("ABCD2345"); link !=
+		"https://t.me/wish_bot?start=ABCD2345" {
+		t.Errorf("ссылка привязки Telegram: %q", link)
 	}
-	if link := BindingLink("", "ABCD2345"); link != "" {
+	if link := NewMax(db, "t", "", "wish_bot").BindingLink("ABCD2345"); link !=
+		"https://max.ru/wish_bot/start/ABCD2345" {
+		t.Errorf("ссылка привязки МАКС: %q", link)
+	}
+
+	// Без имени бота ссылку не собрать: остаётся код, который вводят
+	// руками.
+	if link := NewTelegram(db, "t", "", "").BindingLink("ABCD2345"); link != "" {
+		t.Errorf("ссылка без имени бота: %q", link)
+	}
+	if link := NewMax(db, "t", "", "").BindingLink("ABCD2345"); link != "" {
 		t.Errorf("ссылка без имени бота: %q", link)
 	}
 }

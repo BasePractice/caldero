@@ -39,6 +39,7 @@ type fakeDatabase struct {
 	binding       MessengerBinding
 	bindingErr    error
 	blocked       bool
+	blockedChat   int64
 	completedHash []byte
 	completedChat int64
 	completeUser  uuid.UUID
@@ -116,6 +117,19 @@ func (f *fakeDatabase) BlockMessenger(_ context.Context, _ notify.Channel, _ uui
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.blocked = true
+	return nil
+}
+
+func (f *fakeDatabase) SetMessengerBlocked(
+	_ context.Context,
+	_ notify.Channel,
+	chatId int64,
+	blocked bool,
+) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.blocked = blocked
+	f.blockedChat = chatId
 	return nil
 }
 

@@ -363,16 +363,11 @@ services:
       EMAIL_FROM: ${EMAIL_FROM:-}
       EMAIL_UNSUBSCRIBE_URL: ${EMAIL_UNSUBSCRIBE_URL:-http://localhost:8080/api/v1/notify/unsubscribe}
       EMAIL_SECRET: ${EMAIL_SECRET:-}
-      # Мессенджер МАКС: протокол задаётся конфигурацией по документации
-      # площадки, пустой токен выключает канал.
+      # Мессенджер МАКС: протокол сверен с документацией площадки
+      # и живёт в коде, пустой токен выключает канал.
       NOTIFY_MAX_TOKEN: ${NOTIFY_MAX_TOKEN:-}
       NOTIFY_MAX_BOT: ${NOTIFY_MAX_BOT:-}
       NOTIFY_MAX_API: ${NOTIFY_MAX_API:-}
-      NOTIFY_MAX_METHOD_PATH: ${NOTIFY_MAX_METHOD_PATH:-}
-      NOTIFY_MAX_SEND_METHOD: ${NOTIFY_MAX_SEND_METHOD:-}
-      NOTIFY_MAX_UPDATES_METHOD: ${NOTIFY_MAX_UPDATES_METHOD:-}
-      NOTIFY_MAX_CHAT_FIELD: ${NOTIFY_MAX_CHAT_FIELD:-}
-      NOTIFY_MAX_TEXT_FIELD: ${NOTIFY_MAX_TEXT_FIELD:-}
       LOG_FILE: /logs/notify.log
     volumes:
       - ./.logs/notify:/logs
