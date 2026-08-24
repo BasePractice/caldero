@@ -50,6 +50,7 @@
   [POST], [/api/v1/shopping], [wishlist], [по токену],
   [GET], [/api/v1/shopping], [wishlist], [по токену],
   [GET], [/api/v1/shopping/{id}], [wishlist], [по токену],
+  [GET], [/api/v1/profile], [users], [по токену],
   [POST], [/api/v1/profile/confirmations], [users], [по токену],
   [POST], [/api/v1/profile/confirmations/verify], [users], [по токену],
   [GET], [/api/v1/auth/social/{provider}], [users], [публичный],

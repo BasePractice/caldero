@@ -44,7 +44,11 @@ func login(config appConfig) error {
 	query.Set("code_challenge", base64.RawURLEncoding.EncodeToString(sum[:]))
 	query.Set("code_challenge_method", "S256")
 
-	location().Call("assign", config.API+"/auth?"+query.Encode())
+	// Страница входа открывается с адреса самого интерфейса, а не через
+	// шлюз: вход заканчивается перенаправлением с кодом, а шлюз его
+	// не пропускает (EXT-10). Заодно адрес возврата совпадает с origin
+	// приложения, и браузер весь вход остаётся на одном источнике.
+	location().Call("assign", "/auth?"+query.Encode())
 	return nil
 }
 

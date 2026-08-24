@@ -203,27 +203,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Шаблон шлюза — не JSON, ошибку в нём заметно только после рендера.
-      - name: Проверка шаблона в обоих режимах
-        run: |
-          set -euo pipefail
-          for mode in keycloak internal; do
-            if [ "$mode" = keycloak ]; then
-              host=http://keycloak:8080
-              jwks=/realms/krakend/protocol/openid-connect/certs
-              token=/realms/krakend/protocol/openid-connect/token
-              roles=realm_access.roles
-            else
-              host=http://users:51053
-              jwks=/.well-known/jwks.json
-              token=/token
-              roles=roles
-            fi
-            echo "режим $mode"
-            docker run --rm -e FC_ENABLE=1 -e FC_OUT=/tmp/out.json \
-              -e KRAKEND_NAME=Caldero -e AUTH_HOST="$host" \
-              -e AUTH_JWKS_PATH="$jwks" -e AUTH_TOKEN_PATH="$token" \
-              -e AUTH_ROLES_CLAIM="$roles" \
-              -v "$PWD/config/krakend":/etc/krakend \
-              krakend:latest check -c /etc/krakend/krakend.tmpl
-          done
+      # Рендер сам по себе мало что доказывает: маршрута страницы входа
+      # в шлюзе не было вовсе, шаблон при этом рендерился, а вход через
+      # интерфейс просто не начинался. Поэтому здесь же проверяется,
+      # что обязательные маршруты на месте.
+      #
+      # Тот же скрипт запускается локально через make gateway-check.
+      - name: Рендер шаблона и обязательные маршруты
+        run: make gateway-check

@@ -1441,6 +1441,43 @@
       }
     },
     {
+      "@comment": "Защищённый: профиль пользователя. Интерфейс запрашивает его сразу после входа — без этого маршрута вход заканчивается пустым экраном.",
+      "endpoint": "/api/v1/profile",
+      "method": "GET",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type",
+        "Authorization"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://users:51053"
+          ],
+          "url_pattern": "/profile",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+      }
+    },
+    {
       "@comment": "Защищённый: запрос кода подтверждения телефона или почты",
       "endpoint": "/api/v1/profile/confirmations",
       "method": "POST",
@@ -1593,7 +1630,8 @@
       "method": "GET",
       "output_encoding": "no-op",
       "input_headers": [
-        "Content-Type"
+        "Content-Type",
+        "Authorization"
       ],
       "input_query_strings": [
         "*"
@@ -1633,7 +1671,8 @@
       "output_encoding": "no-op",
       "input_headers": [
         "Content-Type",
-        "Content-Length"
+        "Content-Length",
+        "Authorization"
       ],
       "input_query_strings": [
         "*"
@@ -1672,7 +1711,8 @@
       "method": "DELETE",
       "output_encoding": "no-op",
       "input_headers": [
-        "Content-Type"
+        "Content-Type",
+        "Authorization"
       ],
       "input_query_strings": [
         "*"

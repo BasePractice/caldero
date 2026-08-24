@@ -231,11 +231,16 @@ services:
     depends_on:
       krakend:
         condition: service_started
+      users:
+        condition: service_healthy
     environment:
       LOG_COLOR: "false"
       LOG_LEVEL: ${LOG_LEVEL:-info}
       WEB_API_BASE: ${WEB_API_BASE:?WEB_API_BASE не задан}
       WEB_CLIENT_ID: ${WEB_CLIENT_ID:-web}
+      # Страница входа приходит отсюда, а не через шлюз: шлюз не пропускает
+      # перенаправление с кодом авторизации (EXT-10).
+      USERS_ENDPOINT: ${USERS_ENDPOINT:-http://users:51053}
 
 volumes:
   postgres:

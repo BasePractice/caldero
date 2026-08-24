@@ -16,6 +16,11 @@ var testStatic embed.FS
 
 func testHandler(t *testing.T) http.Handler {
 	t.Helper()
+	return testHandlerWithAuth(t, nil)
+}
+
+func testHandlerWithAuth(t *testing.T, auth http.Handler) http.Handler {
+	t.Helper()
 
 	content, err := fs.Sub(testStatic, "static")
 	if err != nil {
@@ -24,7 +29,7 @@ func testHandler(t *testing.T) http.Handler {
 	return handler(content, services.Config{
 		WebAPIBase:  "http://localhost:8080/api/v1",
 		WebClientId: "web",
-	})
+	}, auth)
 }
 
 func TestConfigIsServed(t *testing.T) {
@@ -86,5 +91,125 @@ func TestMissingFile(t *testing.T) {
 
 	if recorder.Code != http.StatusNotFound {
 		t.Errorf("код ответа %d, ожидался %d", recorder.Code, http.StatusNotFound)
+	}
+}
+
+// TestLoginIsProxied: страница входа отдаётся с адреса интерфейса, а не
+// через шлюз. Через шлюз она не работает вовсе — KrakenD сам ходит
+// по перенаправлению и не отдаёт браузеру код авторизации (EXT-10).
+func TestLoginIsProxied(t *testing.T) {
+	var seen []string
+	auth := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Method+" "+r.URL.Path)
+		// Ответ страницы входа — перенаправление; оно обязано дойти
+		// до браузера нетронутым.
+		http.Redirect(w, r, "http://localhost:3000/?code=x", http.StatusFound)
+	})
+	handler := testHandlerWithAuth(t, auth)
+
+	for _, request := range []*http.Request{
+		httptest.NewRequest(http.MethodGet, "/auth?client_id=web", nil),
+		httptest.NewRequest(http.MethodPost, "/auth?client_id=web", strings.NewReader("username=a")),
+		httptest.NewRequest(http.MethodGet, "/auth/social/yandex", nil),
+	} {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, request)
+
+		if recorder.Code != http.StatusFound {
+			t.Errorf("%s %s: код ответа %d, ожидалось перенаправление",
+				request.Method, request.URL.Path, recorder.Code)
+		}
+		if location := recorder.Header().Get("Location"); location == "" {
+			t.Errorf("%s %s: перенаправление без адреса", request.Method, request.URL.Path)
+		}
+	}
+
+	want := []string{"GET /auth", "POST /auth", "GET /auth/social/yandex"}
+	if len(seen) != len(want) {
+		t.Fatalf("до сервиса пользователей дошло %v, ожидалось %v", seen, want)
+	}
+	for i := range want {
+		if seen[i] != want[i] {
+			t.Errorf("запрос %d: %s, ожидался %s", i, seen[i], want[i])
+		}
+	}
+}
+
+// TestLoginIsOptional: без адреса сервиса пользователей страница входа
+// недоступна, но раздача статики от этого не зависит.
+func TestLoginIsOptional(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	testHandler(t).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/auth", nil))
+
+	// Без маршрута /auth попадает в раздачу статики: там такого файла нет.
+	if recorder.Code != http.StatusNotFound {
+		t.Errorf("код ответа %d, ожидался 404", recorder.Code)
+	}
+}
+
+// TestAuthProxyReachesUsers: запрос уходит к сервису пользователей тем же
+// путём, с каким пришёл, и ответ возвращается нетронутым.
+func TestAuthProxyReachesUsers(t *testing.T) {
+	var path, forwarded string
+	users := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path = r.URL.Path + "?" + r.URL.RawQuery
+		forwarded = r.Header.Get("X-Forwarded-For")
+		http.Redirect(w, r, "http://localhost:3000/?code=x", http.StatusFound)
+	}))
+	t.Cleanup(users.Close)
+
+	auth, err := authProxy(services.Config{UsersEndpoint: users.URL})
+	if err != nil {
+		t.Fatalf("подготовка маршрута входа: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	auth.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/auth?client_id=web", nil))
+
+	if recorder.Code != http.StatusFound {
+		t.Fatalf("код ответа %d, ожидалось перенаправление", recorder.Code)
+	}
+	if path != "/auth?client_id=web" {
+		t.Errorf("до сервиса дошло %q", path)
+	}
+	// Без X-Forwarded-For предел попыток считал бы все запросы
+	// приходящими с одного адреса — самого сервиса интерфейса.
+	if forwarded == "" {
+		t.Error("адрес клиента не передан")
+	}
+}
+
+// TestAuthProxyWithoutUsers: недоступный сервис пользователей — это отказ
+// входа, а не пустая страница с непонятной ошибкой.
+func TestAuthProxyWithoutUsers(t *testing.T) {
+	users := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	endpoint := users.URL
+	users.Close()
+
+	auth, err := authProxy(services.Config{UsersEndpoint: endpoint})
+	if err != nil {
+		t.Fatalf("подготовка маршрута входа: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	auth.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/auth", nil))
+	if recorder.Code != http.StatusBadGateway {
+		t.Errorf("код ответа %d, ожидался 502", recorder.Code)
+	}
+}
+
+// TestAuthProxyIsOptional: без адреса сервиса пользователей маршрут входа
+// не поднимается, но раздача статики от этого не зависит.
+func TestAuthProxyIsOptional(t *testing.T) {
+	auth, err := authProxy(services.Config{})
+	if err != nil {
+		t.Fatalf("подготовка маршрута входа: %v", err)
+	}
+	if auth != nil {
+		t.Error("маршрут входа поднялся без адреса сервиса пользователей")
+	}
+
+	if _, err = authProxy(services.Config{UsersEndpoint: "://"}); err == nil {
+		t.Error("неразбираемый адрес сервиса принят")
 	}
 }

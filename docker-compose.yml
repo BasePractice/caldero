@@ -476,6 +476,8 @@ services:
     depends_on:
       krakend:
         condition: service_started
+      users:
+        condition: service_healthy
     # Единственный сервис с публикацией порта наружу: это и есть интерфейс,
     # который открывает браузер. API остаётся за шлюзом, сюда приходит
     # только статика.
@@ -495,6 +497,9 @@ services:
       # должен работать и на стенде, и в бою.
       WEB_API_BASE: ${WEB_API_BASE:-http://localhost:8080/api/v1}
       WEB_CLIENT_ID: ${WEB_CLIENT_ID:-web}
+      # Страница входа приходит отсюда, а не через шлюз: шлюз не пропускает
+      # перенаправление с кодом авторизации (EXT-10).
+      USERS_ENDPOINT: ${USERS_ENDPOINT:-http://users:51053}
       LOG_FILE: /logs/web.log
     volumes:
       - ./.logs/web:/logs
