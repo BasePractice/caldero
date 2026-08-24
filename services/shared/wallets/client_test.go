@@ -8,8 +8,10 @@ import (
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	wallet "wish/middleware/wallet/v1"
 	"wish/services"
@@ -236,5 +238,92 @@ func TestNewClient(t *testing.T) {
 	}
 	if client.serviceId != serviceId {
 		t.Errorf("служебный идентификатор %s, ожидался %s", client.serviceId, serviceId)
+	}
+}
+
+// TestWalletErrorSeparatesRefusalFromOutage: кошелёк переводит причины
+// отказа в коды gRPC, и без обратного перевода эта работа пропадала —
+// у вызывающего оставалась одна ошибка на всё. Нехватка средств
+// выглядела как недоступность сервиса: человек видел «попробуйте позже»
+// вместо «не хватает денег», а мониторинг — отказ там, где всё работало.
+func TestWalletErrorSeparatesRefusalFromOutage(t *testing.T) {
+	tests := []struct {
+		name    string
+		code    codes.Code
+		message string
+		want    error
+	}{
+		{
+			name:    "не хватает средств",
+			code:    codes.FailedPrecondition,
+			message: "insufficient balance: available 0, requested 100",
+			want:    ErrInsufficientFunds,
+		},
+		{
+			// Тот же код, другая причина: повторять и пополнять
+			// кошелёк одинаково бессмысленно.
+			name:    "кошелёк заблокирован",
+			code:    codes.FailedPrecondition,
+			message: "wallet is not active: wallet is BLOCKED",
+			want:    ErrRejected,
+		},
+		{
+			name:    "чужой кошелёк",
+			code:    codes.PermissionDenied,
+			message: "wallet belongs to another user",
+			want:    ErrRejected,
+		},
+		{
+			name:    "кошелька нет",
+			code:    codes.NotFound,
+			message: "wallet not found",
+			want:    ErrRejected,
+		},
+		{
+			name:    "сбой сервиса",
+			code:    codes.Internal,
+			message: "operation failed",
+			want:    ErrUnavailable,
+		},
+		{
+			name:    "сервис не отвечает",
+			code:    codes.Unavailable,
+			message: "connection refused",
+			want:    ErrUnavailable,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := walletError("проверка", status.Error(test.code, test.message))
+			if !errors.Is(err, test.want) {
+				t.Fatalf("получено %v, ожидалась %v", err, test.want)
+			}
+			// Причина должна дойти до вызывающего: без неё в журнале
+			// остаётся только разряд ошибки.
+			if !strings.Contains(err.Error(), test.message) {
+				t.Errorf("в ошибке нет причины: %v", err)
+			}
+		})
+	}
+}
+
+// TestTransferTranslatesRefusal: перевод отдаёт ту же разделённую ошибку,
+// а не текст gRPC.
+func TestTransferTranslatesRefusal(t *testing.T) {
+	service := &fakeService{
+		transferErr: status.Error(codes.FailedPrecondition,
+			"insufficient balance: available 0, requested 100"),
+	}
+	client := &Client{client: service, serviceId: uuid.New()}
+
+	err := client.Transfer(context.Background(), uuid.New(), TransferParams{
+		IdempotencyKey: "key", Source: uuid.New(), Target: uuid.New(), Value: 100,
+	})
+	if !errors.Is(err, ErrInsufficientFunds) {
+		t.Fatalf("получено %v, ожидалась %v", err, ErrInsufficientFunds)
+	}
+	if errors.Is(err, ErrUnavailable) {
+		t.Error("нехватка средств принята за недоступность кошелька")
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -450,7 +451,10 @@ func (f *fakeWallet) Transfer(_ context.Context, owner uuid.UUID, params wallets
 		return nil
 	}
 	if f.balances[params.Source] < params.Value {
-		return errors.New("недостаточно средств")
+		// Та же ошибка, что у настоящего клиента: разделение отказа
+		// по существу и недоступности проверяется на ней.
+		return fmt.Errorf("%w: available %s, requested %s",
+			wallets.ErrInsufficientFunds, f.balances[params.Source], params.Value)
 	}
 	f.balances[params.Source] -= params.Value
 	f.balances[params.Target] += params.Value
@@ -686,8 +690,15 @@ func TestContributionChecksWallet(t *testing.T) {
 	env.wallet.fund(member, 100_00)
 
 	pot := env.fixedCaldron(t, creator, 2_500_00, member)
-	if _, err := env.caldrons.Contribute(ctx, member, pot.Id, 0); !errors.Is(err, ErrWalletUnavailable) {
-		t.Fatalf("получено %v, ожидалась %v", err, ErrWalletUnavailable)
+	// Нехватка средств — ответ человеку, а не сбой сервиса: раньше она
+	// приходила как «кошелёк недоступен», и клиент видел 503 вместо
+	// «не хватает денег».
+	_, err := env.caldrons.Contribute(ctx, member, pot.Id, 0)
+	if !errors.Is(err, wallets.ErrInsufficientFunds) {
+		t.Fatalf("получено %v, ожидалась %v", err, wallets.ErrInsufficientFunds)
+	}
+	if errors.Is(err, ErrWalletUnavailable) {
+		t.Error("нехватка средств принята за недоступность кошелька")
 	}
 
 	current, err := env.db.Caldron(ctx, pot.Id)

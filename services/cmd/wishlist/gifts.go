@@ -314,6 +314,21 @@ func (g *Gifts) order(ctx context.Context, item wishlist.Item) (string, error) {
 // со своей базой. Порядок выбран так, чтобы худший исход был безопасным:
 // сначала подарок, затем комиссия. Не удержанная комиссия — потеря системы,
 // а не пользователя.
+// walletFailure переводит отказ кошелька в ошибку сервиса: нехватка
+// средств — ответ человеку, а не сбой, и повторять её бессмысленно.
+func walletFailure(err error) error {
+	switch {
+	case errors.Is(err, wallets.ErrInsufficientFunds):
+		// Ошибка уже названа как надо: оборачивать её своей с тем же
+		// смыслом значит удвоить текст в ответе клиенту.
+		return err
+	case errors.Is(err, wallets.ErrRejected):
+		return fmt.Errorf("%w: %w", ErrInsufficientFunds, err)
+	default:
+		return fmt.Errorf("%w: %w", ErrWalletUnavailable, err)
+	}
+}
+
 func (g *Gifts) transfer(ctx context.Context, item wishlist.Item, giver uuid.UUID) error {
 	if g.wallet == nil {
 		return fmt.Errorf("%w: wallet service is not configured", ErrWalletUnavailable)
@@ -321,11 +336,11 @@ func (g *Gifts) transfer(ctx context.Context, item wishlist.Item, giver uuid.UUI
 
 	source, err := g.wallet.Wallet(ctx, giver)
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrWalletUnavailable, err)
+		return walletFailure(err)
 	}
 	target, err := g.wallet.Wallet(ctx, item.UserId)
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrWalletUnavailable, err)
+		return walletFailure(err)
 	}
 
 	fee := g.fee.For(item.Amount)
@@ -346,7 +361,7 @@ func (g *Gifts) transfer(ctx context.Context, item wishlist.Item, giver uuid.UUI
 		Value:          item.Amount,
 		Message:        "Денежный подарок",
 	}); err != nil {
-		return fmt.Errorf("%w: %w", ErrWalletUnavailable, err)
+		return walletFailure(err)
 	}
 
 	if fee > 0 {

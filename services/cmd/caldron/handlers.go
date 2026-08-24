@@ -10,6 +10,7 @@ import (
 	"wish/services"
 	"wish/services/shared/caldron"
 	"wish/services/shared/credit"
+	"wish/services/shared/wallets"
 
 	"github.com/google/uuid"
 )
@@ -328,6 +329,10 @@ func writeError(ctx context.Context, w http.ResponseWriter, message string, err 
 		// Состояние котла не позволяет операцию: повтор с тем же телом
 		// ничего не изменит.
 		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.Is(err, wallets.ErrInsufficientFunds):
+		// Не хватает средств — это ответ человеку, а не сбой сервиса:
+		// повторять запрос бессмысленно, пока он не пополнит кошелёк.
+		http.Error(w, err.Error(), http.StatusPaymentRequired)
 	case errors.Is(err, ErrWalletUnavailable), errors.Is(err, ErrMarketplaceUnavailable):
 		slog.WarnContext(ctx, message, slog.String("err", err.Error()))
 		w.Header().Set("Retry-After", "5")

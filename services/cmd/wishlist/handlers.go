@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"wish/services"
+	"wish/services/shared/wallets"
 	"wish/services/shared/wishlist"
 
 	"github.com/google/uuid"
@@ -269,7 +270,7 @@ func writeError(ctx context.Context, w http.ResponseWriter, message string, err 
 		// Состояние изменилось или переход невозможен: это конфликт,
 		// а не ошибка в запросе — повтор с тем же телом ничего не даст.
 		http.Error(w, err.Error(), http.StatusConflict)
-	case errors.Is(err, ErrInsufficientFunds):
+	case errors.Is(err, ErrInsufficientFunds), errors.Is(err, wallets.ErrInsufficientFunds):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrMarketplaceUnavailable), errors.Is(err, ErrWalletUnavailable),
 		errors.Is(err, ErrShopUnavailable):

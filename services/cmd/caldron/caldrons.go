@@ -40,6 +40,22 @@ type Wallet interface {
 	Transfer(ctx context.Context, owner uuid.UUID, params wallets.TransferParams) error
 }
 
+// walletFailure переводит отказ кошелька в ошибку сервиса. Нехватка средств
+// и отказ по существу — не то же самое, что недоступность: первое клиент
+// увидит как «не хватает денег», второе — как «попробуйте позже».
+func walletFailure(err error) error {
+	switch {
+	case errors.Is(err, wallets.ErrInsufficientFunds):
+		// Ошибка уже названа как надо: оборачивать её своей с тем же
+		// смыслом значит удвоить текст в ответе клиенту.
+		return err
+	case errors.Is(err, wallets.ErrRejected):
+		return fmt.Errorf("%w: %w", caldron.ErrInvalidTransition, err)
+	default:
+		return fmt.Errorf("%w: %w", ErrWalletUnavailable, err)
+	}
+}
+
 // Caldrons — операции над котлом вместе с их денежными последствиями.
 //
 // Средства котла лежат на его собственном кошельке. Владельцем кошелька
@@ -179,7 +195,7 @@ func (c *Caldrons) Contribute(
 	}
 	source, err := c.wallet.Wallet(ctx, user)
 	if err != nil {
-		return caldron.Caldron{}, fmt.Errorf("%w: %w", ErrWalletUnavailable, err)
+		return caldron.Caldron{}, walletFailure(err)
 	}
 
 	// Ключ идемпотентности выведен из котла и участника: повтор запроса
@@ -191,7 +207,7 @@ func (c *Caldrons) Contribute(
 		Value:          amount,
 		Message:        "Взнос в котёл " + pot.Title,
 	}); err != nil {
-		return caldron.Caldron{}, fmt.Errorf("%w: %w", ErrWalletUnavailable, err)
+		return caldron.Caldron{}, walletFailure(err)
 	}
 
 	updated, err := c.db.MarkPaid(ctx, id, user, amount)
@@ -277,7 +293,7 @@ func (c *Caldrons) Settle(
 	}
 	target, err := c.wallet.Wallet(ctx, winner)
 	if err != nil {
-		return caldron.Caldron{}, fmt.Errorf("%w: %w", ErrWalletUnavailable, err)
+		return caldron.Caldron{}, walletFailure(err)
 	}
 
 	// Перевод раньше смены состояния: объявить котёл завершённым, не отдав
@@ -289,7 +305,7 @@ func (c *Caldrons) Settle(
 		Value:          pot.Collected,
 		Message:        "Выигрыш в котле " + pot.Title,
 	}); err != nil {
-		return caldron.Caldron{}, fmt.Errorf("%w: %w", ErrWalletUnavailable, err)
+		return caldron.Caldron{}, walletFailure(err)
 	}
 
 	settled, err := c.db.Transition(ctx, id, caldron.StateSettled, caldron.ActorCreator)
@@ -375,7 +391,7 @@ func (c *Caldrons) walletOf(ctx context.Context, pot caldron.Caldron) (uuid.UUID
 
 	info, err := c.wallet.Wallet(ctx, pot.Id)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("%w: %w", ErrWalletUnavailable, err)
+		return uuid.Nil, walletFailure(err)
 	}
 	if err = c.db.SetWallet(ctx, pot.Id, info.Id); err != nil {
 		return uuid.Nil, err

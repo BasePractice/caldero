@@ -112,6 +112,22 @@ func TestCaldronStatusCodes(t *testing.T) {
 		}
 	})
 
+	t.Run("взнос без денег — 402, а не 503", func(t *testing.T) {
+		// Нехватка средств — ответ человеку: сервис работает, денег нет.
+		// Ответом 503 клиент и мониторинг видели бы отказ системы.
+		//
+		// Котёл отдельный: участник без денег не внесёт свою долю,
+		// и общий котёл так и остался бы несобранным.
+		poor := uuid.New()
+		env.wallet.fund(poor, 1_00)
+		own := env.fixedCaldron(t, creator, 2_500_00, poor)
+
+		code := post(poor, "/caldrons/"+own.Id.String()+"/contribute", "").Code
+		if code != http.StatusPaymentRequired {
+			t.Errorf("код ответа %d, ожидался %d", code, http.StatusPaymentRequired)
+		}
+	})
+
 	t.Run("повторный взнос — 409", func(t *testing.T) {
 		if code := post(member, path+"/contribute", "").Code; code != http.StatusConflict {
 			t.Errorf("код ответа %d, ожидался %d", code, http.StatusConflict)
