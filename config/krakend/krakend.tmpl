@@ -5,7 +5,7 @@
   "port": 8080,
   "timeout": "3000ms",
   "cache_ttl": "300s",
-  "@comment": "Заголовки клиента не проходят к бэкендам, если не перечислены в input_headers — и это относится в том числе к тем, что проставляет сам шлюз. X-Authorized-Id перечислен у каждого защищённого маршрута: без него сервисы не видят пользователя и отвечают 401. Подделать его нельзя — propagate_claims перезаписывает присланное клиентом значением claim sub, это проверено. А вот X-Roles не перечислен нигде и не должен быть: роли в токен пока не попадают, перезаписывать заголовок нечем, и клиент прислал бы себе любую роль сам.",
+  "@comment": "Заголовки клиента не проходят к бэкендам, если не перечислены в input_headers — и это относится в том числе к тем, что проставляет сам шлюз. X-Authorized-Id перечислен у каждого защищённого маршрута: без него сервисы не видят пользователя и отвечают 401. Подделать его нельзя — propagate_claims перезаписывает присланное клиентом значением claim sub, это проверено. То же и с X-Roles: claim с ролями есть в каждом токене — у пользователя без особых ролей это просто user, — поэтому присланное клиентом значение шлюз тоже перезаписывает. Пустой claim здесь недопустим: перезаписывать было бы нечем.",
   "endpoints": [
     {
       "@comment": "Публичный: регистрация пользователя",
@@ -87,7 +87,8 @@
       "input_headers": [
         "Content-Type",
         "Content-Length",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -124,7 +125,8 @@
       "method": "GET",
       "input_headers": [
         "Content-Type",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -166,7 +168,8 @@
       "input_headers": [
         "Content-Type",
         "Content-Length",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -204,7 +207,8 @@
       "input_headers": [
         "Content-Type",
         "Content-Length",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -247,7 +251,8 @@
       ],
       "input_headers": [
         "Content-Type",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -284,7 +289,8 @@
       "output_encoding": "no-op",
       "input_headers": [
         "Content-Type",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -322,7 +328,8 @@
       "input_headers": [
         "Content-Type",
         "Content-Length",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -360,7 +367,8 @@
       "input_headers": [
         "Content-Type",
         "Content-Length",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -397,7 +405,8 @@
       "output_encoding": "no-op",
       "input_headers": [
         "Content-Type",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -435,7 +444,8 @@
       "input_headers": [
         "Content-Type",
         "Content-Length",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -472,7 +482,8 @@
       "output_encoding": "no-op",
       "input_headers": [
         "Content-Type",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -509,7 +520,8 @@
       "output_encoding": "no-op",
       "input_headers": [
         "Content-Type",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -546,7 +558,8 @@
       "output_encoding": "no-op",
       "input_headers": [
         "Content-Type",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -583,7 +596,8 @@
       "output_encoding": "no-op",
       "input_headers": [
         "Content-Type",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -621,7 +635,8 @@
       "input_headers": [
         "Content-Type",
         "Content-Length",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -659,7 +674,8 @@
       "input_headers": [
         "Content-Type",
         "Content-Length",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -697,7 +713,8 @@
       "input_headers": [
         "Content-Type",
         "Content-Length",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -735,7 +752,8 @@
       "input_headers": [
         "Content-Type",
         "Content-Length",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -773,7 +791,8 @@
       "input_headers": [
         "Content-Type",
         "Content-Length",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -811,7 +830,8 @@
       "input_headers": [
         "Content-Type",
         "Content-Length",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -849,7 +869,8 @@
       "input_headers": [
         "Content-Type",
         "Content-Length",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -887,7 +908,8 @@
       "input_headers": [
         "Content-Type",
         "Content-Length",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -924,7 +946,8 @@
       "output_encoding": "no-op",
       "input_headers": [
         "Content-Type",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -961,7 +984,8 @@
       "output_encoding": "no-op",
       "input_headers": [
         "Content-Type",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -999,7 +1023,8 @@
       "input_headers": [
         "Content-Type",
         "Content-Length",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -1036,7 +1061,8 @@
       "output_encoding": "no-op",
       "input_headers": [
         "Content-Type",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -1074,7 +1100,8 @@
       "input_headers": [
         "Content-Type",
         "Content-Length",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -1112,7 +1139,8 @@
       "input_headers": [
         "Content-Type",
         "Content-Length",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -1150,7 +1178,8 @@
       "input_headers": [
         "Content-Type",
         "Content-Length",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -1188,7 +1217,8 @@
       "input_headers": [
         "Content-Type",
         "Content-Length",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -1225,7 +1255,8 @@
       "output_encoding": "no-op",
       "input_headers": [
         "Content-Type",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -1263,7 +1294,8 @@
       "input_headers": [
         "Content-Type",
         "Content-Length",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -1301,7 +1333,8 @@
       "input_headers": [
         "Content-Type",
         "Content-Length",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -1338,7 +1371,8 @@
       "output_encoding": "no-op",
       "input_headers": [
         "Content-Type",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -1376,7 +1410,8 @@
       "input_headers": [
         "Content-Type",
         "Content-Length",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -1413,7 +1448,8 @@
       "output_encoding": "no-op",
       "input_headers": [
         "Content-Type",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -1450,7 +1486,8 @@
       "output_encoding": "no-op",
       "input_headers": [
         "Content-Type",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -1488,7 +1525,8 @@
       "input_headers": [
         "Content-Type",
         "Authorization",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -1527,7 +1565,8 @@
         "Content-Type",
         "Content-Length",
         "Authorization",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -1575,7 +1614,8 @@
         "Content-Type",
         "Content-Length",
         "Authorization",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "backend": [
         {
@@ -1675,7 +1715,8 @@
       "input_headers": [
         "Content-Type",
         "Authorization",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "input_query_strings": [
         "*"
@@ -1717,7 +1758,8 @@
         "Content-Type",
         "Content-Length",
         "Authorization",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "input_query_strings": [
         "*"
@@ -1758,7 +1800,8 @@
       "input_headers": [
         "Content-Type",
         "Authorization",
-        "X-Authorized-Id"
+        "X-Authorized-Id",
+        "X-Roles"
       ],
       "input_query_strings": [
         "*"

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"wish/services"
+
 	"github.com/google/uuid"
 )
 
@@ -104,14 +106,19 @@ func TestUpdateProfileUnauthorized(t *testing.T) {
 // TestRolesInToken фиксирует передачу ролей: шлюз пробрасывает их
 // в заголовок, и сервисы за ним не ходят за ролями в базу — иначе одни
 // и те же данные пришлось бы держать в каждом сервисе.
+//
+// Роль есть в токене всегда, даже когда особых ролей нет: пустым claim
+// шлюзу нечем перезаписать присланный клиентом заголовок, и пользователь
+// назначил бы себе роль сам.
 func TestRolesInToken(t *testing.T) {
 	service, handler := newOAuth2Service(t)
 	clientId := createClient(t, handler)
 
 	plain := "user-" + uuid.NewString()[:8]
 	registerViaAPI(t, handler, plain, "+79004440055")
-	if roles := claimRoles(t, tokenFor(t, handler, clientId, plain)); len(roles) != 0 {
-		t.Errorf("у обычного пользователя роли %v", roles)
+	roles := claimRoles(t, tokenFor(t, handler, clientId, plain))
+	if len(roles) != 1 || roles[0] != services.RoleUser {
+		t.Errorf("у обычного пользователя роли %v, ожидалась только %s", roles, services.RoleUser)
 	}
 
 	operator := "user-" + uuid.NewString()[:8]
@@ -126,9 +133,9 @@ func TestRolesInToken(t *testing.T) {
 		t.Fatalf("назначение роли: %v", err)
 	}
 
-	roles := claimRoles(t, tokenFor(t, handler, clientId, operator))
-	if len(roles) != 1 || roles[0] != "operator" {
-		t.Errorf("роли в токене %v, ожидалась operator", roles)
+	roles = claimRoles(t, tokenFor(t, handler, clientId, operator))
+	if len(roles) != 2 || roles[0] != services.RoleUser || roles[1] != services.RoleOperator {
+		t.Errorf("роли в токене %v, ожидались %s и %s", roles, services.RoleUser, services.RoleOperator)
 	}
 }
 

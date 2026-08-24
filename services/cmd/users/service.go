@@ -324,15 +324,17 @@ func (s *Service) applyRoles(ctx context.Context, session *jwtSession) {
 		// Отсутствие ролей не повод не выдавать токен: пользователь просто
 		// получит права по умолчанию.
 		slog.ErrorContext(ctx, "Can't load user roles", slog.String("err", err.Error()))
-		return
+		roles = nil
 	}
-	if len(roles) == 0 {
-		return
-	}
+
+	// Claim выставляется всегда, даже когда особых ролей нет. Иначе шлюзу
+	// нечем перезаписать заголовок X-Roles, и пользователь без ролей
+	// прислал бы себе любую роль сам. Роль RoleUser есть у каждого
+	// и не даёт ничего сверх обычных прав.
 	if session.JWTClaims.Extra == nil {
 		session.JWTClaims.Extra = map[string]any{}
 	}
-	session.JWTClaims.Extra["roles"] = roles
+	session.JWTClaims.Extra["roles"] = append([]string{services.RoleUser}, roles...)
 }
 
 // requesterKey — приватный тип ключа контекста. Строковый ключ "claims"
