@@ -34,6 +34,10 @@ type DatabaseWallet interface {
 
 	EnsurePartitions(ctx context.Context, monthsAhead int) (int, error)
 	DefaultPartitionRows(ctx context.Context) (int64, error)
+	// DetachOldPartitions отсоединяет партиции старше срока хранения.
+	DetachOldPartitions(ctx context.Context, keepMonths int) (int, error)
+	// OldestPartition отдаёт месяц самой старой присоединённой партиции.
+	OldestPartition(ctx context.Context) (time.Time, error)
 
 	// Stats нужен для публикации метрик пула соединений.
 	Stats() sql.DBStats
@@ -158,6 +162,35 @@ func (d ds) selectWallets(ctx context.Context, userId uuid.UUID, cb func(reply *
 
 func (d ds) Stats() sql.DBStats {
 	return d.db.Stats()
+}
+
+// DetachOldPartitions отсоединяет партиции старше срока хранения
+// и возвращает их число.
+//
+// Отсоединяет, а не удаляет: отсоединённая таблица остаётся в схеме
+// и выгружается обычным pg_dump, а удаление финансовой истории необратимо
+// и потому делается человеком, а не расписанием.
+func (d ds) DetachOldPartitions(ctx context.Context, keepMonths int) (int, error) {
+	var detached int
+	if err := d.db.QueryRowContext(ctx,
+		"SELECT fn_detach_transaction_partitions($1)", keepMonths).Scan(&detached); err != nil {
+		return 0, fmt.Errorf("detaching transaction partitions older than %d months: %w", keepMonths, err)
+	}
+	return detached, nil
+}
+
+// OldestPartition отдаёт месяц самой старой присоединённой партиции.
+// Нулевое время означает, что партиций нет вовсе.
+func (d ds) OldestPartition(ctx context.Context) (time.Time, error) {
+	var oldest sql.NullTime
+	if err := d.db.QueryRowContext(ctx,
+		"SELECT fn_oldest_transaction_partition()").Scan(&oldest); err != nil {
+		return time.Time{}, fmt.Errorf("reading oldest transaction partition: %w", err)
+	}
+	if !oldest.Valid {
+		return time.Time{}, nil
+	}
+	return oldest.Time, nil
 }
 
 // EnsurePartitions создаёт партиции на monthsAhead месяцев вперёд.

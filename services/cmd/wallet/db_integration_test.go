@@ -6,6 +6,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	wallet "wish/middleware/wallet/v1"
 	"wish/services/testsupport"
@@ -206,6 +207,95 @@ func TestPartitionMaintenance(t *testing.T) {
 		}
 	})
 
+	// Отсоединение — обратная сторона того же обслуживания: вперёд
+	// партиции создаются, назад уходят из основной таблицы. Проверяется
+	// не сам факт отсоединения, а свойство: данные остаются на месте
+	// и доступны для выгрузки.
+	t.Run("партиция старше срока хранения отсоединяется, данные остаются", func(t *testing.T) {
+		userId := uuid.New()
+		var walletId string
+		if err := db.Information(ctx, userId, func(reply *wallet.InformationReply) {
+			walletId = reply.Id
+		}); err != nil {
+			t.Fatalf("получение кошелька: %v", err)
+		}
+
+		// Партиция позапрошлого года и запись в ней: свежие партиции
+		// отсоединять нельзя, а старую взять неоткуда, кроме как создать.
+		old := time.Now().AddDate(-2, 0, 0)
+		month := time.Date(old.Year(), old.Month(), 1, 0, 0, 0, 0, time.UTC)
+		partition := "transaction_" + month.Format("2006_01")
+		if _, err := rawDB(t, db).ExecContext(ctx,
+			"SELECT fn_ensure_transaction_partition($1)", month); err != nil {
+			t.Fatalf("создание старой партиции: %v", err)
+		}
+		if _, err := rawDB(t, db).ExecContext(ctx,
+			"INSERT INTO transaction (target, operation, value, created_at) VALUES ($1, 'DEBIT', 77, $2)",
+			walletId, month.AddDate(0, 0, 5)); err != nil {
+			t.Fatalf("вставка старой транзакции: %v", err)
+		}
+
+		balanceBefore := walletBalance(ctx, t, db, walletId)
+
+		// Срок хранения меньше возраста партиции: год против двух.
+		detached, err := db.DetachOldPartitions(ctx, 12)
+		if err != nil {
+			t.Fatalf("отсоединение: %v", err)
+		}
+		if detached < 1 {
+			t.Fatalf("отсоединено %d партиций, ожидалась хотя бы одна", detached)
+		}
+
+		// Данные никуда не делись: таблица осталась в схеме и читается.
+		var kept int
+		if err = rawDB(t, db).QueryRowContext(ctx,
+			"SELECT count(*) FROM "+partition).Scan(&kept); err != nil {
+			t.Fatalf("чтение отсоединённой партиции: %v", err)
+		}
+		if kept != 1 {
+			t.Errorf("в отсоединённой партиции %d строк, ожидалась одна", kept)
+		}
+
+		// А из основной таблицы ушли: в этом и смысл срока хранения.
+		var visible int
+		if err = rawDB(t, db).QueryRowContext(ctx,
+			"SELECT count(*) FROM transaction WHERE target = $1 AND value = 77", walletId).
+			Scan(&visible); err != nil {
+			t.Fatalf("чтение основной таблицы: %v", err)
+		}
+		if visible != 0 {
+			t.Errorf("отсоединённые записи всё ещё видны в transaction: %d", visible)
+		}
+
+		// Баланс не пересчитывается по истории, поэтому отсоединение
+		// не должно его задеть. Иначе архивация превратилась бы
+		// в списание денег.
+		if after := walletBalance(ctx, t, db, walletId); after != balanceBefore {
+			t.Errorf("баланс после отсоединения %d, был %d", after, balanceBefore)
+		}
+
+		// Ноль отключает отсоединение: иначе выключить его было бы нечем.
+		if detached, err = db.DetachOldPartitions(ctx, 0); err != nil {
+			t.Fatalf("отсоединение с нулевым сроком: %v", err)
+		}
+		if detached != 0 {
+			t.Errorf("при нулевом сроке отсоединено %d партиций", detached)
+		}
+
+		// Самая старая присоединённая партиция теперь не старше срока.
+		oldest, err := db.OldestPartition(ctx)
+		if err != nil {
+			t.Fatalf("возраст партиции: %v", err)
+		}
+		if oldest.IsZero() {
+			t.Fatal("партиций не осталось вовсе")
+		}
+		if !oldest.After(month) {
+			t.Errorf("самая старая партиция %s, ожидалась новее %s",
+				oldest.Format("2006-01"), month.Format("2006-01"))
+		}
+	})
+
 	t.Run("партиция по умолчанию пуста, пока окно не кончилось", func(t *testing.T) {
 		userId := uuid.New()
 		var walletId string
@@ -228,4 +318,16 @@ func TestPartitionMaintenance(t *testing.T) {
 			t.Errorf("в партиции по умолчанию %d строк, ожидалось 0", rows)
 		}
 	})
+}
+
+// walletBalance читает баланс кошелька прямым запросом: через отчёт он
+// считается вместе с резервами, а здесь нужно именно сохранённое значение.
+func walletBalance(ctx context.Context, t *testing.T, db DatabaseWallet, walletId string) int64 {
+	t.Helper()
+	var balance int64
+	if err := rawDB(t, db).QueryRowContext(ctx,
+		"SELECT balance FROM wallet WHERE id = $1", walletId).Scan(&balance); err != nil {
+		t.Fatalf("чтение баланса: %v", err)
+	}
+	return balance
 }

@@ -85,6 +85,14 @@ func TestRepositoryReportsBrokenDatabase(t *testing.T) {
 			_, err := db.DefaultPartitionRows(ctx)
 			return err
 		},
+		"DetachOldPartitions": func() error {
+			_, err := db.DetachOldPartitions(ctx, 12)
+			return err
+		},
+		"OldestPartition": func() error {
+			_, err := db.OldestPartition(ctx)
+			return err
+		},
 		"Ping": func() error {
 			return db.Ping(ctx)
 		},

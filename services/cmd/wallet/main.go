@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"time"
 
 	wallet "wish/middleware/wallet/v1"
 	"wish/services"
@@ -86,8 +87,32 @@ func main() {
 				if created > 0 {
 					slog.Info("Transaction partitions created", slog.Int("count", created))
 				}
+
+				// Отсоединение — та же работа с другой стороны окна:
+				// вперёд партиции создаются, назад уходят из основной
+				// таблицы. Удалять их сервис не имеет права.
+				detached, err := db.DetachOldPartitions(ctx, cfg.TransactionRetentionMonths)
+				if err != nil {
+					return err
+				}
+				if detached > 0 {
+					slog.Info("Transaction partitions detached",
+						slog.Int("count", detached),
+						slog.Int("retention_months", cfg.TransactionRetentionMonths))
+				}
 				return nil
 			})
+		services.RegisterOldestPartitionAge("wallet", func() float64 {
+			oldest, err := db.OldestPartition(ctx)
+			if err != nil {
+				slog.Error("Can't read oldest partition", slog.String("err", err.Error()))
+				return -1
+			}
+			if oldest.IsZero() {
+				return 0
+			}
+			return time.Since(oldest).Hours() / 24
+		})
 		services.RegisterDefaultPartitionRows("wallet", func() int64 {
 			rows, err := db.DefaultPartitionRows(ctx)
 			if err != nil {

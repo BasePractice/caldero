@@ -125,6 +125,7 @@ services:
     environment:
       <<: *environment
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres-db:5432/wish?sslmode=disable&search_path=wallet
+      TRANSACTION_RETENTION_MONTHS: ${TRANSACTION_RETENTION_MONTHS:-72}
 
   credit:
     <<: *service

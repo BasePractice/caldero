@@ -117,6 +117,19 @@ func RegisterDefaultPartitionRows(service string, count func() int64) {
 	}, func() float64 { return float64(count()) }))
 }
 
+// RegisterOldestPartitionAge публикует возраст самой старой присоединённой
+// партиции в днях. По нему видно, идёт ли обслуживание: без метрики
+// отсоединение либо работает, либо молча не работает, и узнать об этом
+// можно только по размеру таблицы. Значение -1 означает, что возраст
+// определить не удалось.
+func RegisterOldestPartitionAge(service string, age func() float64) {
+	prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name:        "wish_transaction_oldest_partition_age_days",
+		Help:        "Возраст самой старой присоединённой партиции транзакций в днях",
+		ConstLabels: prometheus.Labels{"service": service},
+	}, age))
+}
+
 // RegisterDBStats публикует состояние пула соединений. Исчерпание пула
 // выглядит как замедление сервиса, и без этих метрик причину не отличить
 // от медленной базы.

@@ -94,11 +94,15 @@ func (f *fakeDatabase) ChangeState(_ context.Context, owner, _ uuid.UUID, state 
 	return f.err
 }
 
-func (f *fakeDatabase) EnsurePartitions(context.Context, int) (int, error)  { return 0, f.err }
-func (f *fakeDatabase) DefaultPartitionRows(context.Context) (int64, error) { return 0, f.err }
-func (f *fakeDatabase) Close() error                                        { return nil }
-func (f *fakeDatabase) Stats() sql.DBStats                                  { return sql.DBStats{} }
-func (f *fakeDatabase) Ping(context.Context) error                          { return nil }
+func (f *fakeDatabase) EnsurePartitions(context.Context, int) (int, error)    { return 0, f.err }
+func (f *fakeDatabase) DefaultPartitionRows(context.Context) (int64, error)   { return 0, f.err }
+func (f *fakeDatabase) DetachOldPartitions(context.Context, int) (int, error) { return 0, f.err }
+func (f *fakeDatabase) OldestPartition(context.Context) (time.Time, error) {
+	return time.Time{}, f.err
+}
+func (f *fakeDatabase) Close() error               { return nil }
+func (f *fakeDatabase) Stats() sql.DBStats         { return sql.DBStats{} }
+func (f *fakeDatabase) Ping(context.Context) error { return nil }
 
 // callerContext собирает контекст так, как его оставляет перехватчик
 // авторизации. Ключ контекста приватен для пакета services, поэтому

@@ -77,6 +77,11 @@ type Config struct {
 	PartitionMaintenanceInterval time.Duration
 	// PartitionMonthsAhead — на сколько месяцев вперёд держать партиции.
 	PartitionMonthsAhead int
+	// TransactionRetentionMonths — сколько месяцев история операций
+	// остаётся в основной таблице. Партиции старше отсоединяются,
+	// но не удаляются: удаление финансовой истории необратимо и делается
+	// человеком, а не расписанием. Ноль отключает отсоединение.
+	TransactionRetentionMonths int
 
 	// OTelEndpoint — адрес приёмника трасс по OTLP/HTTP.
 	// Пустое значение отключает трассировку.
@@ -270,6 +275,19 @@ func LoadConfig() (Config, error) {
 		return Config{}, fmt.Errorf("parsing PARTITION_MAINTENANCE_INTERVAL: %w", err)
 	}
 	cfg.PartitionMaintenanceInterval = partitionInterval
+
+	// Шесть лет, а не пять: закон о бухучёте требует хранить первичные
+	// документы не менее пяти лет после отчётного года, а отсчёт здесь
+	// помесячный — операция января попадает под срок до конца пятого года
+	// после своего, то есть почти шесть лет от самой операции.
+	retention, err := strconv.Atoi(env("TRANSACTION_RETENTION_MONTHS", "72"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing TRANSACTION_RETENTION_MONTHS: %w", err)
+	}
+	if retention < 0 {
+		return Config{}, fmt.Errorf("TRANSACTION_RETENTION_MONTHS must not be negative, got %d", retention)
+	}
+	cfg.TransactionRetentionMonths = retention
 
 	monthsAhead, err := strconv.Atoi(env("PARTITION_MONTHS_AHEAD", "6"))
 	if err != nil {
