@@ -59,6 +59,9 @@ func (s *Stream) Index(n int) int {
 	for {
 		value := s.next()
 		if value <= limit {
+			// Остаток строго меньше n, а n — положительный int,
+			// поэтому перевод обратно в int всегда в диапазоне.
+			//nolint:gosec // G115: остаток меньше n, переполнение невозможно
 			return int(value % uint64(n))
 		}
 	}

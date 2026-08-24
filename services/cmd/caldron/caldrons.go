@@ -179,7 +179,7 @@ func (c *Caldrons) Contribute(
 	}
 	source, err := c.wallet.Wallet(ctx, user)
 	if err != nil {
-		return caldron.Caldron{}, fmt.Errorf("%w: %s", ErrWalletUnavailable, err)
+		return caldron.Caldron{}, fmt.Errorf("%w: %w", ErrWalletUnavailable, err)
 	}
 
 	// Ключ идемпотентности выведен из котла и участника: повтор запроса
@@ -191,7 +191,7 @@ func (c *Caldrons) Contribute(
 		Value:          amount,
 		Message:        "Взнос в котёл " + pot.Title,
 	}); err != nil {
-		return caldron.Caldron{}, fmt.Errorf("%w: %s", ErrWalletUnavailable, err)
+		return caldron.Caldron{}, fmt.Errorf("%w: %w", ErrWalletUnavailable, err)
 	}
 
 	updated, err := c.db.MarkPaid(ctx, id, user, amount)
@@ -277,7 +277,7 @@ func (c *Caldrons) Settle(
 	}
 	target, err := c.wallet.Wallet(ctx, winner)
 	if err != nil {
-		return caldron.Caldron{}, fmt.Errorf("%w: %s", ErrWalletUnavailable, err)
+		return caldron.Caldron{}, fmt.Errorf("%w: %w", ErrWalletUnavailable, err)
 	}
 
 	// Перевод раньше смены состояния: объявить котёл завершённым, не отдав
@@ -289,7 +289,7 @@ func (c *Caldrons) Settle(
 		Value:          pot.Collected,
 		Message:        "Выигрыш в котле " + pot.Title,
 	}); err != nil {
-		return caldron.Caldron{}, fmt.Errorf("%w: %s", ErrWalletUnavailable, err)
+		return caldron.Caldron{}, fmt.Errorf("%w: %w", ErrWalletUnavailable, err)
 	}
 
 	settled, err := c.db.Transition(ctx, id, caldron.StateSettled, caldron.ActorCreator)
@@ -375,7 +375,7 @@ func (c *Caldrons) walletOf(ctx context.Context, pot caldron.Caldron) (uuid.UUID
 
 	info, err := c.wallet.Wallet(ctx, pot.Id)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("%w: %s", ErrWalletUnavailable, err)
+		return uuid.Nil, fmt.Errorf("%w: %w", ErrWalletUnavailable, err)
 	}
 	if err = c.db.SetWallet(ctx, pot.Id, info.Id); err != nil {
 		return uuid.Nil, err
@@ -713,7 +713,7 @@ func (c *Caldrons) fetchGift(
 	}
 	catalog, err := c.catalogs.Catalog(request.Provider)
 	if err != nil {
-		return caldron.Gift{}, fmt.Errorf("%w: %s", ErrProductNotFound, err)
+		return caldron.Gift{}, fmt.Errorf("%w: %w", ErrProductNotFound, err)
 	}
 
 	product, err := catalog.Product(ctx, request.ProductId)
@@ -723,7 +723,7 @@ func (c *Caldrons) fetchGift(
 	case err != nil:
 		// Подставлять вместо цены ноль нельзя: подарок попал бы
 		// в розыгрыш как бесплатный.
-		return caldron.Gift{}, fmt.Errorf("%w: %s", ErrMarketplaceUnavailable, err)
+		return caldron.Gift{}, fmt.Errorf("%w: %w", ErrMarketplaceUnavailable, err)
 	}
 
 	return caldron.Gift{

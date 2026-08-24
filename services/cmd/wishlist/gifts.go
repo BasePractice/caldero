@@ -95,7 +95,7 @@ func (g *Gifts) Add(
 
 	catalog, err := g.catalogs.Catalog(create.Provider)
 	if err != nil {
-		return wishlist.Item{}, fmt.Errorf("%w: %s", ErrProductNotFound, err)
+		return wishlist.Item{}, fmt.Errorf("%w: %w", ErrProductNotFound, err)
 	}
 	product, err := catalog.Product(ctx, create.ProductId)
 	switch {
@@ -104,7 +104,7 @@ func (g *Gifts) Add(
 	case err != nil:
 		// Недоступность площадки — не ошибка пользователя, и подставлять
 		// вместо цены ноль нельзя: элемент попадёт в расчёты как бесплатный.
-		return wishlist.Item{}, fmt.Errorf("%w: %s", ErrMarketplaceUnavailable, err)
+		return wishlist.Item{}, fmt.Errorf("%w: %w", ErrMarketplaceUnavailable, err)
 	}
 
 	fetched := product.FetchedAt
@@ -290,6 +290,7 @@ func (g *Gifts) order(ctx context.Context, item wishlist.Item) (string, error) {
 	if err != nil {
 		slog.WarnContext(ctx, "Marketplace is not configured, order is left to the giver",
 			slog.String("provider", string(item.Provider)))
+		//nolint:nilerr // ненастроенная площадка не срывает вручение: заказ делает даритель
 		return "", nil
 	}
 
@@ -302,7 +303,7 @@ func (g *Gifts) order(ctx context.Context, item wishlist.Item) (string, error) {
 			slog.String("provider", string(item.Provider)))
 		return "", nil
 	case err != nil:
-		return "", fmt.Errorf("%w: %s", ErrMarketplaceUnavailable, err)
+		return "", fmt.Errorf("%w: %w", ErrMarketplaceUnavailable, err)
 	}
 	return order, nil
 }
@@ -320,11 +321,11 @@ func (g *Gifts) transfer(ctx context.Context, item wishlist.Item, giver uuid.UUI
 
 	source, err := g.wallet.Wallet(ctx, giver)
 	if err != nil {
-		return fmt.Errorf("%w: %s", ErrWalletUnavailable, err)
+		return fmt.Errorf("%w: %w", ErrWalletUnavailable, err)
 	}
 	target, err := g.wallet.Wallet(ctx, item.UserId)
 	if err != nil {
-		return fmt.Errorf("%w: %s", ErrWalletUnavailable, err)
+		return fmt.Errorf("%w: %w", ErrWalletUnavailable, err)
 	}
 
 	fee := g.fee.For(item.Amount)
@@ -345,7 +346,7 @@ func (g *Gifts) transfer(ctx context.Context, item wishlist.Item, giver uuid.UUI
 		Value:          item.Amount,
 		Message:        "Денежный подарок",
 	}); err != nil {
-		return fmt.Errorf("%w: %s", ErrWalletUnavailable, err)
+		return fmt.Errorf("%w: %w", ErrWalletUnavailable, err)
 	}
 
 	if fee > 0 {

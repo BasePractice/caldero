@@ -101,7 +101,7 @@ func (s *Shopaholic) Shop(
 
 	source, err := s.wallet.Wallet(ctx, user)
 	if err != nil {
-		return wishlist.Run{}, fmt.Errorf("%w: %s", ErrWalletUnavailable, err)
+		return wishlist.Run{}, fmt.Errorf("%w: %w", ErrWalletUnavailable, err)
 	}
 	if source.Available < total {
 		// Проверка до заказов: заказать и не оплатить хуже, чем
@@ -210,7 +210,7 @@ func (s *Shopaholic) catalog(
 	for _, item := range items {
 		catalog, err := s.catalogs.Catalog(item.Provider)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %s", ErrProductNotFound, err)
+			return nil, fmt.Errorf("%w: %w", ErrProductNotFound, err)
 		}
 		product, err := catalog.Product(ctx, item.ProductId)
 		switch {
@@ -219,7 +219,7 @@ func (s *Shopaholic) catalog(
 				slog.String("product", item.ProductId))
 			continue
 		case err != nil:
-			return nil, fmt.Errorf("%w: %s", ErrMarketplaceUnavailable, err)
+			return nil, fmt.Errorf("%w: %w", ErrMarketplaceUnavailable, err)
 		}
 		products = append(products, product)
 	}

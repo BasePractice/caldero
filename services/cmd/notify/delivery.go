@@ -78,12 +78,14 @@ func NewDispatcher(db Database, templates *Templates, senders ...Sender) *Dispat
 func (d *Dispatcher) Run(ctx context.Context) error {
 	for {
 		if ctx.Err() != nil {
+			//nolint:nilerr // отмена контекста — штатная остановка, а не сбой разбора очереди
 			return nil
 		}
 
 		handled, err := d.Once(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
+				//nolint:nilerr // сбой на фоне отмены — следствие остановки, а не её причина
 				return nil
 			}
 			slog.ErrorContext(ctx, "Delivery pass failed", slog.String("err", err.Error()))
@@ -115,6 +117,7 @@ func (d *Dispatcher) Once(ctx context.Context) (int, error) {
 			// Незавершённые задания вернутся в выборку сами, когда
 			// истечёт аренда: терять их нельзя, а дорабатывать пачку
 			// после сигнала остановки — незачем.
+			//nolint:nilerr // остановка по контексту не делает проход неуспешным
 			return len(tasks), nil
 		}
 		d.handle(ctx, task)

@@ -213,7 +213,7 @@ func (c *SocialClient) Exchange(
 		Error       string `json:"error"`
 	}
 	if err = json.Unmarshal(body, &token); err != nil {
-		return "", fmt.Errorf("%w: decoding token response: %s", ErrSocialProvider, err)
+		return "", fmt.Errorf("%w: decoding token response: %w", ErrSocialProvider, err)
 	}
 	if token.AccessToken == "" {
 		return "", fmt.Errorf("%w: no access token (%s)", ErrSocialProvider, token.Error)
@@ -241,7 +241,7 @@ func (c *SocialClient) Profile(
 
 	var raw map[string]any
 	if err = json.Unmarshal(body, &raw); err != nil {
-		return SocialProfile{}, fmt.Errorf("%w: decoding userinfo: %s", ErrSocialProvider, err)
+		return SocialProfile{}, fmt.Errorf("%w: decoding userinfo: %w", ErrSocialProvider, err)
 	}
 
 	external := field(raw, provider.IdField)
@@ -261,7 +261,7 @@ func (c *SocialClient) Profile(
 func (c *SocialClient) call(request *http.Request, what string) ([]byte, error) {
 	response, err := c.client.Do(request)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s: %s", ErrSocialProvider, what, err)
+		return nil, fmt.Errorf("%w: %s: %w", ErrSocialProvider, what, err)
 	}
 	defer func() {
 		// Тело читается ниже; здесь остаётся только закрыть.
@@ -271,7 +271,7 @@ func (c *SocialClient) call(request *http.Request, what string) ([]byte, error) 
 	// Ответ читается с ограничением: его размер задаёт чужой сервис.
 	body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 	if err != nil {
-		return nil, fmt.Errorf("%w: reading %s: %s", ErrSocialProvider, what, err)
+		return nil, fmt.Errorf("%w: reading %s: %w", ErrSocialProvider, what, err)
 	}
 	if response.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("%w: %s answered %s", ErrSocialProvider, what, response.Status)

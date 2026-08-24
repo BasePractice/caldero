@@ -57,7 +57,7 @@ func (s *Sandbox) SetUnavailable(unavailable bool) {
 
 func (s *Sandbox) Deposit(_ context.Context, request DepositRequest) (Operation, error) {
 	if err := request.Validate(); err != nil {
-		return Operation{}, fmt.Errorf("%w: %s", ErrRejected, err)
+		return Operation{}, fmt.Errorf("%w: %w", ErrRejected, err)
 	}
 
 	s.mu.Lock()
@@ -91,7 +91,7 @@ func (s *Sandbox) Deposit(_ context.Context, request DepositRequest) (Operation,
 
 func (s *Sandbox) Payout(_ context.Context, request PayoutRequest) (Operation, error) {
 	if err := request.Validate(); err != nil {
-		return Operation{}, fmt.Errorf("%w: %s", ErrRejected, err)
+		return Operation{}, fmt.Errorf("%w: %w", ErrRejected, err)
 	}
 
 	s.mu.Lock()

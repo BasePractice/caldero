@@ -6,24 +6,6 @@ import (
 	"testing"
 )
 
-// countingCatalog считает обращения к площадке.
-type countingCatalog struct {
-	stub  Stub
-	calls int
-}
-
-func (c *countingCatalog) Provider() Provider { return ProviderStub }
-
-func (c *countingCatalog) Product(ctx context.Context, id string) (Product, error) {
-	c.calls++
-	return c.stub.Product(ctx, id)
-}
-
-func (c *countingCatalog) Order(ctx context.Context, id, address string) (string, error) {
-	c.calls++
-	return c.stub.Order(ctx, id, address)
-}
-
 func TestStubIsDeterministic(t *testing.T) {
 	stub := &Stub{}
 	first, err := stub.Product(context.Background(), "product-1")

@@ -63,7 +63,8 @@ func handler(content fs.FS, cfg services.Config) http.Handler {
 	mux.HandleFunc("GET /config.json", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
-		fmt.Fprintf(w, `{"api":%q,"client_id":%q}`+"\n",
+		// Ответ уже начат: сообщить об ошибке записи клиенту нечем.
+		_, _ = fmt.Fprintf(w, `{"api":%q,"client_id":%q}`+"\n",
 			cfg.WebAPIBase, cfg.WebClientId)
 	})
 	mux.Handle("GET /", cacheControl(files))

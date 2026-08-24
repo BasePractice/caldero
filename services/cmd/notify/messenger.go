@@ -166,12 +166,14 @@ func (t *Messenger) Run(ctx context.Context) error {
 	var offset int64
 	for {
 		if ctx.Err() != nil {
+			//nolint:nilerr // отмена контекста — штатная остановка бота, а не сбой
 			return nil
 		}
 
 		updates, err := t.updates(ctx, offset)
 		if err != nil {
 			if ctx.Err() != nil {
+				//nolint:nilerr // сбой на фоне отмены — следствие остановки, а не её причина
 				return nil
 			}
 			slog.WarnContext(ctx, "Can't read messenger updates",
@@ -284,7 +286,7 @@ func (t *Messenger) call(ctx context.Context, method string, params map[string]a
 
 	response, err := t.client.Do(request)
 	if err != nil {
-		return fmt.Errorf("%w: calling %s: %s", ErrChannelUnavailable, method, err)
+		return fmt.Errorf("%w: calling %s: %w", ErrChannelUnavailable, method, err)
 	}
 	defer func() {
 		// Тело читается до конца выше; здесь остаётся только закрыть.
@@ -293,7 +295,7 @@ func (t *Messenger) call(ctx context.Context, method string, params map[string]a
 
 	payload, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 	if err != nil {
-		return fmt.Errorf("%w: reading %s response: %s", ErrChannelUnavailable, method, err)
+		return fmt.Errorf("%w: reading %s response: %w", ErrChannelUnavailable, method, err)
 	}
 
 	var envelope struct {
@@ -303,23 +305,23 @@ func (t *Messenger) call(ctx context.Context, method string, params map[string]a
 		Result      json.RawMessage `json:"result"`
 	}
 	if err = json.Unmarshal(payload, &envelope); err != nil {
-		return fmt.Errorf("%w: decoding %s response: %s", ErrChannelUnavailable, method, err)
+		return fmt.Errorf("%w: decoding %s response: %w", ErrChannelUnavailable, method, err)
 	}
 	if !envelope.Ok {
 		apiErr := &telegramError{Code: envelope.ErrorCode, Description: envelope.Description}
 		if apiErr.Code == 0 {
 			apiErr.Code = response.StatusCode
 		}
-		switch {
-		case apiErr.Code == http.StatusForbidden:
+		switch apiErr.Code {
+		case http.StatusForbidden:
 			return apiErr
-		case apiErr.Code == http.StatusBadRequest:
+		case http.StatusBadRequest:
 			// Чат не найден или удалён: повторять нечего.
 			return fmt.Errorf("%w: %s", ErrChannelUnbound, apiErr.Description)
 		default:
 			// Ограничение частоты и сбои самого Bot API имеет смысл
 			// повторить позже.
-			return fmt.Errorf("%w: %s", ErrChannelUnavailable, apiErr)
+			return fmt.Errorf("%w: %w", ErrChannelUnavailable, apiErr)
 		}
 	}
 

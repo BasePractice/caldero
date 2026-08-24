@@ -339,7 +339,8 @@ func (a *api) unsubscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, `<!doctype html><html lang="ru"><head><meta charset="utf-8">`+
+	// Ответ уже начат: сообщить об ошибке записи клиенту нечем.
+	_, _ = fmt.Fprint(w, `<!doctype html><html lang="ru"><head><meta charset="utf-8">`+
 		`<title>Отписка</title></head><body>`+
 		`<p>Письма отключены. Включить их снова можно в настройках оповещений.</p>`+
 		`</body></html>`)

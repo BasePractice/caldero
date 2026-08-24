@@ -39,6 +39,11 @@ func (s *Service) handleSocialStart(w http.ResponseWriter, r *http.Request) {
 		writeSocialError(r.Context(), w, err)
 		return
 	}
+	// Адрес перехода собирается из конфигурации провайдера и базы возврата,
+	// а строка запроса клиента уходит в состояние входа, а не в адрес.
+	// Открытого перенаправления здесь нет, это ложное срабатывание анализа
+	// потока данных.
+	//nolint:gosec // G710: цель перехода строится из конфигурации, не из запроса
 	http.Redirect(w, r, target, http.StatusFound)
 }
 

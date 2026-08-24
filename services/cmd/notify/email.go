@@ -97,7 +97,7 @@ func (e *Email) Channel() notify.Channel { return notify.ChannelEmail }
 func (e *Email) Send(ctx context.Context, task Task, title, body string) error {
 	contact, err := e.contacts.Contacts(ctx, task.UserId)
 	if err != nil {
-		return fmt.Errorf("%w: %s", ErrChannelUnavailable, err)
+		return fmt.Errorf("%w: %w", ErrChannelUnavailable, err)
 	}
 	if contact.Email == "" {
 		return ErrChannelUnbound
@@ -119,7 +119,7 @@ func (e *Email) Send(ctx context.Context, task Task, title, body string) error {
 	if err = e.send(address, auth, e.config.From, []string{contact.Email}, message); err != nil {
 		// Отказ релея почти всегда временный: очередь и повторы уже есть
 		// в диспетчере, и разбирать коды SMTP здесь незачем.
-		return fmt.Errorf("%w: %s", ErrChannelUnavailable, err)
+		return fmt.Errorf("%w: %w", ErrChannelUnavailable, err)
 	}
 	return nil
 }
