@@ -39,7 +39,9 @@ func login(config appConfig) error {
 	query.Set("response_type", "code")
 	query.Set("client_id", config.ClientId)
 	query.Set("redirect_uri", redirectURI())
-	query.Set("scope", "openid read write")
+	// offline_access просится ради токена обновления: без него провайдер
+	// его не выдаёт, и работа обрывалась бы через час.
+	query.Set("scope", "openid read write offline_access")
 	query.Set("state", state)
 	query.Set("code_challenge", base64.RawURLEncoding.EncodeToString(sum[:]))
 	query.Set("code_challenge_method", "S256")

@@ -23,13 +23,18 @@ type appConfig struct {
 
 // client — доступ к API.
 //
-// Токен хранится только в поле структуры, то есть в памяти вкладки:
-// в localStorage его читает любой скрипт на странице, а перезагрузка
+// Токены хранятся только в полях структуры, то есть в памяти вкладки:
+// в localStorage их читает любой скрипт на странице, а перезагрузка
 // с повторным входом — цена, которую за это стоит платить.
+//
+// Токен доступа живёт час, поэтому рядом лежит токен обновления: без него
+// работа обрывалась бы через час прямо посреди дела. Сессия при этом
+// кончается вместе со вкладкой — дальше вкладки ни один из них не уходит.
 type client struct {
-	config appConfig
-	token  string
-	http   *http.Client
+	config  appConfig
+	token   string
+	refresh string
+	http    *http.Client
 }
 
 func newClient(config appConfig) *client {
@@ -61,17 +66,9 @@ func (c *client) exchange(ctx context.Context, code string) error {
 	}
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	var token struct {
-		AccessToken string `json:"access_token"`
-	}
-	if err = c.do(request, &token); err != nil {
+	if err = c.keep(request); err != nil {
 		return err
 	}
-	if token.AccessToken == "" {
-		return errText("сервер не выдал токен")
-	}
-
-	c.token = token.AccessToken
 	// Проверочный код одноразовый: он больше не нужен и не должен
 	// оставаться в хранилище вкладки.
 	clearSessionValue(verifierKey)
@@ -103,14 +100,101 @@ func (c *client) post(ctx context.Context, path string, body, into any) error {
 	return c.do(request, into)
 }
 
+// do выполняет запрос. Если токен доступа истёк, обновляет его и повторяет
+// запрос один раз: иначе час работы заканчивался бы предложением войти
+// заново на середине действия.
 func (c *client) do(request *http.Request, into any) error {
+	expired, err := c.send(c.authorize(request), into)
+	if !expired {
+		return err
+	}
+
+	if err = c.renew(request.Context()); err != nil {
+		c.forget()
+		return err
+	}
+	// Тело запроса уже прочитано: для повтора его нужно взять заново.
+	if request.GetBody != nil {
+		body, err := request.GetBody()
+		if err != nil {
+			return errText("не удалось повторить запрос")
+		}
+		request.Body = body
+	}
+
+	expired, err = c.send(c.authorize(request), into)
+	if expired {
+		// Свежий токен тоже не подошёл: дальше только вход.
+		c.forget()
+		return errText("нужно войти заново")
+	}
+	return err
+}
+
+// keep выполняет запрос за токенами и запоминает выданное.
+func (c *client) keep(request *http.Request) error {
+	var token struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+	}
+	// Токен доступа сюда не идёт: провайдер ждёт в этом запросе
+	// удостоверение клиента, а не пользователя.
+	if _, err := c.send(request, &token); err != nil {
+		return err
+	}
+	if token.AccessToken == "" {
+		return errText("сервер не выдал токен")
+	}
+	c.token = token.AccessToken
+	// Токен обновления выдаётся не всегда: без области offline_access
+	// провайдер его не даёт, и тогда сессия просто кончится через час.
+	c.refresh = token.RefreshToken
+	return nil
+}
+
+// renew меняет токен обновления на новую пару.
+func (c *client) renew(ctx context.Context) error {
+	if c.refresh == "" {
+		return errText("нужно войти заново")
+	}
+
+	form := url.Values{}
+	form.Set("grant_type", "refresh_token")
+	form.Set("refresh_token", c.refresh)
+	form.Set("client_id", c.config.ClientId)
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.config.API+"/token", strings.NewReader(form.Encode()))
+	if err != nil {
+		return errText("не удалось подготовить запрос токена")
+	}
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	// Прежний токен обновления одноразовый: провайдер выдаёт новый вместе
+	// с токеном доступа, а старый отзывает.
+	return c.keep(request)
+}
+
+// forget стирает токены: с этого момента приложение считается невошедшим.
+func (c *client) forget() {
+	c.token = ""
+	c.refresh = ""
+}
+
+// authorize добавляет к запросу текущий токен доступа.
+func (c *client) authorize(request *http.Request) *http.Request {
 	if c.token != "" {
 		request.Header.Set("Authorization", "Bearer "+c.token)
 	}
+	return request
+}
 
+// send выполняет один запрос. Истечение токена возвращается отдельным
+// признаком, а не ошибкой: по нему do решает, повторять ли запрос.
+func (c *client) send(request *http.Request, into any) (bool, error) {
 	response, err := c.http.Do(request)
 	if err != nil {
-		return errText("сервис недоступен")
+		return false, errText("сервис недоступен")
 	}
 	defer func() {
 		// Тело читается ниже; здесь остаётся только закрыть.
@@ -119,27 +203,25 @@ func (c *client) do(request *http.Request, into any) error {
 
 	body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 	if err != nil {
-		return errText("не удалось прочитать ответ")
+		return false, errText("не удалось прочитать ответ")
 	}
 
 	switch {
 	case response.StatusCode == http.StatusUnauthorized:
-		// Токен живёт час; после этого нужен новый вход.
-		c.token = ""
-		return errText("нужно войти заново")
+		return true, errText("нужно войти заново")
 	case response.StatusCode >= 400:
 		message := strings.TrimSpace(string(body))
 		if message == "" {
 			message = response.Status
 		}
-		return errText(fmt.Sprintf("сервис ответил: %s", message))
+		return false, errText(fmt.Sprintf("сервис ответил: %s", message))
 	}
 
 	if into == nil || len(body) == 0 {
-		return nil
+		return false, nil
 	}
 	if err = json.Unmarshal(body, into); err != nil {
-		return errText("не удалось разобрать ответ сервиса")
+		return false, errText("не удалось разобрать ответ сервиса")
 	}
-	return nil
+	return false, nil
 }

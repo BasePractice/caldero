@@ -73,6 +73,42 @@ done <<EOF
 $REQUIRED
 EOF
 
+echo "== пользователь доходит до сервисов"
+# Заголовок с идентификатором проставляет сам шлюз, но до бэкенда он
+# доходит, только если перечислен в input_headers: фильтр срабатывает
+# и на заголовки шлюза. Без него сервисы отвечали 401 на верный токен —
+# то есть через шлюз не работало ничего, кроме публичных маршрутов.
+#
+# X-Roles там быть не должно: роли в токен пока не попадают, перезаписать
+# присланное клиентом нечем, и любой прислал бы себе роль сам. Заголовок
+# с идентификатором так не подделать — claim sub есть всегда, и шлюз
+# перезаписывает им присланное значение.
+if ! python3 - "$rendered/internal.json" <<'PYTHON'; then
+import json, sys
+
+with open(sys.argv[1]) as source:
+    config = json.load(source)
+
+problems = []
+for endpoint in config["endpoints"]:
+    if "auth/validator" not in endpoint.get("extra_config", {}):
+        continue
+    route = f"{endpoint['method']} {endpoint['endpoint']}"
+    headers = endpoint.get("input_headers", [])
+    if "X-Authorized-Id" not in headers:
+        problems.append(f"{route}: сервису не передаётся X-Authorized-Id")
+    if "X-Roles" in headers:
+        problems.append(f"{route}: X-Roles передаётся от клиента — это чужая роль по своему желанию")
+
+for problem in problems:
+    print(f"  ✗ {problem}")
+sys.exit(1 if problems else 0)
+PYTHON
+    failed=1
+else
+    echo "  передаётся"
+fi
+
 echo "== токен доходит до сервиса пользователей"
 # Сервис пользователей проверяет токен сам: он и есть провайдер, и доверять
 # заголовку X-Authorized-Id ему нечего — он его и выдаёт. Поэтому его

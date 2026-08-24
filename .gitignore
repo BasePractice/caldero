@@ -35,3 +35,7 @@ _requests/http-client.private.env.json
 deploy/.deployed-tag
 deploy/smoke.sh
 deploy/config
+
+# Артефакт сборки: `go build ./services/cmd/web/app` кладёт бинарник
+# с именем каталога в корень репозитория.
+/app
