@@ -110,34 +110,98 @@ else
     echo "  передаётся"
 fi
 
-echo "== токен доходит до сервиса пользователей"
-# Сервис пользователей проверяет токен сам: он и есть провайдер, и доверять
-# заголовку X-Authorized-Id ему нечего — он его и выдаёт. Поэтому его
-# защищённым маршрутам нужен заголовок Authorization, а не только claim.
-# Без него шлюз отвечал 401 на верный токен, и после входа не работало
-# ничего: ни профиль, ни подтверждение контактов.
+echo "== токен доходит туда, где его проверяют"
+# Сервис пользователей — сам провайдер: часть его обработчиков опознаёт
+# вызывающего введением токена (service.protect), а не заголовком, который
+# сам же и выдал. Таким маршрутам нужен Authorization, иначе шлюз отвечал
+# 401 на верный токен — так и было, пока заголовок не передавался никому.
+#
+# Список таких маршрутов не ведётся руками: он читается из самого сервиса.
 if ! python3 - "$rendered/internal.json" <<'PYTHON'; then
-import json, sys
+import json, os, re, sys
+
+protected = set()
+directory = "services/cmd/users"
+for name in sorted(os.listdir(directory)):
+    if not name.endswith(".go") or name.endswith("_test.go"):
+        continue
+    with open(os.path.join(directory, name)) as source:
+        for match in re.finditer(
+                r'mux\.HandleFunc\("([A-Z]+) ([^"]+)",\s*\w+\.protect\(', source.read()):
+            protected.add((match.group(1), match.group(2)))
 
 with open(sys.argv[1]) as source:
     config = json.load(source)
 
 missing = []
 for endpoint in config["endpoints"]:
-    backends = [host for backend in endpoint["backend"] for host in backend["host"]]
-    protected = "auth/validator" in endpoint.get("extra_config", {})
-    if not protected or not any("users" in host for host in backends):
+    route = (endpoint["method"], endpoint["endpoint"].replace("/api/v1", ""))
+    if route not in protected:
         continue
     if "Authorization" not in endpoint.get("input_headers", []):
-        missing.append(f"{endpoint['method']} {endpoint['endpoint']}")
+        missing.append(f"{route[0]} {endpoint['endpoint']}")
 
 for route in missing:
-    print(f"  ✗ {route}: сервису пользователей не передаётся Authorization")
+    print(f"  ✗ {route}: обработчик вводит токен, а шлюз его не передаёт")
 sys.exit(1 if missing else 0)
 PYTHON
     failed=1
 else
     echo "  передаётся"
+fi
+
+echo "== маршруты сервисов выставлены наружу"
+# Шлюз — единственная дверь, и маршрут, которого в нём нет, для внешнего
+# мира не существует. Так уже случалось: сервис умел отдавать профиль
+# и карточку пользователя, а через шлюз их было не получить.
+#
+# Список внутренних маршрутов ведётся руками и объясняет каждый: наружу
+# выставлено не всё, и это осознанно.
+if ! python3 - "$rendered/internal.json" <<'PYTHON'; then
+import json, os, re, sys
+
+# Наружу не выставлены намеренно. Ключ — «метод путь» у сервиса.
+INTERNAL = {
+    "GET /auth": "страница входа идёт через сервис интерфейса: шлюз не пропускает перенаправление с кодом (EXT-10)",
+    "POST /auth": "то же для отправки формы входа",
+    "POST /clients": "административный маршрут под отдельным токеном",
+    "POST /revoke": "административный маршрут под отдельным токеном",
+    "POST /rotate-keys": "административный маршрут под отдельным токеном",
+    "GET /me": "сведения о токене; интерфейсу не нужны, наружу не выставлены",
+    "GET /users/{id}/contacts": "контакты пользователя — персональные данные, ходит только сервис оповещений",
+    "GET /notify/ws": "KrakenD Community Edition не проксирует WebSocket (EXT-05)",
+}
+
+with open(sys.argv[1]) as source:
+    gateway = {
+        (endpoint["method"], endpoint["endpoint"].replace("/api/v1", ""))
+        for endpoint in json.load(source)["endpoints"]
+    }
+
+missing = []
+for service in sorted(os.listdir("services/cmd")):
+    # Сервис интерфейса стоит не за шлюзом, а рядом с ним: браузер ходит
+    # к нему напрямую за статикой и страницей входа.
+    if service == "web":
+        continue
+    directory = os.path.join("services/cmd", service)
+    for name in sorted(os.listdir(directory)):
+        if not name.endswith(".go") or name.endswith("_test.go"):
+            continue
+        with open(os.path.join(directory, name)) as source:
+            for match in re.finditer(r'mux\.HandleFunc\("([A-Z]+) ([^"]+)"', source.read()):
+                route = (match.group(1), match.group(2))
+                if route in gateway or f"{route[0]} {route[1]}" in INTERNAL:
+                    continue
+                missing.append(f"{service}: {route[0]} {route[1]}")
+
+for route in sorted(set(missing)):
+    print(f"  ✗ {route} — наружу не выставлен и не отмечен как внутренний")
+sys.exit(1 if missing else 0)
+PYTHON
+    failed=1
+else
+    echo "  выставлены"
 fi
 
 [ "$failed" = 0 ] || {

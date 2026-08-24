@@ -1708,6 +1708,168 @@
       }
     },
     {
+      "@comment": "Защищённый: карточка пользователя по идентификатору. Публичная она по содержимому — контактов в нём нет, — а не по доступу: сервис требует опознанного вызывающего, иначе перебором идентификаторов выгребается список всех пользователей. Предел частоты оставлен и здесь: опознанный перебор тоже перебор.",
+      "endpoint": "/api/v1/users/{id}",
+      "method": "GET",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type",
+        "X-Authorized-Id",
+        "X-Roles"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://users:51053"
+          ],
+          "url_pattern": "/users/{id}",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        },
+        "qos/ratelimit/router": {
+          "max_rate": 20,
+          "capacity": 20,
+          "client_max_rate": 5,
+          "client_capacity": 5,
+          "strategy": "ip"
+        }
+      }
+    },
+    {
+      "@comment": "Защищённый: правка своего профиля. Без этого маршрута профиль можно только прочитать, а изменить нечем.",
+      "endpoint": "/api/v1/profile",
+      "method": "PATCH",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type",
+        "Content-Length",
+        "Authorization",
+        "X-Authorized-Id",
+        "X-Roles"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://users:51053"
+          ],
+          "url_pattern": "/profile",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "@comment": "Защищённый: платёж по кредиту. Без этого маршрута кредит можно выдать, но нельзя погасить.",
+      "endpoint": "/api/v1/credits/{id}/payments",
+      "method": "POST",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type",
+        "Content-Length",
+        "X-Authorized-Id",
+        "X-Roles"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://credit:51052"
+          ],
+          "url_pattern": "/credits/{id}/payments",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "@comment": "Защищённый: чтение счёта. Создание счёта наружу выставлено, чтение — не было.",
+      "endpoint": "/api/v1/account/{id}",
+      "method": "GET",
+      "output_encoding": "no-op",
+      "input_headers": [
+        "Content-Type",
+        "X-Authorized-Id",
+        "X-Roles"
+      ],
+      "backend": [
+        {
+          "host": [
+            "http://account:51054"
+          ],
+          "url_pattern": "/account/{id}",
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "AUTH_HOST" }}{{ env "AUTH_JWKS_PATH" }}",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            [
+              "sub",
+              "X-Authorized-Id"
+            ],
+            [
+              "{{ env "AUTH_ROLES_CLAIM" }}",
+              "X-Roles"
+            ]
+          ]
+        }
+      }
+    },
+    {
       "@comment": "Защищённый: способы внешнего входа",
       "endpoint": "/api/v1/profile/identities",
       "method": "GET",
