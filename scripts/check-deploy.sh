@@ -56,7 +56,7 @@ echo "== разбор compose"
 # однажды сделали docker-compose.yml неразбираемым, и это не обнаружил
 # никто — стенд просто перестал подниматься, а CI его не трогает.
 for file in docker-compose.yml "$COMPOSE"; do
-    if REGISTRY=registry.invalid TAG=check POSTGRES_PASSWORD=check \
+    if REGISTRY=registry.invalid TAG=check POSTGRES_PASSWORD=check DOMAIN=check.invalid \
         INFLUXDB_PASSWORD=check OAUTH2_GLOBAL_SECRET=check KEY_MASTER_KEY=check \
         OAUTH2_ISSUER=http://check PUBLIC_BASE_URL=http://check WEB_API_BASE=http://check \
         docker compose -f "$file" config -q; then
@@ -65,6 +65,17 @@ for file in docker-compose.yml "$COMPOSE"; do
         fail "$file не разбирается"
     fi
 done
+
+echo "== конфигурация прокси"
+# Ошибка в Caddyfile обнаружилась бы иначе на сервере — тем, что снаружи
+# перестал отвечать весь стек разом.
+if docker run --rm -e DOMAIN=check.invalid \
+    -v "$PWD/config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine \
+    caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
+    echo "  разбирается"
+else
+    fail "config/caddy/Caddyfile не разбирается"
+fi
 
 [ "$failed" = 0 ] || {
     echo "файлы доставки разошлись с кодом" >&2

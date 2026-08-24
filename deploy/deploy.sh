@@ -35,8 +35,13 @@ esac
 # машине различаются именно именем проекта и портами.
 export COMPOSE_FILE="${COMPOSE_FILE:-compose.yml}"
 export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-caldero}"
-export GATEWAY_URL="${GATEWAY_URL:-http://localhost:${GATEWAY_PORT:-8080}}"
-export WEB_URL="${WEB_URL:-http://localhost:${WEB_PORT:-3000}}"
+# Снаружи стек виден одним адресом: и API, и интерфейс отдаёт прокси.
+# PUBLIC_URL задаётся в файле окружения рядом с DOMAIN.
+export GATEWAY_URL="${GATEWAY_URL:-${PUBLIC_URL:-https://${DOMAIN:-localhost}}}"
+export WEB_URL="${WEB_URL:-$GATEWAY_URL}"
+# Прокси проверяется вместе с остальным стеком: он и есть единственная
+# дверь снаружи.
+export SMOKE_INFRA="${SMOKE_INFRA:-proxy krakend postgres-db redis}"
 
 SMOKE="${SMOKE:-./smoke.sh}"
 # Файл помнит, что выкачено сейчас: без него откатываться некуда.
@@ -58,6 +63,15 @@ echo "== выкат $TAG (предыдущий: ${previous:-нет})"
 if [ "$PULL" = "1" ]; then
     echo "== образы"
     compose "$TAG" pull --quiet
+fi
+
+echo "== разбор конфигурации прокси"
+# Ошибка в Caddyfile обнаружилась бы иначе после подмены образов —
+# тем, что снаружи перестал отвечать вообще весь стек.
+if ! compose "$TAG" run --rm --no-deps --entrypoint caddy proxy \
+    validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
+    echo "конфигурация прокси не разбирается, выкат остановлен" >&2
+    exit 1
 fi
 
 echo "== база и кэш"

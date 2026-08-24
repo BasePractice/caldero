@@ -60,7 +60,7 @@ jobs:
           scp -i ~/.ssh/id_deploy \
             deploy/compose.yml deploy/deploy.sh scripts/smoke.sh \
             "$SSH_USER@$SSH_HOST:$DEPLOY_PATH/"
-          scp -i ~/.ssh/id_deploy -r config/krakend config/postgresql \
+          scp -i ~/.ssh/id_deploy -r config/krakend config/postgresql config/caddy \
             "$SSH_USER@$SSH_HOST:$DEPLOY_PATH/config/"
 
       - name: Файл окружения

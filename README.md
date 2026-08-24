@@ -18,7 +18,8 @@
 
 ```bash
 make up
-curl http://localhost:8080/api/v1/register -d 'username=...&password=...'
+curl http://localhost:8080/api/v1/register \
+  -d 'username=...&password=...&phone=+79001234567'
 ```
 
 Список целей сборки — `make help`.
@@ -30,8 +31,12 @@ curl http://localhost:8080/api/v1/register -d 'username=...&password=...'
 образы из GHCR по тегу коммита, миграции отдельным шагом до подмены
 образов, откат на предыдущий тег при неудачном дымовом сценарии.
 
-Решение и его цена — в [ADR 0008](docs/adr/0008-delivery.md), порядок
-шагов и нужные секреты — в [docs/ci-cd.md](docs/ci-cd.md).
+Снаружи там виден только обратный прокси с TLS: сертификат он получает
+и продлевает сам, а шлюз, интерфейс, база и кэш наружу не смотрят.
+
+Решения и их цена — в [ADR 0008](docs/adr/0008-delivery.md)
+и [ADR 0009](docs/adr/0009-reverse-proxy.md), порядок шагов и нужные
+секреты — в [docs/ci-cd.md](docs/ci-cd.md).
 
 ## Документация
 

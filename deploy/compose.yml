@@ -2,8 +2,9 @@
 #
 # Отдельный файл, а не наложение на docker-compose.yml. Различий слишком
 # много, чтобы их выражать наложением: здесь нет сборки образов из исходников,
-# нет наблюдаемости (её место — отдельная задача), а порты базы, кэша
-# и админки шлюза наружу не публикуются вовсе — на сервере это открытая дверь.
+# нет наблюдаемости (её место — отдельная задача), а наружу смотрит только
+# обратный прокси: порты базы, кэша, шлюза и интерфейса на сервере
+# не публикуются вовсе — это открытая дверь.
 #
 # Образы берутся из реестра по тегу: TAG — это полный SHA коммита
 # (`sha-<40 знаков>`), по нему всегда видно, что именно выкачено.
@@ -67,14 +68,36 @@ services:
       timeout: 5s
       retries: 3
 
+  # Единственное, что смотрит наружу. Сертификат Caddy получает
+  # и продлевает сам; правила разбора адресов — в config/caddy/Caddyfile.
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Выданные сертификаты переживают перезапуск: без этого каждый
+      # выкат просил бы у Let's Encrypt новый и упирался в его пределы.
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      DOMAIN: "${DOMAIN:?DOMAIN не задан, без имени сертификат не получить}"
+    depends_on:
+      krakend:
+        condition: service_started
+      web:
+        condition: service_started
+
   krakend:
     image: krakend:latest
     restart: unless-stopped
     volumes:
       - ./config/krakend:/etc/krakend:ro
-    # Наружу только API. Порты админки и отладки шлюза остаются внутри сети.
-    ports:
-      - "${GATEWAY_PORT:-8080}:8080"
+    # Порт наружу не публикуется: снаружи стек виден только через прокси.
+    expose:
+      - "8080"
     command: [ "run", "-d", "-c", "/etc/krakend/krakend.tmpl" ]
     environment:
       FC_ENABLE: "1"
@@ -201,10 +224,10 @@ services:
       timeout: 3s
       retries: 3
       start_period: 5s
-    # Единственный сервис, кроме шлюза, с публикацией порта: это интерфейс,
-    # который открывает браузер.
-    ports:
-      - "${WEB_PORT:-3000}:51058"
+    # Порт наружу не публикуется: статику отдаёт тот же прокси,
+    # что и API, — иначе интерфейс работал бы по http рядом с https.
+    expose:
+      - "51058"
     depends_on:
       krakend:
         condition: service_started
@@ -217,3 +240,5 @@ services:
 volumes:
   postgres:
   redis:
+  caddy-data:
+  caddy-config:

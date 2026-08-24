@@ -17,8 +17,16 @@ set -euo pipefail
 
 GATEWAY_URL="${GATEWAY_URL:-http://localhost:8080}"
 WEB_URL="${WEB_URL:-http://localhost:3000}"
+# Проверка сертификата отключается только на стенде, где его выдал
+# внутренний удостоверяющий центр Caddy: настоящему имени он получает
+# обычный сертификат, и там проверка обязана работать.
+INSECURE=""
+[ "${SMOKE_INSECURE:-0}" = "1" ] && INSECURE="--insecure"
 # Сервисы с пробой готовности. web не ходит в базу, но readyz у него тот же.
 SERVICES="${SMOKE_SERVICES:-wallet credit account users notify wishlist caldron web}"
+# Остальные контейнеры стека: у них проверяется только состояние.
+# В окружении сюда добавляется прокси, на локальном стенде его нет.
+INFRA="${SMOKE_INFRA:-krakend postgres-db redis}"
 # Метрики и пробы живут на служебном порту, наружу он не публикуется —
 # отсюда и проверка изнутри сети.
 METRICS_PORT="${METRICS_PORT:-8081}"
@@ -38,7 +46,7 @@ network=$(docker inspect -f '{{range $name, $_ := .NetworkSettings.Networks}}{{$
 [ -n "$network" ] || fail "не удалось определить сеть стенда"
 
 echo "== состояние контейнеров"
-for service in $SERVICES krakend postgres-db redis; do
+for service in $SERVICES $INFRA; do
     id=$(docker compose ps -q "$service" 2>/dev/null || true)
     [ -n "$id" ] || fail "сервис $service не запущен"
 
@@ -68,7 +76,8 @@ done
 echo "== публичный маршрут через шлюз"
 # JWKS выбран намеренно: маршрут открытый, ничего не меняет и проходит
 # весь путь целиком — шлюз, сервис пользователей и его база.
-jwks=$(curl --fail --silent --show-error --max-time 15 \
+# shellcheck disable=SC2086 # INSECURE — либо пустая строка, либо один флаг
+jwks=$(curl --fail --silent --show-error --max-time 15 $INSECURE \
     "$GATEWAY_URL/api/v1/.well-known/jwks.json") || fail "шлюз не отдал JWKS"
 case "$jwks" in
 *'"keys"'*) echo "  JWKS отдан" ;;
@@ -76,7 +85,8 @@ case "$jwks" in
 esac
 
 echo "== интерфейс"
-curl --fail --silent --show-error --max-time 15 --output /dev/null "$WEB_URL/" ||
+# shellcheck disable=SC2086 # INSECURE — либо пустая строка, либо один флаг
+curl --fail --silent --show-error --max-time 15 $INSECURE --output /dev/null "$WEB_URL/" ||
     fail "интерфейс не отдал страницу"
 echo "  страница отдана"
 
