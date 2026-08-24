@@ -18,7 +18,7 @@ REVISION ?= $(shell git rev-parse HEAD 2>/dev/null)
 LDFLAGS  := -X wish/services.Version=$(VERSION) -X wish/services.Revision=$(REVISION)
 
 .DEFAULT_GOAL := help
-.PHONY: help build wasm docs docs-check test test-race test-integration cover lint vet fmt fmt-check tidy-check proto up down logs migrate-status migrate-check vuln bench load-test proto-check images clean save-keycloak-config
+.PHONY: help build wasm docs docs-check test test-race test-integration cover lint vet fmt fmt-check tidy-check proto up down logs migrate-status migrate-check deploy-check smoke vuln bench load-test proto-check images clean save-keycloak-config
 
 help: ## Показать список целей
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -113,6 +113,12 @@ vuln: ## Проверить известные уязвимости
 
 migrate-check: ## Прогнать миграции up и down на временном PostgreSQL
 	@scripts/check-migrations.sh
+
+deploy-check: ## Проверить файлы доставки на расхождение с кодом
+	@scripts/check-deploy.sh
+
+smoke: ## Прогнать дымовой сценарий по поднятому стенду
+	@scripts/smoke.sh
 
 proto-check: ## Проверить, что сгенерированный код соответствует .proto
 	@scripts/check-proto.sh

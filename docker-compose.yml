@@ -141,7 +141,11 @@ services:
       - KEYCLOAK_LOGLEVEL=${KC_LOG_LEVEL:-INFO}
     command: [ "start-dev", "--import-realm" ]
   postgres-db:
-    image: postgres
+    # Версия закреплена: с плавающим тегом стенд однажды поднялся
+    # на следующем мажорном выпуске, а данные в ./.pg остались от прежнего,
+    # и база отказалась стартовать. Та же версия стоит в интеграционных
+    # тестах и в окружениях (deploy/compose.yml).
+    image: postgres:16-alpine
     restart: always
     ports:
       - '25432:5432'
@@ -156,7 +160,7 @@ services:
       timeout: 5s
       retries: 5
   redis:
-    image: 'redis:latest'
+    image: redis:7-alpine
     ports:
       - '6379:6379'
     healthcheck:
@@ -314,7 +318,8 @@ services:
       OTEL_TRACES_SAMPLER_ARG: ${OTEL_TRACES_SAMPLER_ARG:-1.0}
       LOG_FILE: /logs/account.log
     volumes:
-      - ./.logs/account:/logs  notify:
+      - ./.logs/account:/logs
+  notify:
     image: wish/notify:latest
     build:
       context: ./

@@ -29,7 +29,7 @@ const (
 
 // Prepare поднимает PostgreSQL, создаёт схему сервиса и возвращает
 // конфигурацию, указывающую на неё. Миграции применяет уже сам конструктор
-// репозитория — то есть тест идёт тем же путём, что и рабочий сервис.
+// репозитория: в конфигурации разрешён DBMigrate, как на локальном стенде.
 //
 // Именно такие тесты поймали бы ошибки в SQL-строках: запрос по
 // несуществующей колонке, синтаксис SQLite в PostgreSQL и порядок удаления
@@ -78,7 +78,10 @@ func Prepare(t *testing.T, schema string) services.Config {
 	}
 
 	return services.Config{
-		PostgresURL:       dsn + "&search_path=" + schema,
+		PostgresURL: dsn + "&search_path=" + schema,
+		// Миграции применяет конструктор репозитория: отдельного шага
+		// доставки в тесте нет, и схему больше взять неоткуда.
+		DBMigrate:         true,
 		DBMaxOpenConns:    5,
 		DBMaxIdleConns:    2,
 		DBConnMaxLifetime: time.Minute,

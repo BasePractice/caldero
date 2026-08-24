@@ -1,0 +1,113 @@
+# Один выкат в одно окружение. Вызывается из deploy.yml дважды —
+# для staging и для production, — потому что различаются они только
+# именем окружения и его секретами.
+#
+# Подтверждение перед production настраивается правилами окружения
+# в настройках репозитория, а не здесь: workflow не должен уметь
+# обойти защиту, которую сам же объявляет.
+name: Выкат
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: Окружение GitHub, откуда берутся секреты
+        required: true
+        type: string
+      tag:
+        description: Тег образа; sha-<полный SHA коммита> или v1.2.3
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    name: Выкат в ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v5
+
+      # Ключ и известные хосты пишутся в файлы, а не передаются флагами:
+      # так они не попадают в журнал команд.
+      - name: Доступ по SSH
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          # Без известного отпечатка остаётся только отключить проверку,
+          # а это и есть та самая подмена сервера, от которой она защищает.
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Копирование стека на сервер
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/caldero' }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_deploy "$SSH_USER@$SSH_HOST" \
+            "mkdir -p '$DEPLOY_PATH/config'"
+          # Едет только то, что нужно стеку: файл окружения, скрипты
+          # и конфигурация шлюза с базой. Исходников на сервере нет.
+          scp -i ~/.ssh/id_deploy \
+            deploy/compose.yml deploy/deploy.sh scripts/smoke.sh \
+            "$SSH_USER@$SSH_HOST:$DEPLOY_PATH/"
+          scp -i ~/.ssh/id_deploy -r config/krakend config/postgresql \
+            "$SSH_USER@$SSH_HOST:$DEPLOY_PATH/config/"
+
+      - name: Файл окружения
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/caldero' }}
+          ENV_FILE: ${{ secrets.ENV_FILE }}
+        run: |
+          set -euo pipefail
+          # Файл с паролями создаётся сразу с правами 600 и передаётся
+          # потоком: через аргументы командной строки он был бы виден
+          # в списке процессов сервера.
+          printf '%s\n' "$ENV_FILE" | ssh -i ~/.ssh/id_deploy "$SSH_USER@$SSH_HOST" \
+            "umask 077 && cat > '$DEPLOY_PATH/.env'"
+
+      - name: Выкат
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/caldero' }}
+          PROJECT: ${{ vars.COMPOSE_PROJECT_NAME || 'caldero' }}
+          TAG: ${{ inputs.tag }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          # Токен уходит на вход docker login, а не аргументом: иначе он
+          # остался бы в истории команд сервера.
+          printf '%s\n' "$REGISTRY_TOKEN" | ssh -i ~/.ssh/id_deploy "$SSH_USER@$SSH_HOST" \
+            "docker login ghcr.io -u '$REGISTRY_USER' --password-stdin"
+          ssh -i ~/.ssh/id_deploy "$SSH_USER@$SSH_HOST" \
+            "cd '$DEPLOY_PATH' && chmod +x deploy.sh smoke.sh && \
+             COMPOSE_PROJECT_NAME='$PROJECT' ./deploy.sh '$TAG'"
+
+      # Выкат сам откатывается на предыдущий тег, если стек не поднялся
+      # или не прошёл дымовой сценарий. Здесь остаётся забрать журнал:
+      # разбираться в упавшем выкате по одной строке «не получилось»
+      # невозможно.
+      - name: Журнал при неудаче
+        if: failure()
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/caldero' }}
+          PROJECT: ${{ vars.COMPOSE_PROJECT_NAME || 'caldero' }}
+        run: |
+          ssh -i ~/.ssh/id_deploy "$SSH_USER@$SSH_HOST" \
+            "cd '$DEPLOY_PATH' && COMPOSE_PROJECT_NAME='$PROJECT' \
+             docker compose -f compose.yml logs --tail 100" || true

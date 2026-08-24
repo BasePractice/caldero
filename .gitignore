@@ -29,3 +29,9 @@ _requests/http-client.private.env.json
 
 # Профиль покрытия: артефакт прогона тестов
 .cover
+
+# Следы выката: файл окружения сервера, копии скриптов и отметка
+# о выкаченном теге появляются только на машине, где идёт выкат.
+deploy/.deployed-tag
+deploy/smoke.sh
+deploy/config

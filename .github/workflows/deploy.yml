@@ -1,0 +1,53 @@
+# Доставка выкатывает то, что уже опубликовано: сам конвейер образов
+# не собирает. Поэтому он ждёт завершения публикации (release.yml)
+# и берёт тег по SHA того же коммита — по нему всегда видно, что выкачено.
+name: Доставка
+
+on:
+  workflow_run:
+    workflows: [ Release ]
+    types: [ completed ]
+  # Ручной запуск нужен для двух случаев: выкатить в production
+  # (он не выкатывается сам) и вернуться на прежний тег, не откатывая код.
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Куда выкатывать
+        required: true
+        default: staging
+        type: choice
+        options: [ staging, production ]
+      tag:
+        description: Тег образа; пусто — sha текущего коммита
+        required: false
+        type: string
+
+concurrency:
+  # Один выкат в одно окружение за раз: параллельные выкаты подменяли бы
+  # образы друг друга.
+  group: deploy-${{ inputs.environment || 'staging' }}
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    # Автоматически — только с main и только после успешной публикации.
+    if: >-
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main') ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'staging')
+    uses: ./.github/workflows/deploy-run.yml
+    secrets: inherit
+    with:
+      environment: staging
+      tag: ${{ inputs.tag || format('sha-{0}', github.event.workflow_run.head_sha || github.sha) }}
+
+  production:
+    # Только вручную. Подтверждение спрашивают правила окружения
+    # production в настройках репозитория.
+    if: github.event_name == 'workflow_dispatch' && inputs.environment == 'production'
+    uses: ./.github/workflows/deploy-run.yml
+    secrets: inherit
+    with:
+      environment: production
+      tag: ${{ inputs.tag || format('sha-{0}', github.sha) }}

@@ -41,6 +41,16 @@ func main() {
 			return fmt.Errorf("opening static content: %w", err)
 		}
 
+		// Проба готовности: без единой пробы readyz отвечает «ещё
+		// запускаюсь» и не меняет ответ никогда — а раздача статики
+		// готова ровно тогда, когда открыта сама статика.
+		health.Register("static", func(ctx context.Context) error {
+			if _, err := fs.Stat(content, "index.html"); err != nil {
+				return fmt.Errorf("static content is not readable: %w", err)
+			}
+			return nil
+		})
+
 		if _, err = fs.Stat(content, appWasm); err != nil {
 			// Не ошибка старта: страница откроется и скажет, что делать.
 			// Падать здесь значило бы ронять раздачу статики из-за

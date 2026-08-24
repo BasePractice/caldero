@@ -40,6 +40,16 @@ type Config struct {
 	// оставляет их открытым текстом — допустимо только для локального стенда.
 	KeyMasterKey string
 
+	// DBMigrate разрешает сервису применять миграции при старте.
+	//
+	// В доставке миграции применяются отдельным шагом, до подмены
+	// образов, и сервису остаётся только проверить, что схема не отстаёт
+	// от кода: сбой миграции должен останавливать выкат целиком,
+	// а не заставать половину сервисов уже перезапущенными.
+	// Локальный стенд поднимается одной командой, поэтому по умолчанию
+	// сервис применяет миграции сам.
+	DBMigrate bool
+
 	// Пул соединений. Суммарно по всем сервисам должен укладываться
 	// в max_connections PostgreSQL, по умолчанию равный 100.
 	DBMaxOpenConns    int
@@ -322,6 +332,12 @@ func LoadConfig() (Config, error) {
 		return Config{}, fmt.Errorf("parsing METRICS_PORT: %w", err)
 	}
 	cfg.MetricsPort = metricsPort
+
+	dbMigrate, err := strconv.ParseBool(env("DB_MIGRATE", "true"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parsing DB_MIGRATE: %w", err)
+	}
+	cfg.DBMigrate = dbMigrate
 
 	maxOpen, err := strconv.Atoi(env("DB_MAX_OPEN_CONNS", "10"))
 	if err != nil {

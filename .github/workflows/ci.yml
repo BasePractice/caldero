@@ -184,6 +184,19 @@ jobs:
       - name: Прогон up и down
         run: make migrate-check
 
+  deploy:
+    name: Стенд и доставка
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Оба файла compose разбираются, а состав стека окружения сверяется
+      # с кодом: новый сервис, забытый в deploy/compose.yml, обнаружился бы
+      # иначе только на сервере — тем, что его там нет. Слипшиеся строки
+      # в docker-compose.yml однажды сломали стенд, и не заметил никто.
+      - name: Согласованность с кодом
+        run: make deploy-check
+
   gateway:
     name: Конфигурация шлюза
     runs-on: ubuntu-latest

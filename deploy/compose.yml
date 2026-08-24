@@ -1,0 +1,219 @@
+# Стек окружения: то, что поднимается на сервере.
+#
+# Отдельный файл, а не наложение на docker-compose.yml. Различий слишком
+# много, чтобы их выражать наложением: здесь нет сборки образов из исходников,
+# нет наблюдаемости (её место — отдельная задача), а порты базы, кэша
+# и админки шлюза наружу не публикуются вовсе — на сервере это открытая дверь.
+#
+# Образы берутся из реестра по тегу: TAG — это полный SHA коммита
+# (`sha-<40 знаков>`), по нему всегда видно, что именно выкачено.
+#
+# Состав сервисов обязан совпадать с локальным стендом: расхождение ловит
+# `make deploy-check`.
+
+# Имя проекта задаётся при выкате (COMPOSE_PROJECT_NAME): на одной машине
+# так уживаются staging и production — у них разные имена и разные порты.
+name: caldero
+
+x-service: &service
+  restart: unless-stopped
+  healthcheck:
+    test: [ "CMD", "/service", "-healthcheck" ]
+    interval: 10s
+    timeout: 3s
+    retries: 3
+    start_period: 5s
+  depends_on:
+    postgres-db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+x-environment: &environment
+  # Миграции применяет шаг доставки, до подмены образов. Сервису остаётся
+  # проверить, что схема не отстала от кода, и остановиться, если отстала.
+  DB_MIGRATE: "false"
+  REDIS_URL: redis://redis:6379/10?protocol=3
+  # Журнал уходит в поток вывода, а не в файл: на сервере его собирает
+  # docker, а файл в контейнере пришлось бы ещё и вычищать.
+  LOG_COLOR: "false"
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  SERVICE_USER_ID: ${SERVICE_USER_ID:-11111111-1111-1111-1111-111111111111}
+
+services:
+  postgres-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    # Порт наружу не публикуется: база доступна только сервисам стека.
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD не задан}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+      - ./config/postgresql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+
+  krakend:
+    image: krakend:latest
+    restart: unless-stopped
+    volumes:
+      - ./config/krakend:/etc/krakend:ro
+    # Наружу только API. Порты админки и отладки шлюза остаются внутри сети.
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    command: [ "run", "-d", "-c", "/etc/krakend/krakend.tmpl" ]
+    environment:
+      FC_ENABLE: "1"
+      FC_OUT: /tmp/krakend.rendered.json
+      KRAKEND_NAME: Caldero
+      AUTH_HOST: ${AUTH_HOST:-http://users:51053}
+      AUTH_JWKS_PATH: ${AUTH_JWKS_PATH:-/.well-known/jwks.json}
+      AUTH_TOKEN_PATH: ${AUTH_TOKEN_PATH:-/token}
+      AUTH_ROLES_CLAIM: ${AUTH_ROLES_CLAIM:-roles}
+      INFLUXDB_USER: ${INFLUXDB_USER:-krakend}
+      INFLUXDB_PASSWORD: ${INFLUXDB_PASSWORD:?INFLUXDB_PASSWORD не задан}
+    depends_on:
+      users:
+        condition: service_healthy
+      credit:
+        condition: service_healthy
+      account:
+        condition: service_healthy
+
+  wallet:
+    <<: *service
+    image: ${REGISTRY:?REGISTRY не задан}/wallet:${TAG:?TAG не задан}
+    expose:
+      - "51051"
+    environment:
+      <<: *environment
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres-db:5432/wish?sslmode=disable&search_path=wallet
+
+  credit:
+    <<: *service
+    image: ${REGISTRY}/credit:${TAG}
+    expose:
+      - "51052"
+    environment:
+      <<: *environment
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres-db:5432/wish?sslmode=disable&search_path=credit
+      WALLET_ADDRESS: ${WALLET_ADDRESS:-wallet:51051}
+
+  users:
+    <<: *service
+    image: ${REGISTRY}/users:${TAG}
+    expose:
+      - "51053"
+    environment:
+      <<: *environment
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres-db:5432/wish?sslmode=disable&search_path=users
+      OAUTH2_GLOBAL_SECRET: ${OAUTH2_GLOBAL_SECRET:?OAUTH2_GLOBAL_SECRET не задан, нужно ровно 32 байта}
+      OAUTH2_ISSUER: ${OAUTH2_ISSUER:?OAUTH2_ISSUER не задан}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      KEY_MASTER_KEY: "${KEY_MASTER_KEY:?KEY_MASTER_KEY не задан, иначе приватные ключи подписи лежат открытым текстом}"
+      NOTIFY_ENDPOINT: ${NOTIFY_ENDPOINT:-http://notify:51055}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?PUBLIC_BASE_URL не задан}
+      CONFIRMATION_TTL: ${CONFIRMATION_TTL:-15m}
+      CONFIRMATION_COOLDOWN: ${CONFIRMATION_COOLDOWN:-1m}
+      CONFIRMATION_RATE_LIMIT: ${CONFIRMATION_RATE_LIMIT:-5}
+      CONFIRMATION_RATE_WINDOW: ${CONFIRMATION_RATE_WINDOW:-1h}
+      SOCIAL_PROVIDERS: ${SOCIAL_PROVIDERS:-}
+      SOCIAL_REDIRECT_BASE: ${SOCIAL_REDIRECT_BASE:-}
+
+  account:
+    <<: *service
+    image: ${REGISTRY}/account:${TAG}
+    expose:
+      - "51054"
+    environment:
+      <<: *environment
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres-db:5432/wish?sslmode=disable&search_path=account
+
+  notify:
+    <<: *service
+    image: ${REGISTRY}/notify:${TAG}
+    expose:
+      - "51055"
+    environment:
+      <<: *environment
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres-db:5432/wish?sslmode=disable&search_path=notify
+      USERS_ENDPOINT: ${USERS_ENDPOINT:-http://users:51053}
+      NOTIFY_TELEGRAM_TOKEN: ${NOTIFY_TELEGRAM_TOKEN:-}
+      NOTIFY_TELEGRAM_BOT: ${NOTIFY_TELEGRAM_BOT:-}
+      NOTIFY_MAX_TOKEN: ${NOTIFY_MAX_TOKEN:-}
+      NOTIFY_MAX_BOT: ${NOTIFY_MAX_BOT:-}
+      NOTIFY_WS_ORIGINS: ${NOTIFY_WS_ORIGINS:-}
+      NOTIFY_RATE_LIMIT: ${NOTIFY_RATE_LIMIT:-10}
+      NOTIFY_RATE_WINDOW: ${NOTIFY_RATE_WINDOW:-1m}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      EMAIL_UNSUBSCRIBE_URL: ${EMAIL_UNSUBSCRIBE_URL:-}
+      EMAIL_SECRET: ${EMAIL_SECRET:-}
+
+  wishlist:
+    <<: *service
+    image: ${REGISTRY}/wishlist:${TAG}
+    expose:
+      - "51056"
+    environment:
+      <<: *environment
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres-db:5432/wish?sslmode=disable&search_path=wishlist
+      WALLET_ADDRESS: ${WALLET_ADDRESS:-wallet:51051}
+      NOTIFY_ENDPOINT: ${NOTIFY_ENDPOINT:-http://notify:51055}
+      MARKETPLACE_PROVIDERS: ${MARKETPLACE_PROVIDERS:-STUB}
+      MARKETPLACE_CACHE_TTL: ${MARKETPLACE_CACHE_TTL:-10m}
+      MARKETPLACE_WALLET_ID: ${MARKETPLACE_WALLET_ID:-}
+
+  caldron:
+    <<: *service
+    image: ${REGISTRY}/caldron:${TAG}
+    expose:
+      - "51057"
+    environment:
+      <<: *environment
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres-db:5432/wish?sslmode=disable&search_path=caldron
+      WALLET_ADDRESS: ${WALLET_ADDRESS:-wallet:51051}
+      NOTIFY_ENDPOINT: ${NOTIFY_ENDPOINT:-http://notify:51055}
+
+  web:
+    image: ${REGISTRY}/web:${TAG}
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "/service", "-healthcheck" ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    # Единственный сервис, кроме шлюза, с публикацией порта: это интерфейс,
+    # который открывает браузер.
+    ports:
+      - "${WEB_PORT:-3000}:51058"
+    depends_on:
+      krakend:
+        condition: service_started
+    environment:
+      LOG_COLOR: "false"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      WEB_API_BASE: ${WEB_API_BASE:?WEB_API_BASE не задан}
+      WEB_CLIENT_ID: ${WEB_CLIENT_ID:-web}
+
+volumes:
+  postgres:
+  redis:

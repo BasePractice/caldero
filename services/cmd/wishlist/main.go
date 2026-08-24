@@ -20,6 +20,9 @@ import (
 var (
 	port        = flag.Int("port", 51056, "The service port")
 	healthcheck = flag.Bool("healthcheck", false, "Check that the service accepts connections and exit")
+	// migrate — шаг доставки: миграции применяются до подмены образов,
+	// а не при старте сервиса.
+	migrate = flag.Bool("migrate", false, "Apply database migrations and exit")
 )
 
 func main() {
@@ -29,6 +32,10 @@ func main() {
 			fmt.Fprintln(os.Stderr, "healthcheck failed:", err)
 			os.Exit(1)
 		}
+		return
+	}
+	if *migrate {
+		services.Migrate("wishlist", migrations)
 		return
 	}
 	services.Run("wishlist", func(ctx context.Context, cfg services.Config, health *services.Health) error {
