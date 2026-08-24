@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -542,5 +543,63 @@ func TestMessagesLongPollCancelled(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("обработчик не завершился после обрыва соединения")
+	}
+}
+
+// flakyMessagesDatabase отдаёт ленту, пока не переключат: так проверяется
+// сбой базы на повторном чтении — уже после того, как ожидание разбудили.
+type flakyMessagesDatabase struct {
+	Database
+	mu   sync.Mutex
+	fail bool
+}
+
+func (f *flakyMessagesDatabase) Messages(context.Context, uuid.UUID, int64, int) ([]notify.Message, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.fail {
+		return nil, errors.New("connection refused")
+	}
+	return nil, nil
+}
+
+func (f *flakyMessagesDatabase) breakDown() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.fail = true
+}
+
+// TestMessagesFailsOnSecondRead: лента перечитывается из базы после
+// пробуждения, потому что порядок задаёт база. Сбой на этом чтении обязан
+// стать пятисоткой, а не пустой страницей.
+func TestMessagesFailsOnSecondRead(t *testing.T) {
+	db := &flakyMessagesDatabase{}
+	hub := NewHub()
+	handler := registerHttpHandlers(&api{db: db, hub: hub, codeTTL: time.Minute})
+	user := uuid.New()
+
+	recorder := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		handler.ServeHTTP(recorder, authorized(
+			httptest.NewRequest(http.MethodGet, "/notify/messages?wait=20", nil), user, ""))
+	}()
+
+	// Ждём подписку, ломаем базу и будим ожидание.
+	deadline := time.Now().Add(5 * time.Second)
+	for hub.Subscribers(user) == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	db.breakDown()
+	hub.Deliver(user, notify.Message{Id: uuid.New(), Seq: 1})
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("длинный опрос не завершился")
+	}
+	if recorder.Code != http.StatusInternalServerError {
+		t.Errorf("код ответа %d, ожидался %d", recorder.Code, http.StatusInternalServerError)
 	}
 }

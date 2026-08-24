@@ -560,3 +560,48 @@ func TestContributionRejections(t *testing.T) {
 		}
 	})
 }
+
+// TestMarkPaidIsIdempotent: повторная отметка того же взноса ничего
+// не меняет — средства уже переведены, и второй записи быть не должно.
+// Без этого повтор после обрыва связи удваивал бы собранное.
+func TestMarkPaidIsIdempotent(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDatabase(t)
+
+	creator := uuid.New()
+	member := uuid.New()
+	pot := createFixed(t, db, creator, 2_500_00)
+	if _, err := db.AddParticipant(ctx, pot.Id, caldron.AddParticipant{UserId: member}); err != nil {
+		t.Fatalf("добавление участника: %v", err)
+	}
+
+	if _, _, err := db.StartContribution(ctx, pot.Id, member, 2_500_00); err != nil {
+		t.Fatalf("начало взноса: %v", err)
+	}
+	first, err := db.MarkPaid(ctx, pot.Id, member, 2_500_00)
+	if err != nil {
+		t.Fatalf("фиксация взноса: %v", err)
+	}
+
+	second, err := db.MarkPaid(ctx, pot.Id, member, 2_500_00)
+	if err != nil {
+		t.Fatalf("повторная фиксация: %v", err)
+	}
+	if second.Collected != first.Collected {
+		t.Errorf("собрано %s после повтора, было %s", second.Collected, first.Collected)
+	}
+
+	t.Run("взнос несуществующего котла", func(t *testing.T) {
+		if _, err := db.MarkPaid(ctx, uuid.New(), member, 2_500_00); !errors.Is(err, ErrNotFound) {
+			t.Errorf("получено %v, ожидалась ErrNotFound", err)
+		}
+	})
+
+	t.Run("котёл готов, когда внесли все, от кого ждали", func(t *testing.T) {
+		// Создатель в этом котле не участвует, поэтому единственного
+		// участника достаточно.
+		if second.State != caldron.StateReady {
+			t.Errorf("состояние %s, ожидалось %s", second.State, caldron.StateReady)
+		}
+	})
+}

@@ -534,3 +534,45 @@ func TestUnlinkLastIdentityOverHTTP(t *testing.T) {
 		t.Errorf("код ответа %d, ожидался %d (%s)", recorder.Code, http.StatusConflict, recorder.Body)
 	}
 }
+
+// TestSocialCallbackWithRevokedClient: между началом входа и возвращением
+// от провайдера проходит время, и клиент за это время может исчезнуть.
+// Продолжать поток авторизации в никуда нельзя.
+func TestSocialCallbackWithRevokedClient(t *testing.T) {
+	provider := newFakeProvider(t)
+	service, handler := newSocialHandlerService(t, provider)
+	clientId := createClient(t, handler)
+
+	authorizeQuery := url.Values{
+		"response_type":         {"code"},
+		"client_id":             {clientId},
+		"redirect_uri":          {redirectURI},
+		"scope":                 {"openid read"},
+		"state":                 {"state-2468013579"},
+		"code_challenge":        {challenge()},
+		"code_challenge_method": {"S256"},
+	}.Encode()
+
+	start := get(handler, "/auth/social/demo?"+authorizeQuery, nil)
+	if start.Code != http.StatusFound {
+		t.Fatalf("начало входа: %d (%s)", start.Code, start.Body)
+	}
+	state := stateFrom(t, start.Header().Get("Location"))
+
+	store, ok := service.db.(*ds)
+	if !ok {
+		t.Fatalf("репозиторий имеет тип %T", service.db)
+	}
+	if _, err := store.db.ExecContext(context.Background(),
+		"DELETE FROM oauth_clients WHERE client_id = $1", clientId); err != nil {
+		t.Fatalf("удаление клиента: %v", err)
+	}
+
+	callback := get(handler, "/auth/social/demo/callback?code=provider-code&state="+state, nil)
+	if callback.Code == http.StatusOK {
+		t.Errorf("поток авторизации продолжен для удалённого клиента: %s", callback.Body)
+	}
+	if location := callback.Header().Get("Location"); strings.Contains(location, "code=") {
+		t.Errorf("выдан код авторизации удалённому клиенту: %s", location)
+	}
+}

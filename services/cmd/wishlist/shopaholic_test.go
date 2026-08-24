@@ -359,3 +359,78 @@ func TestShoppingWithUnavailableMarketplace(t *testing.T) {
 		t.Errorf("получено %v, ожидалась ErrMarketplaceUnavailable", err)
 	}
 }
+
+// TestShoppingStopsWhenPaymentFails закрывает худшую ветку прогона: заказ
+// оформлен, а оплата не прошла. Дальше идти нельзя — проблема не в товаре,
+// а в деньгах, и следующие заказы повторят её.
+func TestShoppingStopsWhenPaymentFails(t *testing.T) {
+	env := newTestEnvironment(t, payment.Fee{}, nil)
+	buyer := uuid.New()
+	env.wallet.fund(buyer, 100_000_000)
+	env.stub.OrderSupported = true
+	env.wallet.failPurchase = true
+
+	// Бюджет заведомо больше цены товаров заглушки: иначе отбор вернёт
+	// пустой набор и до оплаты дело не дойдёт.
+	run, err := env.shopaholic.Shop(t.Context(), buyer, wishlist.StartShopping{
+		Budget: 50_000_000,
+		Items: []wishlist.ShoppingItem{
+			{Provider: marketplace.ProviderStub, ProductId: "coffee-machine"},
+			{Provider: marketplace.ProviderStub, ProductId: "headphones"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("прогон: %v", err)
+	}
+
+	if run.Spent != 0 {
+		t.Errorf("списано %s, а оплата не проходила", run.Spent)
+	}
+	// Прогон обязан остановиться на первом же отказе оплаты, а не перебрать
+	// весь список: неоплаченных заказов не должно накопиться.
+	ordered := 0
+	for _, purchase := range run.Purchases {
+		if purchase.Ordered {
+			ordered++
+		}
+		if purchase.Ordered && purchase.Paid {
+			t.Errorf("покупка отмечена оплаченной: %+v", purchase)
+		}
+	}
+	if ordered != 1 {
+		t.Errorf("оформлено заказов %d, ожидался один до остановки", ordered)
+	}
+	// Причина отказа сохраняется: без неё непонятно, что заказ висит
+	// неоплаченным.
+	if run.Purchases[0].Failure == "" {
+		t.Error("причина отказа оплаты не записана")
+	}
+}
+
+// TestShoppingWithoutDependencies: прогон без кошелька или без кошелька
+// магазина невозможен, и это отказ настройки, а не пустой результат.
+func TestShoppingWithoutDependencies(t *testing.T) {
+	ctx := context.Background()
+	db := newMemoryDatabase()
+	catalogs := marketplace.NewRegistry(&marketplace.Stub{})
+	request := wishlist.StartShopping{
+		Budget: 50_000_000,
+		Items:  []wishlist.ShoppingItem{{Provider: marketplace.ProviderStub, ProductId: "coffee-machine"}},
+	}
+	shop := uuid.New()
+
+	t.Run("без сервиса кошелька", func(t *testing.T) {
+		_, err := NewShopaholic(db, catalogs, nil, &shop).Shop(ctx, uuid.New(), request)
+		if !errors.Is(err, ErrWalletUnavailable) {
+			t.Errorf("получено %v, ожидалась ErrWalletUnavailable", err)
+		}
+	})
+
+	t.Run("без кошелька магазина", func(t *testing.T) {
+		// Платить некому: списывать средства «в никуда» нельзя.
+		_, err := NewShopaholic(db, catalogs, newFakeWallet(), nil).Shop(ctx, uuid.New(), request)
+		if !errors.Is(err, ErrShopUnavailable) {
+			t.Errorf("получено %v, ожидалась ErrShopUnavailable", err)
+		}
+	})
+}

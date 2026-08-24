@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -284,6 +285,10 @@ type fakeWallet struct {
 	applied   map[string]bool
 	transfers []wallets.TransferParams
 	failFee   bool
+	// failPurchase имитирует отказ оплаты уже после оформления заказа:
+	// проверить эту ветку иначе нечем, а она самая неприятная — товар
+	// заказан, деньги не списаны.
+	failPurchase bool
 }
 
 func newFakeWallet() *fakeWallet {
@@ -327,6 +332,9 @@ func (f *fakeWallet) Transfer(_ context.Context, _ uuid.UUID, params wallets.Tra
 	defer f.mu.Unlock()
 
 	if f.failFee && params.Message == "Комиссия за денежный подарок" {
+		return errors.New("кошелёк недоступен")
+	}
+	if f.failPurchase && strings.HasPrefix(params.Message, "Покупка: ") {
 		return errors.New("кошелёк недоступен")
 	}
 	if f.applied[params.IdempotencyKey] {

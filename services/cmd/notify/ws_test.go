@@ -113,3 +113,45 @@ func TestWebSocketWithoutHijack(t *testing.T) {
 		t.Error("рукопожатие прошло без поддержки перехвата соединения")
 	}
 }
+
+// TestWebSocketStopsWhenSubscriptionCloses: подписка закрывается вместе
+// с остановкой концентратора, и сессия обязана завершиться, а не остаться
+// висеть с открытым сокетом.
+func TestWebSocketStopsWhenSubscriptionCloses(t *testing.T) {
+	hub := NewHub()
+	user := uuid.New()
+
+	done := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serveWebSocket(hub, []string{"*"}, w, r)
+		close(done)
+	}))
+	defer server.Close()
+
+	conn, response, err := websocket.Dial(t.Context(),
+		"ws"+strings.TrimPrefix(server.URL, "http")+"/notify/ws",
+		&websocket.DialOptions{HTTPHeader: http.Header{"X-Authorized-Id": {user.String()}}})
+	if err != nil {
+		t.Fatalf("подключение: %v", err)
+	}
+	if response.Body != nil {
+		_ = response.Body.Close()
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for hub.Subscribers(user) == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	// Клиент уходит: обработчик обязан заметить это и завершиться.
+	_ = conn.CloseNow()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("сессия не завершилась после ухода клиента")
+	}
+
+	if hub.Subscribers(user) != 0 {
+		t.Error("подписка осталась после завершения сессии")
+	}
+}

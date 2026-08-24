@@ -152,3 +152,37 @@ func claimRoles(t *testing.T, token string) []string {
 	}
 	return claims.Roles
 }
+
+// TestProfileAfterUserRemoved: токен переживает своего владельца — он
+// подписан и действует до истечения. Обработчик обязан ответить «нет
+// такого», а не пятисоткой.
+func TestProfileAfterUserRemoved(t *testing.T) {
+	service, handler := newOAuth2Service(t)
+	clientId := createClient(t, handler)
+	username := "user-" + uuid.NewString()[:8]
+	userId := registerViaAPI(t, handler, username, "+79004440077")
+	token := tokenFor(t, handler, clientId, username)
+
+	store, ok := service.db.(*ds)
+	if !ok {
+		t.Fatalf("репозиторий имеет тип %T", service.db)
+	}
+	if _, err := store.db.ExecContext(context.Background(),
+		"DELETE FROM users WHERE user_id = $1", userId); err != nil {
+		t.Fatalf("удаление пользователя: %v", err)
+	}
+
+	for _, path := range []string{"/profile", "/profile/identities"} {
+		t.Run(path, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, path, nil)
+			request.Header.Set("Authorization", "Bearer "+token)
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, request)
+
+			if recorder.Code != http.StatusNotFound {
+				t.Errorf("код ответа %d, ожидался %d (%s)",
+					recorder.Code, http.StatusNotFound, recorder.Body)
+			}
+		})
+	}
+}

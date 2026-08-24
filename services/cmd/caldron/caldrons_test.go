@@ -396,6 +396,9 @@ type fakeWallet struct {
 	applied  map[string]bool
 	fail     map[uuid.UUID]bool
 	calls    int
+	// transfers хранит проведённые переводы: по ним видно, ушли ли
+	// средства победителю и сколько именно.
+	transfers []wallets.TransferParams
 }
 
 func newFakeWallet() *fakeWallet {
@@ -452,6 +455,7 @@ func (f *fakeWallet) Transfer(_ context.Context, owner uuid.UUID, params wallets
 	f.balances[params.Source] -= params.Value
 	f.balances[params.Target] += params.Value
 	f.applied[params.IdempotencyKey] = true
+	f.transfers = append(f.transfers, params)
 	return nil
 }
 
@@ -513,6 +517,9 @@ type environment struct {
 	db       *memoryDatabase
 	wallet   *fakeWallet
 	events   *notifyStub
+	// stub — та же заглушка площадки, что отдана реестру: через неё тест
+	// делает площадку недоступной посреди сценария.
+	stub *marketplace.Stub
 }
 
 func newEnvironment(t *testing.T) *environment {
@@ -521,12 +528,14 @@ func newEnvironment(t *testing.T) *environment {
 	events := &notifyStub{}
 	db := newMemoryDatabase()
 	wallet := newFakeWallet()
+	stub := &marketplace.Stub{}
 	return &environment{
 		caldrons: NewCaldrons(db, wallet, notify.NewClient(events.start(t), uuid.New()),
-			marketplace.NewRegistry(&marketplace.Stub{})),
+			marketplace.NewRegistry(stub)),
 		db:     db,
 		wallet: wallet,
 		events: events,
+		stub:   stub,
 	}
 }
 
@@ -1077,5 +1086,162 @@ func TestGiftsWithoutMarketplace(t *testing.T) {
 	})
 	if !errors.Is(err, ErrMarketplaceUnavailable) {
 		t.Errorf("получено %v, ожидалась ErrMarketplaceUnavailable", err)
+	}
+}
+
+// TestSettleAfterFailedPayout закрывает путь, на котором розыгрыш уже
+// состоялся, а перевод не прошёл. Результат розыгрыша неизменяем, поэтому
+// завершить котёл можно только в пользу того, кого он выбрал: иначе
+// организатору достаточно было бы не запускать розыгрыш вовсе.
+func TestSettleAfterFailedPayout(t *testing.T) {
+	ctx := context.Background()
+	env := newEnvironment(t)
+	creator := uuid.New()
+	member := uuid.New()
+	env.wallet.fund(creator, 100_000_00)
+	env.wallet.fund(member, 100_000_00)
+	pot := env.fixedCaldron(t, creator, 2_500_00, member)
+
+	for _, user := range []uuid.UUID{creator, member} {
+		if _, err := env.caldrons.Contribute(ctx, user, pot.Id, 0); err != nil {
+			t.Fatalf("взнос %s: %v", user, err)
+		}
+	}
+
+	t.Run("до розыгрыша завершить нельзя", func(t *testing.T) {
+		if _, err := env.caldrons.Settle(ctx, creator, pot.Id, member); !errors.Is(err, ErrDrawRequired) {
+			t.Errorf("получено %v, ожидалась ErrDrawRequired", err)
+		}
+	})
+
+	// Кошелёк котла недоступен: розыгрыш запишется, а перевод сорвётся.
+	env.wallet.fail[pot.Id] = true
+	draw, err := env.caldrons.Draw(ctx, creator, pot.Id)
+	if err == nil {
+		t.Fatal("розыгрыш прошёл при недоступном кошельке")
+	}
+	if draw.WinnerId == uuid.Nil {
+		t.Fatal("результат розыгрыша не записан, хотя перевод сорвался")
+	}
+
+	t.Run("передать не победителю нельзя", func(t *testing.T) {
+		other := creator
+		if draw.WinnerId == creator {
+			other = member
+		}
+		if _, err := env.caldrons.Settle(ctx, creator, pot.Id, other); !errors.Is(err, ErrForbidden) {
+			t.Errorf("получено %v, ожидалась ErrForbidden", err)
+		}
+	})
+
+	t.Run("недоступный кошелёк — отказ зависимости", func(t *testing.T) {
+		if _, err := env.caldrons.Settle(ctx, creator, pot.Id, draw.WinnerId); !errors.Is(err, ErrWalletUnavailable) {
+			t.Errorf("получено %v, ожидалась ErrWalletUnavailable", err)
+		}
+	})
+
+	// Кошелёк вернулся: повтор доводит операцию до конца.
+	delete(env.wallet.fail, pot.Id)
+	settled, err := env.caldrons.Settle(ctx, creator, pot.Id, draw.WinnerId)
+	if err != nil {
+		t.Fatalf("завершение: %v", err)
+	}
+	if settled.State != caldron.StateSettled {
+		t.Errorf("состояние %s, ожидалось %s", settled.State, caldron.StateSettled)
+	}
+
+	var payout bool
+	for _, transfer := range env.wallet.transfers {
+		if transfer.Message == "Выигрыш в котле "+pot.Title {
+			payout = true
+			if transfer.Value != pot.Amount*2 {
+				t.Errorf("передано %s, ожидалось %s", transfer.Value, pot.Amount*2)
+			}
+		}
+	}
+	if !payout {
+		t.Error("выигрыш не переведён победителю")
+	}
+
+	t.Run("повторный розыгрыш возвращает тот же результат", func(t *testing.T) {
+		// Результат неизменяем: повторный вызов не переигрывает розыгрыш.
+		again, err := env.caldrons.Draw(ctx, creator, pot.Id)
+		if err != nil {
+			t.Fatalf("повторный розыгрыш: %v", err)
+		}
+		if again.WinnerId != draw.WinnerId {
+			t.Errorf("победитель сменился: %s вместо %s", again.WinnerId, draw.WinnerId)
+		}
+	})
+}
+
+// TestSettleWithoutWallet: без сервиса кошелька передавать нечем, и это
+// отказ зависимости, а не ошибка запроса.
+func TestSettleWithoutWallet(t *testing.T) {
+	ctx := context.Background()
+	events := &notifyStub{}
+	db := newMemoryDatabase()
+	creator := uuid.New()
+
+	bare := NewCaldrons(db, nil, notify.NewClient(events.start(t), uuid.New()),
+		marketplace.NewRegistry(&marketplace.Stub{}))
+
+	pot, err := bare.Create(ctx, creator, caldron.CreateCaldron{
+		Title: "Юбилей", Type: caldron.TypeLuck, Mode: caldron.ModeFixed,
+		CreatorParticipates: true, Amount: 2_500_00,
+	})
+	if err != nil {
+		t.Fatalf("создание котла: %v", err)
+	}
+
+	if _, err := bare.Settle(ctx, creator, pot.Id, creator); err == nil {
+		t.Error("котёл завершён без сервиса кошелька")
+	}
+}
+
+// TestDrawKeepsStoredPricesWhenMarketplaceIsDown: недоступность площадки
+// не срывает розыгрыш. Остаётся снимок цены — это честнее, чем отменить
+// уже собранный котёл из-за чужого API.
+func TestDrawKeepsStoredPricesWhenMarketplaceIsDown(t *testing.T) {
+	ctx := context.Background()
+	env := newEnvironment(t)
+	creator := uuid.New()
+	member := uuid.New()
+	env.wallet.fund(creator, 1_000_000_00)
+	env.wallet.fund(member, 1_000_000_00)
+	pot := env.fixedCaldron(t, creator, 50_000_00, member)
+
+	// Список подарков заводят оба: в розыгрыш попадает список победителя,
+	// а кто им станет — решает жребий.
+	for _, user := range []uuid.UUID{creator, member} {
+		if _, err := env.caldrons.SetGifts(ctx, user, pot.Id, []GiftRequest{
+			{Provider: marketplace.ProviderStub, ProductId: "coffee-machine"},
+		}); err != nil {
+			t.Fatalf("список подарков %s: %v", user, err)
+		}
+	}
+	for _, user := range []uuid.UUID{creator, member} {
+		if _, err := env.caldrons.Contribute(ctx, user, pot.Id, 0); err != nil {
+			t.Fatalf("взнос %s: %v", user, err)
+		}
+	}
+
+	// Площадка отваливается уже после того, как список подарков собран.
+	env.stub.Unavailable = true
+
+	draw, err := env.caldrons.Draw(ctx, creator, pot.Id)
+	if err != nil {
+		t.Fatalf("розыгрыш: %v", err)
+	}
+	if draw.WinnerId == uuid.Nil {
+		t.Fatal("победитель не определён")
+	}
+	if len(draw.Gifts) == 0 {
+		t.Fatal("подарки потеряны из-за недоступной площадки")
+	}
+	for _, gift := range draw.Gifts {
+		if gift.Price <= 0 {
+			t.Errorf("цена подарка обнулилась: %+v", gift)
+		}
 	}
 }

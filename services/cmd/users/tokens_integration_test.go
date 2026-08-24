@@ -171,3 +171,53 @@ func TestRefreshAndPKCESessions(t *testing.T) {
 		}
 	})
 }
+
+// TestLinkIdentityRepeatAndConflict различает два случая, которые снаружи
+// выглядят одинаково: повторная привязка того же аккаунта к тому же
+// пользователю — это успех, а привязка чужого — отказ.
+func TestLinkIdentityRepeatAndConflict(t *testing.T) {
+	ctx := context.Background()
+	db, err := NewDatabaseUsers(ctx, testsupport.Prepare(t, "users"))
+	if err != nil {
+		t.Fatalf("не удалось открыть репозиторий: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	first, err := db.CreateUser(ctx, Registration{
+		Username: "user-" + uuid.NewString()[:8], PasswordHash: "hash", Phone: "+79006660011",
+	})
+	if err != nil {
+		t.Fatalf("регистрация: %v", err)
+	}
+	second, err := db.CreateUser(ctx, Registration{
+		Username: "user-" + uuid.NewString()[:8], PasswordHash: "hash", Phone: "+79006660022",
+	})
+	if err != nil {
+		t.Fatalf("регистрация: %v", err)
+	}
+
+	profile := SocialProfile{Provider: "demo", ExternalId: "ext-" + uuid.NewString()[:8], Email: "social@example.com"}
+	if err := db.LinkIdentity(ctx, first.Id, profile); err != nil {
+		t.Fatalf("привязка: %v", err)
+	}
+
+	t.Run("повторная привязка тем же пользователем", func(t *testing.T) {
+		if err := db.LinkIdentity(ctx, first.Id, profile); err != nil {
+			t.Errorf("повторная привязка отклонена: %v", err)
+		}
+		identities, err := db.Identities(ctx, first.Id)
+		if err != nil {
+			t.Fatalf("чтение идентичностей: %v", err)
+		}
+		if len(identities) != 1 {
+			t.Errorf("идентичностей %d, ожидалась одна", len(identities))
+		}
+	})
+
+	t.Run("привязка чужого аккаунта", func(t *testing.T) {
+		// Иначе чужой профиль захватывается вместе с внешним аккаунтом.
+		if err := db.LinkIdentity(ctx, second.Id, profile); !errors.Is(err, ErrIdentityTaken) {
+			t.Errorf("получено %v, ожидалась ErrIdentityTaken", err)
+		}
+	})
+}

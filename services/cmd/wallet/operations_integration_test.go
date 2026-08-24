@@ -422,6 +422,229 @@ func TestTransferToBlockedWallet(t *testing.T) {
 	}
 }
 
+// TestTransferRejections закрывает отказы перевода, до которых не доходит
+// обычный сценарий: неположительная сумма, чужой исходный кошелёк,
+// нехватка средств и повтор по тому же ключу.
+func TestTransferRejections(t *testing.T) {
+	ctx := context.Background()
+	db, err := NewDatabaseWallet(ctx, testsupport.Prepare(t, "wallet"))
+	if err != nil {
+		t.Fatalf("не удалось открыть репозиторий: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	sender := uuid.New()
+	receiver := uuid.New()
+	walletOf := func(t *testing.T, owner uuid.UUID) uuid.UUID {
+		t.Helper()
+		var id uuid.UUID
+		if err := db.Information(ctx, owner, func(reply *wallet.InformationReply) {
+			id = uuid.MustParse(reply.Id)
+		}); err != nil {
+			t.Fatalf("получение кошелька: %v", err)
+		}
+		return id
+	}
+
+	source := walletOf(t, sender)
+	target := walletOf(t, receiver)
+	if _, err := db.Debit(ctx, sender, OperationParams{
+		IdempotencyKey: "fill-transfer", WalletId: source, Value: 10_000,
+	}); err != nil {
+		t.Fatalf("пополнение: %v", err)
+	}
+
+	t.Run("неположительная сумма", func(t *testing.T) {
+		for _, value := range []int64{0, -100} {
+			if _, err := db.Transfer(ctx, sender, TransferParams{
+				IdempotencyKey: "bad-value", SourceId: source, TargetId: target, Value: value,
+			}); !errors.Is(err, ErrInvalidValue) {
+				t.Errorf("сумма %d: получено %v, ожидалась ErrInvalidValue", value, err)
+			}
+		}
+	})
+
+	t.Run("перевод с чужого кошелька", func(t *testing.T) {
+		// Тот же ответ, что и для несуществующего кошелька: иначе перебором
+		// можно узнать, какие кошельки есть.
+		_, err := db.Transfer(ctx, uuid.New(), TransferParams{
+			IdempotencyKey: "foreign-source", SourceId: source, TargetId: target, Value: 100,
+		})
+		if !errors.Is(err, ErrWalletNotFound) {
+			t.Errorf("получено %v, ожидалась ErrWalletNotFound", err)
+		}
+	})
+
+	t.Run("сумма больше доступного остатка", func(t *testing.T) {
+		_, err := db.Transfer(ctx, sender, TransferParams{
+			IdempotencyKey: "too-much", SourceId: source, TargetId: target, Value: 1_000_000,
+		})
+		if !errors.Is(err, ErrInsufficientBalance) {
+			t.Errorf("получено %v, ожидалась ErrInsufficientBalance", err)
+		}
+	})
+
+	t.Run("повтор по тому же ключу не переводит дважды", func(t *testing.T) {
+		params := TransferParams{
+			IdempotencyKey: "transfer-once", SourceId: source, TargetId: target, Value: 1_000,
+		}
+		first, err := db.Transfer(ctx, sender, params)
+		if err != nil {
+			t.Fatalf("перевод: %v", err)
+		}
+		second, err := db.Transfer(ctx, sender, params)
+		if err != nil {
+			t.Fatalf("повтор перевода: %v", err)
+		}
+		if second.Id != first.Id {
+			t.Errorf("повтор создал вторую транзакцию: %s против %s", second.Id, first.Id)
+		}
+		// Признак повтора нужен вызывающему: по нему он понимает, что его
+		// запрос уже был проведён, а не проведён только что.
+		if !second.Idempotent {
+			t.Error("повтор не отмечен как идемпотентный")
+		}
+
+		var balance int64
+		if err := db.Information(ctx, receiver, func(reply *wallet.InformationReply) {
+			balance = reply.Balance
+		}); err != nil {
+			t.Fatalf("чтение баланса: %v", err)
+		}
+		if balance != 1_000 {
+			t.Errorf("получателю зачислено %d, ожидалась одна тысяча", balance)
+		}
+	})
+}
+
+// TestReserveRejections закрывает отказы резерва: повтор по ключу,
+// значение по умолчанию для срока и нехватку доступного остатка.
+func TestReserveRejections(t *testing.T) {
+	ctx := context.Background()
+	db, err := NewDatabaseWallet(ctx, testsupport.Prepare(t, "wallet"))
+	if err != nil {
+		t.Fatalf("не удалось открыть репозиторий: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	owner := uuid.New()
+	var walletId uuid.UUID
+	if err := db.Information(ctx, owner, func(reply *wallet.InformationReply) {
+		walletId = uuid.MustParse(reply.Id)
+	}); err != nil {
+		t.Fatalf("получение кошелька: %v", err)
+	}
+	if _, err := db.Debit(ctx, owner, OperationParams{
+		IdempotencyKey: "fill-reserve", WalletId: walletId, Value: 10_000,
+	}); err != nil {
+		t.Fatalf("пополнение: %v", err)
+	}
+
+	t.Run("нулевой срок заменяется значением по умолчанию", func(t *testing.T) {
+		// Резерв без срока блокирует средства навсегда, поэтому ноль
+		// означает не «бессрочно», а «срок по умолчанию».
+		reserved, err := db.Reserve(ctx, owner, ReserveParams{
+			IdempotencyKey: "res-default-ttl", WalletId: walletId, Value: 1_000,
+		})
+		if err != nil {
+			t.Fatalf("резерв: %v", err)
+		}
+		if reserved.Id == uuid.Nil {
+			t.Error("резерв не создан")
+		}
+	})
+
+	t.Run("повтор по тому же ключу не резервирует дважды", func(t *testing.T) {
+		params := ReserveParams{
+			IdempotencyKey: "res-once", WalletId: walletId, Value: 2_000, TTL: time.Minute,
+		}
+		first, err := db.Reserve(ctx, owner, params)
+		if err != nil {
+			t.Fatalf("резерв: %v", err)
+		}
+		second, err := db.Reserve(ctx, owner, params)
+		if err != nil {
+			t.Fatalf("повтор резерва: %v", err)
+		}
+		if second.Id != first.Id || !second.Idempotent {
+			t.Errorf("повтор создал второй резерв: %+v против %+v", second, first)
+		}
+	})
+
+	t.Run("резерв больше доступного остатка", func(t *testing.T) {
+		// Проверяется именно доступный остаток: часть средств уже
+		// зарезервирована предыдущими подтестами.
+		if _, err := db.Reserve(ctx, owner, ReserveParams{
+			IdempotencyKey: "res-too-much", WalletId: walletId, Value: 1_000_000, TTL: time.Minute,
+		}); !errors.Is(err, ErrInsufficientBalance) {
+			t.Errorf("получено %v, ожидалась ErrInsufficientBalance", err)
+		}
+	})
+
+	t.Run("резерв по несуществующему кошельку", func(t *testing.T) {
+		if _, err := db.Reserve(ctx, owner, ReserveParams{
+			IdempotencyKey: "res-missing", WalletId: uuid.New(), Value: 100, TTL: time.Minute,
+		}); !errors.Is(err, ErrWalletNotFound) {
+			t.Errorf("получено %v, ожидалась ErrWalletNotFound", err)
+		}
+	})
+}
+
+// TestOperationCreatesDefaultWallet: кошелёк заводится при первом обращении,
+// как и при чтении информации. Иначе первая же операция нового пользователя
+// упирается в «нет кошелька», хотя требование говорит об автосоздании.
+func TestOperationCreatesDefaultWallet(t *testing.T) {
+	ctx := context.Background()
+	db, err := NewDatabaseWallet(ctx, testsupport.Prepare(t, "wallet"))
+	if err != nil {
+		t.Fatalf("не удалось открыть репозиторий: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	owner := uuid.New()
+	// Кошелёк не назван: операция идёт «в кошелёк по умолчанию».
+	transaction, err := db.Debit(ctx, owner, OperationParams{
+		IdempotencyKey: "first-touch", Value: 5_000,
+	})
+	if err != nil {
+		t.Fatalf("зачисление новому пользователю: %v", err)
+	}
+	if transaction.WalletId == uuid.Nil {
+		t.Fatal("кошелёк по умолчанию не создан")
+	}
+
+	var balance int64
+	var wallets int
+	if err := db.Information(ctx, owner, func(reply *wallet.InformationReply) {
+		wallets++
+		balance = reply.Balance
+	}); err != nil {
+		t.Fatalf("чтение кошельков: %v", err)
+	}
+	if wallets != 1 {
+		t.Errorf("кошельков %d, ожидался один", wallets)
+	}
+	if balance != 5_000 {
+		t.Errorf("баланс %d, ожидалось 5000", balance)
+	}
+
+	t.Run("списание из кошелька по умолчанию", func(t *testing.T) {
+		if _, err := db.Credit(ctx, owner, OperationParams{
+			IdempotencyKey: "first-spend", Value: 1_000,
+		}); err != nil {
+			t.Fatalf("списание: %v", err)
+		}
+	})
+
+	t.Run("списание больше остатка", func(t *testing.T) {
+		if _, err := db.Credit(ctx, owner, OperationParams{
+			IdempotencyKey: "over-spend", Value: 1_000_000,
+		}); !errors.Is(err, ErrInsufficientBalance) {
+			t.Errorf("получено %v, ожидалась ErrInsufficientBalance", err)
+		}
+	})
+}
+
 func TestWalletReservations(t *testing.T) {
 	ctx := context.Background()
 	db, err := NewDatabaseWallet(ctx, testsupport.Prepare(t, "wallet"))

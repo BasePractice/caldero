@@ -285,3 +285,64 @@ func TestMessengerTransportError(t *testing.T) {
 		t.Fatal("недоступный Bot API принят за успех")
 	}
 }
+
+// TestMessengerErrorCodes фиксирует разбор отказов Bot API: по коду видно,
+// повторять доставку или бросить. Блокировку бота повторять бессмысленно,
+// а ограничение частоты — наоборот.
+func TestMessengerErrorCodes(t *testing.T) {
+	tests := []struct {
+		name      string
+		body      string
+		status    int
+		permanent bool
+	}{
+		{
+			// Пользователь заблокировал бота: сообщений больше не будет,
+			// сколько ни повторяй.
+			name:      "бот заблокирован",
+			body:      `{"ok":false,"error_code":403,"description":"bot was blocked by the user"}`,
+			permanent: true,
+		},
+		{
+			// Чат не найден или удалён: повторять нечего.
+			name:      "чат не найден",
+			body:      `{"ok":false,"error_code":400,"description":"chat not found"}`,
+			permanent: true,
+		},
+		{
+			name: "ограничение частоты",
+			body: `{"ok":false,"error_code":429,"description":"too many requests"}`,
+		},
+		{
+			name: "сбой самого Bot API",
+			body: `{"ok":false,"error_code":500,"description":"internal server error"}`,
+		},
+		{
+			// Код в теле не пришёл: берётся код ответа HTTP.
+			name:      "код только в ответе HTTP",
+			body:      `{"ok":false,"description":"forbidden"}`,
+			status:    http.StatusForbidden,
+			permanent: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			messenger := testMessenger(t, &fakeDatabase{}, func(w http.ResponseWriter, _ *http.Request) {
+				if test.status != 0 {
+					w.WriteHeader(test.status)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(test.body))
+			})
+
+			err := messenger.Send(t.Context(), testTask(0), "Заголовок", "Текст")
+			if err == nil {
+				t.Fatal("отказ Bot API принят за успех")
+			}
+			if Permanent(err) != test.permanent {
+				t.Errorf("повторяемость %v, ожидалась %v (%v)", !Permanent(err), !test.permanent, err)
+			}
+		})
+	}
+}

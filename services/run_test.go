@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -352,5 +354,70 @@ func TestRun(t *testing.T) {
 
 	if !called {
 		t.Error("тело сервиса не вызвано")
+	}
+}
+
+// TestRunExitsOnFailure проверяет ветки, завершающие процесс. Вызвать их
+// в самом тесте нельзя — os.Exit убил бы тестовый бинарник, — поэтому
+// тест перезапускает сам себя подпроцессом и смотрит код возврата.
+//
+// Ветки эти не декоративные: сервис, поднявшийся с неверной конфигурацией
+// или молча продолживший работу после сбоя тела, хуже упавшего.
+func TestRunExitsOnFailure(t *testing.T) {
+	const modeVar = "WISH_RUN_EXIT_CASE"
+
+	// Подпроцесс: тот же бинарник, но с переменной, включающей нужную ветку.
+	if mode := os.Getenv(modeVar); mode != "" {
+		switch mode {
+		case "config":
+			// Неразбираемое значение роняет чтение конфигурации.
+			Run("test", func(context.Context, Config, *Health) error { return nil })
+		case "logging":
+			Run("test", func(context.Context, Config, *Health) error { return nil })
+		case "body":
+			Run("test", func(context.Context, Config, *Health) error {
+				return errors.New("тело сервиса не отработало")
+			})
+		}
+		return
+	}
+
+	tests := []struct {
+		name string
+		mode string
+		env  []string
+	}{
+		{
+			name: "неразбираемая конфигурация",
+			mode: "config",
+			env:  []string{"METRICS_PORT=не-число"},
+		},
+		{
+			name: "неизвестный уровень журнала",
+			mode: "logging",
+			env:  []string{"LOG_LEVEL=ГРОМКО"},
+		},
+		{
+			name: "сбой тела сервиса",
+			mode: "body",
+			env:  []string{"METRICS_PORT=0"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			command := exec.Command(os.Args[0], "-test.run=TestRunExitsOnFailure")
+			command.Env = append(os.Environ(), modeVar+"="+test.mode)
+			command.Env = append(command.Env, test.env...)
+
+			err := command.Run()
+			var exit *exec.ExitError
+			if !errors.As(err, &exit) {
+				t.Fatalf("подпроцесс завершился с %v, ожидался ненулевой код", err)
+			}
+			if exit.ExitCode() != 1 {
+				t.Errorf("код возврата %d, ожидался 1", exit.ExitCode())
+			}
+		})
 	}
 }

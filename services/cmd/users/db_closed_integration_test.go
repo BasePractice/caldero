@@ -4,6 +4,8 @@ package main
 
 import (
 	"context"
+	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
@@ -157,4 +159,62 @@ func TestRepositoryReportsBrokenDatabase(t *testing.T) {
 	if db.Stats().MaxOpenConnections == 0 {
 		t.Error("статистика пула не заполнена")
 	}
+}
+
+// TestHandlersReportBrokenDatabase: недоступная база должна отвечать
+// пятисоткой, а не выглядеть отказом в регистрации — иначе причина
+// теряется, и пользователь пробует снова с теми же данными.
+func TestHandlersReportBrokenDatabase(t *testing.T) {
+	cfg := testsupport.Prepare(t, "users")
+	cfg.OAuth2GlobalSecret = "0123456789abcdef0123456789abcdef"
+	cfg.AdminToken = adminToken
+
+	service, err := newService(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("не удалось создать сервис: %v", err)
+	}
+	handler := registerHttpHandlers(service)
+	// База закрывается уже после старта: ключи подписи успели загрузиться,
+	// а запросы к базе — нет.
+	if err := service.Close(); err != nil {
+		t.Fatalf("закрытие репозитория: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		path    string
+		values  url.Values
+		headers map[string]string
+	}{
+		{
+			name: "регистрация",
+			path: "/register",
+			values: url.Values{
+				"username": {"user-" + uuid.NewString()[:8]},
+				"password": {"пароль"},
+				"phone":    {"+79005550011"},
+			},
+		},
+		{
+			name: "создание клиента",
+			path: "/clients",
+			values: url.Values{
+				"client-id":     {"client-" + uuid.NewString()[:8]},
+				"client-secret": {"secret"},
+				"redirect-uri":  {"https://client.example/callback"},
+			},
+			headers: map[string]string{"Authorization": "Bearer " + adminToken},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := form(handler, http.MethodPost, test.path, test.values, test.headers)
+			if recorder.Code != http.StatusInternalServerError {
+				t.Errorf("код ответа %d, ожидался %d (%s)",
+					recorder.Code, http.StatusInternalServerError, recorder.Body)
+			}
+		})
+	}
+
 }
